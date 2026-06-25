@@ -5,6 +5,6 @@
 //  protected by Row-Level Security in the database.
 // ============================================================
 window.SAMAJI_CONFIG = {
-  SUPABASE_URL:      "https://YOUR-PROJECT.supabase.co",
-  SUPABASE_ANON_KEY: "YOUR-ANON-KEY"
+  SUPABASE_URL:      "https://lvmpqsofpwhtdfuvtdzi.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2bXBxc29mcHdodGRmdXZ0ZHppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMTc2MzksImV4cCI6MjA5Nzg5MzYzOX0.7YunBTbIIHhXbx4X0TJ2EEkAFMPdpCi78mPn145CyQE"
 };
