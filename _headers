@@ -1,0 +1,6 @@
+# Cache static assets; keep HTML fresh
+/assets/*
+  Cache-Control: public, max-age=86400
+/*
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin

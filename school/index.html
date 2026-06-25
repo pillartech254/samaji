@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samaji — School Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  #app{display:none;min-height:100vh;}
+  .layout{display:flex;min-height:100vh;}
+  aside{width:236px;flex:none;background:#fff;border-right:1px solid #EAECEF;padding:16px 12px;display:flex;flex-direction:column;}
+  .school{display:flex;align-items:center;gap:11px;padding:8px 8px 16px;}
+  .nav-h{font-size:10.5px;font-weight:700;color:#B0B5BE;text-transform:uppercase;letter-spacing:.06em;padding:12px 9px 5px;}
+  .navitem{display:flex;align-items:center;gap:11px;padding:9px;border:none;border-radius:9px;background:none;cursor:pointer;font-family:inherit;text-align:left;width:100%;font-size:13.5px;font-weight:600;color:#344054;}
+  .navitem:hover{background:#F6F7F9;}
+  .navitem.active{background:#E7F6F3;color:#0E9384;}
+  .navitem.locked{opacity:.5;}
+  .navitem .tile{flex:none;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;}
+  main{flex:1;min-width:0;padding:26px 30px 60px;}
+  .modtile{text-align:left;background:#fff;border:1px solid #E8EAED;border-radius:13px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:15px;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:12px;}
+  .modtile:hover{border-color:#9DE0D6;}
+  .modtile .tile{flex:none;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:13px;}
+
+  /* ===== professional split login ===== */
+  #auth{display:flex;min-height:100vh;background:#fff;}
+  .login-brand{flex:1;position:relative;overflow:hidden;background:linear-gradient(160deg,#0E9384 0%,#0B6E63 55%,#0A4F49 100%);color:#fff;padding:56px 56px 40px;display:flex;flex-direction:column;}
+  .login-brand .glow{position:absolute;border-radius:50%;filter:blur(8px);opacity:.18;background:#fff;}
+  .login-brand .g1{width:380px;height:380px;top:-120px;right:-120px;}
+  .login-brand .g2{width:260px;height:260px;bottom:-90px;left:-80px;opacity:.12;}
+  .login-brand .blogo{display:flex;align-items:center;gap:12px;position:relative;z-index:2;}
+  .login-brand .blogo .mark{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.16);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px;border:1px solid rgba(255,255,255,.25);}
+  .login-brand h2{position:relative;z-index:2;margin:auto 0 0;font-size:32px;font-weight:700;letter-spacing:-.025em;line-height:1.2;max-width:13ch;text-wrap:balance;}
+  .login-brand .lead{position:relative;z-index:2;margin:16px 0 28px;font-size:15px;line-height:1.6;color:rgba(255,255,255,.82);max-width:42ch;}
+  .trust{position:relative;z-index:2;display:flex;flex-direction:column;gap:13px;}
+  .trust .item{display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.92);font-weight:500;}
+  .trust .ic{flex:none;width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;}
+  .login-brand .bfoot{position:relative;z-index:2;margin-top:40px;font-size:12px;color:rgba(255,255,255,.6);}
+  .login-form{flex:none;width:480px;max-width:100%;display:flex;align-items:center;justify-content:center;padding:48px 56px;}
+  .login-inner{width:100%;max-width:340px;}
+  .login-inner .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0E9384;}
+  .login-inner h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:8px 0 4px;color:#15171E;}
+  .login-inner .sub{font-size:13.5px;color:#667085;margin:0 0 26px;}
+  .login-inner label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:16px 0 6px;}
+  .login-inner input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;transition:border-color .12s, box-shadow .12s;}
+  .login-inner input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  .login-inner .signin{width:100%;font-size:14px;font-weight:600;color:#fff;background:#0E9384;border:none;border-radius:10px;padding:13px;cursor:pointer;font-family:inherit;margin-top:22px;transition:background .12s;}
+  .login-inner .signin:hover{background:#0B7A6E;}
+  .login-inner .signin:disabled{opacity:.6;cursor:default;}
+  .login-inner .secure{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;color:#98A2B3;margin-top:18px;}
+  .login-inner .pfoot{text-align:center;font-size:12px;color:#B0B5BE;margin-top:28px;padding-top:18px;border-top:1px solid #F0F1F4;}
+  .login-inner .pfoot strong{color:#667085;font-weight:600;}
+  @media (max-width:840px){
+    .login-brand{display:none;}
+    .login-form{flex:1;width:auto;}
+  }
+</style>
+</head>
+<body>
+
+  <!-- AUTH -->
+  <div id="auth">
+    <div class="login-brand">
+      <span class="glow g1"></span><span class="glow g2"></span>
+      <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
+      <h2>The complete operating system for your school</h2>
+      <p class="lead">Students, attendance, fees, exams, payroll and more — one secure platform, accessible anywhere.</p>
+      <div class="trust">
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Bank-grade encryption &amp; row-level data isolation</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2v20M4 7l8-5 8 5M4 7v10l8 5 8-5V7" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></span>Your data stays private to your school, always</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#fff" stroke-width="1.8"/><path d="M12 7v5l3 2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>99.9% uptime with daily automated backups</div>
+      </div>
+      <div class="bfoot">© <span id="year-b"></span> Pillartech Solutions. All rights reserved.</div>
+    </div>
+
+    <div class="login-form">
+      <div class="login-inner">
+        <div class="warn" id="config-warn" style="margin-bottom:18px;">⚠ Set your Supabase keys in <span class="mono">assets/config.js</span> first.</div>
+        <div class="eyebrow">School Portal</div>
+        <h1>Welcome back</h1>
+        <p class="sub">Sign in to access your school's workspace.</p>
+        <label for="email">Email address</label>
+        <input id="email" type="email" placeholder="you@yourschool.ac.ke" autocomplete="email">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Enter your password" autocomplete="current-password">
+        <button class="signin" id="submit">Sign in securely</button>
+        <div class="msg" id="msg"></div>
+        <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
+        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <div class="layout">
+      <aside>
+        <div class="school"><div class="logo teal" id="school-logo">G</div>
+          <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="school-name">School</div><div style="font-size:11px;color:#98A2B3;" id="school-plan">—</div></div>
+        </div>
+        <button class="navitem" id="nav-dashboard"><span class="tile" style="background:#E7F6F3;color:#0E9384;">◆</span>Dashboard</button>
+        <button class="navitem" id="nav-reports"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">◩</span>Reports</button>
+        <div class="nav-h">Modules</div>
+        <div id="nav-live"></div>
+        <div class="nav-h" id="nav-locked-h" style="display:none;">Not in your plan</div>
+        <div id="nav-locked"></div>
+        <div style="flex:1;"></div>
+        <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;">⚙</span>Settings</button>
+        <button class="ghost" id="signout" style="margin:8px;">Sign out</button>
+      </aside>
+      <main id="view"><!-- module renders here --></main>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../assets/config.js"></script>
+<script src="../assets/app.js"></script>
+<script src="../assets/school-modules.js"></script>
+<script src="../assets/school-plus.js"></script>
+<script>
+  var $ = function(id){ return document.getElementById(id); };
+  if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
+  var sb = window.getSB();
+  var SCHOOL=null, FLAGS={};
+  var _yr=new Date().getFullYear(); ["year","year-b"].forEach(function(id){ var e=document.getElementById(id); if(e) e.textContent=_yr; });
+  function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
+
+  $("submit").onclick = async function(){
+    if (!sb) { showMsg("Supabase keys not set — edit assets/config.js.", false); return; }
+    var email = $("email").value.trim(), password = $("password").value;
+    if (!email || !password) { showMsg("Enter an email and password.", false); return; }
+    $("submit").disabled = true;
+    var res = await sb.auth.signInWithPassword({ email: email, password: password });
+    if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
+    enterApp();
+  };
+
+  async function enterApp(){
+    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) return;
+    var pr = await sb.from("profiles").select("role, school_id").eq("id", user.id).single();
+    var prof = pr.data;
+    if (!prof || !prof.school_id) { showMsg("This account isn't linked to a school. Set profiles.school_id.", false); $("submit").disabled = false; return; }
+    SCHOOL = prof.school_id;
+    $("auth").style.display = "none"; $("app").style.display = "block";
+
+    var sc = await sb.from("schools").select("*").eq("id", SCHOOL).single();
+    var school = sc.data;
+    $("school-name").textContent = (school && school.name) || SCHOOL;
+    $("school-logo").textContent = ((school && school.name) || "S").charAt(0);
+
+    var subs = await sb.from("subscriptions").select("*, packages(name)").eq("school_id", SCHOOL).limit(1);
+    var sub = subs.data && subs.data[0];
+    $("school-plan").textContent = (sub && sub.packages && sub.packages.name) ? (sub.packages.name + " plan") : "—";
+
+    var r = await sb.rpc("resolve_flags", { p_school: SCHOOL });
+    FLAGS = r.data || {};
+    buildNav();
+    showDashboard();
+  }
+
+  function setActive(key){
+    document.querySelectorAll(".navitem").forEach(function(b){ b.classList.remove("active"); });
+    var el = key==="dashboard" ? $("nav-dashboard")
+      : key==="settings" ? $("nav-settings")
+      : key==="reports" ? $("nav-reports")
+      : document.querySelector('.navitem[data-flag="'+key+'"]');
+    if (el) el.classList.add("active");
+  }
+
+  function showSettings(){ setActive("settings"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.settings(sb, SCHOOL, el); }
+  function showReports(){ setActive("reports"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.reports(sb, SCHOOL, el); }
+
+  function buildNav(){
+    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
+    var locked  = Object.keys(FLAGS).filter(function(k){ return !FLAGS[k]; });
+    var live = $("nav-live"); live.innerHTML = "";
+    granted.forEach(function(k){
+      var m = window.metaFor(k), b = document.createElement("button");
+      b.className = "navitem"; b.setAttribute("data-flag", k);
+      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.mono+'</span>'+m.name;
+      b.onclick = function(){ openModule(k); };
+      live.appendChild(b);
+    });
+    var lockBox = $("nav-locked"); lockBox.innerHTML = "";
+    $("nav-locked-h").style.display = locked.length ? "block" : "none";
+    locked.forEach(function(k){
+      var m = window.metaFor(k), b = document.createElement("button");
+      b.className = "navitem locked";
+      b.innerHTML = '<span class="tile" style="background:#F1F2F6;color:#98A2B3">'+m.mono+'</span>'+m.name+' <span style="margin-left:auto;font-size:11px;">🔒</span>';
+      b.onclick = function(){ window.SM_toast(m.name + " isn't in your plan ("+k+" = false)."); };
+      lockBox.appendChild(b);
+    });
+  }
+
+  function openModule(flag){
+    if (!FLAGS[flag]) { window.SM_toast("That module isn't licensed."); return; }
+    setActive(flag);
+    var fn = window.SchoolModules[flag];
+    var el = $("view"); el.innerHTML = "";
+    if (fn) fn(sb, SCHOOL, el);
+    else el.innerHTML = '<div class="empty">No UI registered for '+flag+'.</div>';
+  }
+
+  async function showDashboard(){
+    setActive("dashboard");
+    var el = $("view");
+    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
+    el.innerHTML = '<div class="mod-head"><div><h2>Dashboard</h2><p>Live overview of '+($("school-name").textContent)+'.</p></div></div>'
+      + '<div class="statgrid" id="dash-stats"></div>'
+      + '<div class="cardrow c2" id="dash-charts" style="margin-top:18px;"></div>'
+      + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:24px;"><h2 style="margin:0;font-size:15px;">Your modules</h2><span class="muted" style="font-size:12.5px;">'+granted.length+' enabled</span></div>'
+      + '<div class="tiles" id="dash-tiles" style="margin-top:13px;"></div>';
+
+    function statCard(lbl,val,bg,ink,ic){ return '<div class="stat"><div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div></div>'; }
+    var icP='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" stroke="currentColor" stroke-width="1.6"/></svg>';
+    var icCk='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M8 12l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var icM='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>';
+    var icB='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 9.5V14c0 1.5 1.8 2.5 4 2.5s4-1 4-2.5V9.5" stroke="currentColor" stroke-width="1.8"/></svg>';
+
+    // gather data
+    var students=[], stats=[], C=window.SamajiCharts;
+    if (FLAGS["module.students"]) {
+      var sr=await sb.from("students").select("*").eq("school_id", SCHOOL);
+      students=sr.data||[];
+      var active=students.filter(function(s){return s.status!=="inactive";}).length;
+      var boarders=students.filter(function(s){return s.residence==="Boarder";}).length;
+      stats.push(statCard("Total students",students.length,"#EEF0FF","#4F46E5",icP));
+      stats.push(statCard("Active",active,"#ECFDF3","#067647",icCk));
+      stats.push(statCard("Boarders",boarders,"#F1ECFE","#6D28D9",icB));
+    }
+    if (FLAGS["module.finance"]) {
+      var pr=await sb.from("fee_payments").select("amount").eq("school_id", SCHOOL);
+      var collected=(pr.data||[]).reduce(function(a,p){return a+Number(p.amount);},0);
+      stats.push(statCard("Fees collected",("KES "+collected.toLocaleString()),"#FFF6ED","#C2410C",icM));
+    }
+    if (!stats.length) stats.push('<div class="empty" style="grid-column:1/-1;">Enable Students or Fees to see live figures.</div>');
+    $("dash-stats").innerHTML=stats.join("");
+
+    // charts
+    var charts="";
+    if (students.length && C) {
+      var male=students.filter(function(s){return s.gender==="M";}).length;
+      var female=students.filter(function(s){return s.gender==="F";}).length;
+      var other=students.length-male-female;
+      var gd=[{label:"Male",value:male,color:"#4F46E5"},{label:"Female",value:female,color:"#EC4899"}]; if(other>0) gd.push({label:"Other",value:other,color:"#94A3B8"});
+      var byLevel={}; students.forEach(function(s){ var lv=s.grade||"Unassigned"; byLevel[lv]=(byLevel[lv]||0)+1; });
+      var order=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
+      var ld=Object.keys(byLevel).sort(function(a,b){var ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);}).map(function(k){return {label:k.replace("Grade ","G"),value:byLevel[k]};});
+      charts+='<div class="chartcard"><div class="ch-head"><h3>Enrollment by class</h3></div>'+(ld.length?C.bar(ld,{height:190}):'')+'</div>';
+      charts+='<div class="chartcard"><div class="ch-head"><h3>Gender split</h3></div><div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(gd,{center:"Students"})+'</div><div style="flex:1;">'+C.legend(gd)+'</div></div></div>';
+    }
+    $("dash-charts").innerHTML=charts;
+    if(!charts) $("dash-charts").style.display="none";
+
+    var tiles = $("dash-tiles"); tiles.innerHTML = "";
+    granted.forEach(function(k){
+      var m = window.metaFor(k), b = document.createElement("button"); b.className = "modtile";
+      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.mono+'</span><div><div style="font-size:13.5px;font-weight:600;">'+m.name+'</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">'+k+'</div></div>';
+      b.onclick = function(){ openModule(k); };
+      tiles.appendChild(b);
+    });
+  }
+
+  $("nav-dashboard").onclick = showDashboard;
+  $("nav-settings").onclick = showSettings;
+  $("nav-reports").onclick = showReports;
+  $("signout").onclick = async function(){ await sb.auth.signOut(); $("app").style.display="none"; $("auth").style.display="flex"; $("submit").disabled=false; $("msg").className="msg"; };
+  (async function(){ if (sb) { var s = await sb.auth.getSession(); if (s.data.session) enterApp(); } })();
+</script>
+</body>
+</html>

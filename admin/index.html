@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samaji — Admin Console</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  header{background:#fff;border-bottom:1px solid #EAECEF;}
+  .hbar{max-width:1120px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;}
+  .wrap{max-width:1120px;margin:0 auto;padding:28px 24px 64px;}
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start;margin-top:20px;}
+  .flag{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #F4F5F7;}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .tag{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;flex:none;}
+  .sub-line{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:13px;}
+  #app{display:none;}
+  /* module control rows */
+  .mrow{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid #F4F5F7;}
+  .mrow .tile{flex:none;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;}
+  .src{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;}
+  .act{font-size:12px;font-weight:600;border-radius:7px;padding:6px 11px;cursor:pointer;font-family:inherit;border:1px solid;}
+  .act.add{color:#4F46E5;background:#fff;border-color:#D7D9FF;} .act.add:hover{background:#EEF0FF;}
+  .act.rm{color:#B42318;background:#fff;border-color:#FECDCA;} .act.rm:hover{background:#FEF3F2;}
+  .act:disabled{opacity:.5;cursor:default;}
+  .catlbl{font-size:10.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.05em;padding:14px 0 2px;}
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:#15171E;color:#fff;font-size:13px;font-weight:500;padding:11px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;transition:opacity .2s, transform .2s;pointer-events:none;z-index:50;}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+  <!-- AUTH -->
+  <div class="auth" id="auth">
+    <div class="card">
+      <div class="brand"><div class="logo indigo"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:15px;">Samaji</strong><span class="badge">Admin Console</span></div>
+      <div class="warn" id="config-warn">⚠ Set your Supabase keys in <span class="mono">assets/config.js</span> first.</div>
+      <h1 id="auth-title">Sign in</h1>
+      <p class="muted" id="auth-sub" style="font-size:13px;margin:0;">Sign in to the licensing console.</p>
+      <label>Email</label><input id="email" type="email" placeholder="admin@samaji.app" autocomplete="email">
+      <label>Password</label><input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+      <button class="btn indigo" id="submit">Sign in</button>
+      <div class="msg" id="msg"></div>
+      <div class="toggle" id="toggle-line">First time here? <a id="toggle">Create an account</a></div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <header><div class="hbar">
+      <div class="row"><div class="logo indigo"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:15px;">Samaji</strong><span class="badge">Admin Console</span></div>
+      <div class="row"><a class="muted" href="../" style="font-size:13px;text-decoration:none;">All portals</a><span class="muted" id="who" style="font-size:13px;"></span><button class="ghost" id="signout">Sign out</button></div>
+    </div></header>
+    <div class="wrap">
+      <div class="row" style="justify-content:space-between;">
+        <div><h1 style="margin:0;font-size:21px;">Licensing console</h1><p class="muted" style="margin-top:4px;font-size:13.5px;">Changes write to Postgres and re-resolve instantly. The school portal reflects them on refresh.</p></div>
+        <div class="row"><span class="muted">School</span><select id="school-select"></select></div>
+      </div>
+      <div class="grid">
+        <!-- LEFT: editable modules -->
+        <div class="panel">
+          <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+            <strong style="font-size:14px;">Modules</strong>
+            <span class="muted" style="font-size:12px;">In-package · add-on · off</span>
+          </div>
+          <div id="modules"></div>
+        </div>
+        <!-- RIGHT: package + resolved flags -->
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div class="panel">
+            <strong style="font-size:14px;">Base package</strong>
+            <p class="muted" style="font-size:12px;margin:4px 0 10px;">Switching re-grants the package's flags.</p>
+            <select id="package-select" style="width:100%;"></select>
+            <div id="sub" style="margin-top:12px;"></div>
+          </div>
+          <div class="panel">
+            <div class="row" style="justify-content:space-between;margin-bottom:6px;"><strong style="font-size:14px;">Effective flags</strong><span class="tag" style="color:#475467;background:#F4F5F7;" id="flag-count">—</span></div>
+            <div class="mono" style="font-size:10.5px;color:#98A2B3;background:#FAFAFB;border:1px solid #F0F1F4;border-radius:7px;padding:7px 9px;">core ∪ package ∪ add-ons ∪ overrides</div>
+            <div id="flags" style="margin-top:4px;max-height:280px;overflow:auto;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../assets/config.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+  var $ = function(id){ return document.getElementById(id); };
+  if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
+  var sb = window.getSB();
+  var mode = "signin";
+  var MODULES = [], PACKAGES = [], CUR = null; // CUR = { schoolId, sub, pkgSet, addonSet }
+  function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
+  var toastT;
+  function toast(t){ var el = $("toast"); el.textContent = t; el.className = "show"; clearTimeout(toastT); toastT = setTimeout(function(){ el.className = ""; }, 2200); }
+
+  document.addEventListener("click", function(e){
+    if (e.target && e.target.id === "toggle") {
+      mode = mode === "signin" ? "signup" : "signin";
+      $("auth-title").textContent = mode === "signin" ? "Sign in" : "Create account";
+      $("auth-sub").textContent   = mode === "signin" ? "Sign in to the licensing console." : "Set up your super-admin login.";
+      $("submit").textContent     = mode === "signin" ? "Sign in" : "Create account";
+      $("toggle-line").innerHTML  = mode === "signin" ? 'First time here? <a id="toggle">Create an account</a>' : 'Have an account? <a id="toggle">Sign in</a>';
+    }
+  });
+
+  $("submit").onclick = async function(){
+    if (!sb) { showMsg("Supabase keys not set — edit assets/config.js.", false); return; }
+    var email = $("email").value.trim(), password = $("password").value;
+    if (!email || !password) { showMsg("Enter an email and password.", false); return; }
+    $("submit").disabled = true;
+    try {
+      var res = mode === "signin" ? await sb.auth.signInWithPassword({ email: email, password: password })
+                                  : await sb.auth.signUp({ email: email, password: password });
+      if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
+      if (mode === "signup" && !res.data.session) { showMsg("Account created. Confirm email (if on), then sign in.", true); $("submit").disabled = false; return; }
+      enterApp();
+    } catch (err) { showMsg(String(err), false); $("submit").disabled = false; }
+  };
+
+  async function enterApp(){
+    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) return;
+    $("auth").style.display = "none"; $("app").style.display = "block"; $("who").textContent = user.email;
+
+    // diagnostic: show the role the DB resolves for this session
+    var prof = await sb.from("profiles").select("role").eq("id", user.id).maybeSingle();
+    var role = prof.data ? prof.data.role : (prof.error ? "error: " + prof.error.message : "no profile row");
+    $("who").textContent = user.email + "  ·  role: " + role;
+
+    // load reference data once
+    var mres = await sb.from("modules").select("*").eq("active", true);
+    MODULES = (mres.data || []).sort(function(a,b){ var o={core:0,standard:1,advanced:2}; return (o[a.tier]-o[b.tier]) || a.name.localeCompare(b.name); });
+    var pres = await sb.from("packages").select("*").eq("active", true);
+    PACKAGES = pres.data || [];
+    var psel = $("package-select"); psel.innerHTML = "";
+    PACKAGES.forEach(function(p){ var o = document.createElement("option"); o.value = p.id; o.textContent = p.name + "  ·  $" + p.price + "/mo"; psel.appendChild(o); });
+    psel.onchange = function(){ changePackage(psel.value); };
+
+    var sres = await sb.from("schools").select("*").order("name");
+    var sel = $("school-select"); sel.innerHTML = "";
+    (sres.data || []).forEach(function(s){ var o = document.createElement("option"); o.value = s.id; o.textContent = s.name; sel.appendChild(o); });
+    sel.onchange = function(){ loadSchool(sel.value); };
+    if (sres.data && sres.data.length) { loadSchool(sres.data[0].id); }
+    else if (sres.error) { $("modules").innerHTML = '<p class="muted">Could not load schools — <strong>' + sres.error.message + '</strong><br>This is usually an RLS/permission issue. Re-run the permission-helper SQL in the README.</p>'; }
+    else { $("modules").innerHTML = '<p class="muted">Signed in as <strong>' + role + '</strong>, but no schools are visible. If your role is not <strong>super_admin</strong>, fix your profile row. If it is, confirm setup.sql seeded the schools.</p>'; }
+  }
+
+  async function loadSchool(schoolId){
+    // subscription
+    var subs = await sb.from("subscriptions").select("*, packages(name,price,student_limit)").eq("school_id", schoolId).limit(1);
+    var sub = subs.data && subs.data[0];
+    if (!sub) { $("modules").innerHTML = '<p class="muted">No subscription for this school.</p>'; $("flags").innerHTML=""; $("sub").innerHTML=""; return; }
+    // package contents + current add-ons
+    var pm = await sb.from("package_modules").select("module_id").eq("package_id", sub.package_id);
+    var pkgSet = {}; (pm.data || []).forEach(function(r){ pkgSet[r.module_id] = true; });
+    var ad = await sb.from("subscription_addons").select("module_id").eq("subscription_id", sub.id);
+    var addonSet = {}; (ad.data || []).forEach(function(r){ addonSet[r.module_id] = true; });
+    CUR = { schoolId: schoolId, sub: sub, pkgSet: pkgSet, addonSet: addonSet };
+    $("package-select").value = sub.package_id;
+    renderSub(); renderModules(); refreshFlags();
+  }
+
+  function renderSub(){
+    var sub = CUR.sub, addonCount = Object.keys(CUR.addonSet).length;
+    var addonSum = MODULES.filter(function(m){ return CUR.addonSet[m.id]; }).reduce(function(a,m){ return a + m.monthly_price; }, 0);
+    $("sub").innerHTML =
+      '<div class="sub-line"><span class="muted">Status</span><strong>' + sub.status + '</strong></div>' +
+      '<div class="sub-line"><span class="muted">Base price</span><strong>$' + (sub.packages ? sub.packages.price : 0) + '/mo</strong></div>' +
+      '<div class="sub-line"><span class="muted">Add-ons</span><strong>' + addonCount + ' · +$' + addonSum + '/mo</strong></div>' +
+      '<div class="sub-line" style="border-top:1px solid #EEF0F2;margin-top:4px;padding-top:8px;"><span style="font-weight:600;">Total</span><strong style="color:#4F46E5;">$' + ((sub.packages?sub.packages.price:0) + addonSum) + '/mo</strong></div>';
+  }
+
+  function renderModules(){
+    var box = $("modules"); box.innerHTML = "";
+    var lastTier = null, tierName = { core:"Core", standard:"Standard", advanced:"Advanced (add-on only)" };
+    MODULES.forEach(function(m){
+      if (m.tier !== lastTier) { var h = document.createElement("div"); h.className = "catlbl"; h.textContent = tierName[m.tier]; box.appendChild(h); lastTier = m.tier; }
+      var meta = window.metaFor(m.key);
+      var inPkg = !!CUR.pkgSet[m.id], isAddon = !!CUR.addonSet[m.id], isCore = m.tier === "core";
+      var row = document.createElement("div"); row.className = "mrow";
+      var src, srcStyle, action = "";
+      if (isCore) { src = "Core"; srcStyle = "color:#475467;background:#F1F2F6;"; }
+      else if (inPkg) { src = "In package"; srcStyle = "color:#4F46E5;background:#EEF0FF;"; }
+      else if (isAddon) { src = "Add-on · $" + m.monthly_price; srcStyle = "color:#067647;background:#ECFDF3;"; action = '<button class="act rm" data-rm="'+m.id+'">Remove</button>'; }
+      else { src = "Off"; srcStyle = "color:#98A2B3;background:#F4F5F7;"; action = '<button class="act add" data-add="'+m.id+'">+ Add $' + m.monthly_price + '</button>'; }
+      row.innerHTML =
+        '<span class="tile" style="background:'+meta.tint+';color:'+meta.ink+'">'+meta.mono+'</span>' +
+        '<div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;">'+m.name+'</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">'+m.key+'</div></div>' +
+        '<span class="src" style="'+srcStyle+'">'+src+'</span>' +
+        '<span style="width:96px;text-align:right;">'+action+'</span>';
+      box.appendChild(row);
+    });
+    box.querySelectorAll("[data-add]").forEach(function(b){ b.onclick = function(){ addAddon(b.getAttribute("data-add")); }; });
+    box.querySelectorAll("[data-rm]").forEach(function(b){ b.onclick = function(){ removeAddon(b.getAttribute("data-rm")); }; });
+  }
+
+  async function refreshFlags(){
+    var r = await sb.rpc("resolve_flags", { p_school: CUR.schoolId });
+    var box = $("flags"); box.innerHTML = "";
+    if (r.error) { box.innerHTML = '<p class="muted">' + r.error.message + '</p>'; return; }
+    var flags = r.data || {}, entries = Object.keys(flags).map(function(k){ return [k, flags[k]]; });
+    var granted = entries.filter(function(e){ return e[1]; });
+    $("flag-count").textContent = granted.length + " / " + entries.length;
+    entries.sort(function(a,b){ return (b[1]?1:0) - (a[1]?1:0); });
+    entries.forEach(function(e){
+      var k = e[0], v = e[1], row = document.createElement("div"); row.className = "flag";
+      row.innerHTML = '<span class="row"><span class="dot" style="background:' + (v?'#12B76A':'#D0D5DD') + '"></span><span class="mono" style="font-size:11.5px;color:' + (v?'#1A1D26':'#98A2B3') + '">' + k + '</span></span>' +
+        '<span class="tag" style="color:' + (v?'#067647':'#98A2B3') + ';background:' + (v?'#ECFDF3':'#F4F5F7') + '">' + (v?'true':'false') + '</span>';
+      box.appendChild(row);
+    });
+  }
+
+  // ---- WRITE ACTIONS (super-admin only, enforced by RLS) ----
+  async function addAddon(moduleId){
+    var m = MODULES.find(function(x){ return x.id === moduleId; });
+    var r = await sb.from("subscription_addons").insert({ subscription_id: CUR.sub.id, module_id: moduleId, price: m.monthly_price });
+    if (r.error) { toast("Error: " + r.error.message); return; }
+    CUR.addonSet[moduleId] = true; renderModules(); renderSub(); await refreshFlags();
+    toast("Added " + m.name + " — " + m.key + " is now true");
+  }
+  async function removeAddon(moduleId){
+    var m = MODULES.find(function(x){ return x.id === moduleId; });
+    var r = await sb.from("subscription_addons").delete().eq("subscription_id", CUR.sub.id).eq("module_id", moduleId);
+    if (r.error) { toast("Error: " + r.error.message); return; }
+    delete CUR.addonSet[moduleId]; renderModules(); renderSub(); await refreshFlags();
+    toast("Removed " + m.name);
+  }
+  async function changePackage(newPkgId){
+    var r = await sb.from("subscriptions").update({ package_id: newPkgId }).eq("id", CUR.sub.id);
+    if (r.error) { toast("Error: " + r.error.message); return; }
+    toast("Package changed to " + (PACKAGES.find(function(p){return p.id===newPkgId;})||{}).name);
+    await loadSchool(CUR.schoolId);
+  }
+
+  $("signout").onclick = async function(){ await sb.auth.signOut(); $("app").style.display="none"; $("auth").style.display="flex"; $("submit").disabled=false; $("msg").className="msg"; };
+  (async function(){ if (sb) { var s = await sb.auth.getSession(); if (s.data.session) enterApp(); } })();
+</script>
+</body>
+</html>

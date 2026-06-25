@@ -1,0 +1,4 @@
+# Friendly paths (Cloudflare Pages serves /admin/ and /school/ from folders already;
+# these keep clean URLs working if you link without trailing slashes)
+/admin   /admin/   301
+/school  /school/  301
