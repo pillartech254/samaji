@@ -27,22 +27,58 @@
   .catlbl{font-size:10.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.05em;padding:14px 0 2px;}
   #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:#15171E;color:#fff;font-size:13px;font-weight:500;padding:11px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;transition:opacity .2s, transform .2s;pointer-events:none;z-index:50;}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* split login (indigo) */
+  #auth{display:flex;min-height:100vh;background:#fff;}
+  .login-brand{flex:1;position:relative;overflow:hidden;background:linear-gradient(160deg,#6366F1 0%,#4F46E5 55%,#3730A3 100%);color:#fff;padding:56px 56px 40px;display:flex;flex-direction:column;}
+  .login-brand .glow{position:absolute;border-radius:50%;filter:blur(8px);opacity:.16;background:#fff;}
+  .login-brand .g1{width:380px;height:380px;top:-120px;right:-120px;}
+  .login-brand .g2{width:260px;height:260px;bottom:-90px;left:-80px;opacity:.12;}
+  .login-brand .blogo{display:flex;align-items:center;gap:12px;position:relative;z-index:2;}
+  .login-brand .blogo .mark{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.25);}
+  .login-brand h2{position:relative;z-index:2;margin:auto 0 0;font-size:31px;font-weight:700;letter-spacing:-.025em;line-height:1.18;max-width:15ch;}
+  .login-brand .lead{position:relative;z-index:2;margin:16px 0 28px;font-size:15px;line-height:1.6;color:rgba(255,255,255,.84);max-width:42ch;}
+  .login-brand .trust{position:relative;z-index:2;display:flex;flex-direction:column;gap:13px;}
+  .login-brand .trust .item{display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.92);font-weight:500;}
+  .login-brand .trust .ic{flex:none;width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;}
+  .login-brand .bfoot{position:relative;z-index:2;margin-top:40px;font-size:12px;color:rgba(255,255,255,.6);}
+  .login-form{flex:none;width:480px;max-width:100%;display:flex;align-items:center;justify-content:center;padding:48px 56px;}
+  .login-inner{width:100%;max-width:340px;}
+  .login-inner .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#4F46E5;}
+  .login-inner h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:8px 0 4px;}
+  .login-inner .sub{font-size:13.5px;color:#667085;margin:0 0 8px;}
+  @media (max-width:840px){ .login-brand{display:none;} .login-form{flex:1;width:auto;} }
 </style>
 </head>
 <body>
 
   <!-- AUTH -->
-  <div class="auth" id="auth">
-    <div class="card">
-      <div class="brand"><div class="logo indigo"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:15px;">Samaji</strong><span class="badge">Admin Console</span></div>
-      <div class="warn" id="config-warn">⚠ Set your Supabase keys in <span class="mono">assets/config.js</span> first.</div>
-      <h1 id="auth-title">Sign in</h1>
-      <p class="muted" id="auth-sub" style="font-size:13px;margin:0;">Sign in to the licensing console.</p>
-      <label>Email</label><input id="email" type="email" placeholder="admin@samaji.app" autocomplete="email">
-      <label>Password</label><input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
-      <button class="btn indigo" id="submit">Sign in</button>
-      <div class="msg" id="msg"></div>
-      <div class="toggle" id="toggle-line">First time here? <a id="toggle">Create an account</a></div>
+  <div id="auth">
+    <div class="login-brand">
+      <span class="glow g1"></span><span class="glow g2"></span>
+      <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
+      <h2>Run your entire school network from one console</h2>
+      <p class="lead">Provision schools, build packages, toggle modules and watch licenses resolve live across every institution.</p>
+      <div class="trust">
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2v20M4 7l8-5 8 5M4 7v10l8 5 8-5V7" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></span>Database-driven feature flags &amp; permissions</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 13h4l3 7 4-14 3 7h4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Live revenue &amp; usage across all schools</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Bank-grade security &amp; isolation</div>
+      </div>
+      <div class="bfoot">© <span id="year-b"></span> Pillartech Solutions. All rights reserved.</div>
+    </div>
+    <div class="login-form">
+      <div class="login-inner">
+        <div class="warn" id="config-warn" style="margin-bottom:18px;">⚠ Set your Supabase keys in <span class="mono">assets/config.js</span> first.</div>
+        <div class="eyebrow">Provider Console</div>
+        <h1 id="auth-title">Sign in</h1>
+        <p class="sub" id="auth-sub">Sign in to the licensing console.</p>
+        <label>Email</label><input id="email" type="email" placeholder="admin@samaji.app" autocomplete="email">
+        <label>Password</label><input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+        <button class="btn indigo" id="submit">Sign in</button>
+        <div class="msg" id="msg"></div>
+        <div class="toggle" id="toggle-line">First time here? <a id="toggle">Create an account</a></div>
+        <div class="pfoot" style="text-align:center;font-size:12px;color:#B0B5BE;margin-top:24px;padding-top:18px;border-top:1px solid #F0F1F4;">Powered by <strong style="color:#667085;">Pillartech Solutions</strong></div>
+      </div>
     </div>
   </div>
 
@@ -92,6 +128,7 @@
 <script>
   var $ = function(id){ return document.getElementById(id); };
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
+  var _yb=$("year-b"); if(_yb) _yb.textContent=new Date().getFullYear();
   var sb = window.getSB();
   var mode = "signin";
   var MODULES = [], PACKAGES = [], CUR = null; // CUR = { schoolId, sub, pkgSet, addonSet }

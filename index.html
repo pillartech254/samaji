@@ -3,36 +3,353 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Samaji — School Management Platform</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/styles.css">
+<title>Samaji — The complete operating system for your school</title>
+<meta name="description" content="Samaji is an all-in-one school management platform for Kenyan schools — students, fees, exams, attendance, payroll and more. Built by Pillartech Solutions.">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
-  .hero{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
-  .stack{width:100%;max-width:440px;}
-  .pick{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #E8EAED;border-radius:14px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px;text-decoration:none;color:inherit;margin-top:12px;}
-  .pick:hover{border-color:#C7CBFF;}
-  .pick .tile{flex:none;width:44px;height:44px;border-radius:11px;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;}
-  .arrow{margin-left:auto;color:#CDD2DA;}
+  :root{--teal:#0E9384;--teal-d:#0B6E63;--ink:#0E1424;--ink2:#475467;--muted:#7A8499;--line:#E9ECF1;--bg:#F6F8FA;--indigo:#4F46E5;--violet:#6D28D9;--amber:#C2410C;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{font-family:'IBM Plex Sans',system-ui,sans-serif;color:var(--ink);background:#fff;-webkit-font-smoothing:antialiased;line-height:1.5;}
+  a{text-decoration:none;color:inherit;}
+  .wrap{max-width:1140px;margin:0 auto;padding:0 24px;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  @keyframes up{from{opacity:0;transform:translateY(22px);}to{opacity:1;transform:translateY(0);}}
+  @keyframes floaty{0%,100%{transform:translateY(0);}50%{transform:translateY(-10px);}}
+  @keyframes grow{from{transform:scaleY(0);}to{transform:scaleY(1);}}
+  .reveal{animation:up .7s both;}
+
+  /* nav */
+  nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);}
+  nav .inner{display:flex;align-items:center;justify-content:space-between;height:66px;}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:-.01em;}
+  .logo .mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(11,110,99,.3);}
+  nav .links{display:flex;align-items:center;gap:30px;}
+  nav .links a{font-size:14px;font-weight:500;color:var(--ink2);transition:color .15s;}
+  nav .links a:hover{color:var(--ink);}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:600;font-family:inherit;border-radius:10px;padding:10px 18px;cursor:pointer;border:none;transition:transform .15s,filter .15s,box-shadow .15s;}
+  .btn.primary{background:linear-gradient(135deg,#12B3A1,#0B7A6E);color:#fff;box-shadow:0 2px 12px rgba(11,110,99,.28);}
+  .btn.primary:hover{filter:brightness(1.06);transform:translateY(-1px);box-shadow:0 6px 18px rgba(11,110,99,.32);}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);}
+  .btn.ghost:hover{background:#F7F9FB;}
+  .btn.lg{padding:13px 24px;font-size:15px;}
+  @media(max-width:780px){nav .links{display:none;}}
+
+  /* hero */
+  .hero{position:relative;overflow:hidden;background:radial-gradient(1100px 520px at 78% -8%,#E6F6F3 0%,rgba(230,246,243,0) 60%),linear-gradient(180deg,#FFFFFF,#F6FBFA);}
+  .hero .inner{display:grid;grid-template-columns:1.05fr .95fr;gap:50px;align-items:center;padding:88px 0 96px;}
+  @media(max-width:920px){.hero .inner{grid-template-columns:1fr;gap:44px;padding:64px 0 72px;}}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--teal-d);background:#E1F4F0;border:1px solid #BCE6DE;padding:6px 13px;border-radius:30px;}
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 3px rgba(14,147,132,.18);}
+  h1{font-size:54px;line-height:1.05;font-weight:700;letter-spacing:-.03em;margin:20px 0 0;text-wrap:balance;}
+  h1 .hl{background:linear-gradient(120deg,#0E9384,#4F46E5);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .lead{font-size:17.5px;color:var(--ink2);margin:20px 0 0;max-width:46ch;line-height:1.6;}
+  .cta-row{display:flex;gap:13px;margin-top:30px;flex-wrap:wrap;}
+  .hero-meta{display:flex;gap:26px;margin-top:34px;flex-wrap:wrap;}
+  .hero-meta .m .n{font-size:26px;font-weight:700;letter-spacing:-.02em;}
+  .hero-meta .m .l{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  @media(max-width:520px){h1{font-size:40px;}}
+
+  /* hero visual — stylised dashboard */
+  .shot{position:relative;animation:up .8s .1s both;}
+  .shot .win{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 70px rgba(16,24,40,.16);overflow:hidden;}
+  .shot .bar{display:flex;align-items:center;gap:7px;padding:12px 15px;border-bottom:1px solid var(--line);background:#FCFDFE;}
+  .shot .bar i{width:10px;height:10px;border-radius:50%;display:block;}
+  .shot .body{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .shot .kpi{border:1px solid var(--line);border-radius:11px;padding:12px 13px;}
+  .shot .kpi .l{font-size:10.5px;color:var(--muted);}
+  .shot .kpi .v{font-size:20px;font-weight:700;margin-top:3px;letter-spacing:-.02em;}
+  .shot .chart{grid-column:1/-1;border:1px solid var(--line);border-radius:11px;padding:14px;}
+  .shot .chart .t{font-size:11.5px;font-weight:600;color:var(--ink2);margin-bottom:12px;}
+  .shot .bars{display:flex;align-items:flex-end;gap:10px;height:90px;}
+  .shot .bars span{flex:1;border-radius:5px 5px 0 0;transform-origin:bottom;animation:grow .9s both;}
+  .badge-float{position:absolute;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(16,24,40,.12);padding:11px 14px;display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;animation:floaty 4s ease-in-out infinite;}
+  .badge-float .ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;}
+  .bf1{top:-22px;left:-26px;}
+  .bf2{bottom:-20px;right:-22px;animation-delay:1.2s;}
+  @media(max-width:920px){.bf1{left:6px;}.bf2{right:6px;}}
+
+  /* trust */
+  .trust{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#FBFCFD;}
+  .trust .inner{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:22px 0;flex-wrap:wrap;}
+  .trust .lbl{font-size:12.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
+  .trust .chips{display:flex;gap:30px;flex-wrap:wrap;}
+  .trust .chip{font-size:14px;font-weight:600;color:var(--ink2);display:flex;align-items:center;gap:8px;}
+
+  /* sections */
+  section{padding:88px 0;}
+  .sec-head{text-align:center;max-width:640px;margin:0 auto 52px;}
+  .sec-head .kick{font-size:13px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.08em;}
+  .sec-head h2{font-size:38px;font-weight:700;letter-spacing:-.025em;margin:10px 0 0;text-wrap:balance;}
+  .sec-head p{font-size:16px;color:var(--ink2);margin:14px 0 0;}
+
+  .feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;}
+  @media(max-width:900px){.feat-grid{grid-template-columns:1fr;}}
+  .feat{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;transition:transform .25s,box-shadow .25s,border-color .25s;}
+  .feat:hover{transform:translateY(-4px);box-shadow:0 16px 40px rgba(16,24,40,.08);border-color:#CFE9E3;}
+  .feat .ic{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;}
+  .feat h3{font-size:18px;font-weight:700;letter-spacing:-.01em;}
+  .feat p{font-size:14px;color:var(--ink2);margin-top:8px;line-height:1.6;}
+
+  /* modules */
+  .modules{background:linear-gradient(180deg,#F6FBFA,#fff);}
+  .mod-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+  @media(max-width:900px){.mod-grid{grid-template-columns:repeat(2,1fr);}}
+  .mod{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px;transition:transform .2s,box-shadow .2s;}
+  .mod:hover{transform:translateY(-3px);box-shadow:0 10px 26px rgba(16,24,40,.07);}
+  .mod .t{flex:none;width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;}
+  .mod .nm{font-size:14px;font-weight:600;}
+  .mod .ds{font-size:11.5px;color:var(--muted);margin-top:1px;}
+
+  /* steps */
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;counter-reset:s;}
+  @media(max-width:820px){.steps{grid-template-columns:1fr;}}
+  .step{position:relative;padding:28px;border:1px solid var(--line);border-radius:16px;background:#fff;}
+  .step::before{counter-increment:s;content:counter(s);position:absolute;top:-16px;left:24px;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;box-shadow:0 4px 12px rgba(11,110,99,.3);}
+  .step h3{font-size:18px;font-weight:700;margin-top:10px;}
+  .step p{font-size:14px;color:var(--ink2);margin-top:8px;line-height:1.6;}
+
+  /* pricing */
+  .pricing{background:#0B1220;color:#fff;}
+  .pricing .sec-head h2{color:#fff;}
+  .pricing .sec-head p{color:#9AA4B2;}
+  .price-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch;}
+  @media(max-width:900px){.price-grid{grid-template-columns:1fr;max-width:420px;margin:0 auto;}}
+  .plan{background:#121A2B;border:1px solid #20293C;border-radius:18px;padding:28px;display:flex;flex-direction:column;}
+  .plan.feat-plan{background:linear-gradient(180deg,#103A36,#0B2623);border-color:#1C5A52;position:relative;}
+  .plan .tag{position:absolute;top:18px;right:18px;font-size:11px;font-weight:700;color:#0B1220;background:#34D7C2;padding:4px 10px;border-radius:20px;}
+  .plan .pn{font-size:15px;font-weight:700;}
+  .plan .pp{font-size:38px;font-weight:700;letter-spacing:-.02em;margin:14px 0 2px;}
+  .plan .pp small{font-size:14px;font-weight:500;color:#9AA4B2;}
+  .plan .pd{font-size:13px;color:#9AA4B2;}
+  .plan ul{list-style:none;margin:20px 0;display:flex;flex-direction:column;gap:11px;flex:1;}
+  .plan li{font-size:13.5px;color:#CBD3DF;display:flex;align-items:flex-start;gap:9px;}
+  .plan li svg{flex:none;margin-top:1px;}
+  .plan .btn{justify-content:center;width:100%;}
+  .plan.feat-plan .btn.ghost{background:rgba(255,255,255,.06);color:#fff;border-color:rgba(255,255,255,.18);}
+
+  /* CTA */
+  .cta{background:linear-gradient(135deg,#0E9384,#0B6E63);color:#fff;border-radius:24px;padding:56px;text-align:center;position:relative;overflow:hidden;margin:0 24px;}
+  .cta::after{content:"";position:absolute;width:300px;height:300px;border-radius:50%;background:rgba(255,255,255,.08);top:-120px;right:-80px;}
+  .cta h2{font-size:34px;font-weight:700;letter-spacing:-.02em;position:relative;}
+  .cta p{font-size:16px;opacity:.9;margin:12px auto 0;max-width:48ch;position:relative;}
+  .cta .cta-row{justify-content:center;position:relative;}
+  .cta .btn.primary{background:#fff;color:var(--teal-d);}
+  .cta .btn.ghost{background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.25);}
+
+  footer{padding:48px 0 40px;border-top:1px solid var(--line);margin-top:80px;}
+  footer .inner{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+  footer .muted{font-size:13px;color:var(--muted);}
 </style>
 </head>
 <body>
-  <div class="hero"><div class="stack">
-    <div class="brand" style="justify-content:center;margin-bottom:6px;"><div class="logo indigo"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:16px;">Samaji</strong></div>
-    <p class="muted" style="text-align:center;font-size:13.5px;margin:0 0 18px;">Choose your portal.</p>
 
-    <a class="pick" href="admin/">
-      <span class="tile" style="background:#4F46E5;"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></span>
-      <div><div style="font-size:15px;font-weight:700;">Admin console</div><div class="muted" style="font-size:12.5px;margin-top:2px;">Providers — manage schools, packages &amp; flags</div></div>
-      <span class="arrow">→</span>
-    </a>
+<nav>
+  <div class="wrap inner">
+    <div class="logo"><span class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></span>Samaji</div>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#modules">Modules</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+    </div>
+    <div class="row" style="display:flex;gap:10px;align-items:center;">
+      <a href="school/" class="btn ghost">Sign in</a>
+      <a href="#cta" class="btn primary">Book a demo</a>
+    </div>
+  </div>
+</nav>
 
-    <a class="pick" href="school/">
-      <span class="tile" style="background:#0E9384;"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></span>
-      <div><div style="font-size:15px;font-weight:700;">School portal</div><div class="muted" style="font-size:12.5px;margin-top:2px;">Schools — your license-gated workspace</div></div>
-      <span class="arrow">→</span>
-    </a>
+<header class="hero">
+  <div class="wrap inner">
+    <div>
+      <span class="eyebrow"><span class="dot"></span>Built for Kenyan schools · CBC &amp; 8-4-4</span>
+      <h1>The complete <span class="hl">operating system</span> for your school</h1>
+      <p class="lead">Run admissions, fees, exams, attendance, payroll and communication from one secure platform. Issue professional receipts, track every shilling, and see your whole school at a glance.</p>
+      <div class="cta-row">
+        <a href="#cta" class="btn primary lg">Book a free demo</a>
+        <a href="school/" class="btn ghost lg">Sign in to your school →</a>
+      </div>
+      <div class="hero-meta">
+        <div class="m"><div class="n">14+</div><div class="l">Integrated modules</div></div>
+        <div class="m"><div class="n">M-Pesa</div><div class="l">Fee collection ready</div></div>
+        <div class="m"><div class="n">99.9%</div><div class="l">Uptime, daily backups</div></div>
+      </div>
+    </div>
+    <div class="shot">
+      <div class="badge-float bf1"><span class="ic" style="background:#E7F8EF;color:#067647;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Fees collected</div>
+      <div class="badge-float bf2"><span class="ic" style="background:#EEF0FF;color:#4F46E5;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 19V9M10 19V4M16 19v-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>+18% this term</div>
+      <div class="win">
+        <div class="bar"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span class="mono" style="margin-left:10px;font-size:11px;color:#98A2B3;">samaji.app/school</span></div>
+        <div class="body">
+          <div class="kpi"><div class="l">TOTAL STUDENTS</div><div class="v">1,284</div></div>
+          <div class="kpi"><div class="l">FEES COLLECTED</div><div class="v" style="color:#067647;">KES 8.4M</div></div>
+          <div class="chart">
+            <div class="t">Enrollment by class</div>
+            <div class="bars">
+              <span style="height:50%;background:#0E9384;animation-delay:.1s;"></span>
+              <span style="height:72%;background:#4F46E5;animation-delay:.2s;"></span>
+              <span style="height:60%;background:#F59E0B;animation-delay:.3s;"></span>
+              <span style="height:88%;background:#0E9384;animation-delay:.4s;"></span>
+              <span style="height:46%;background:#6D28D9;animation-delay:.5s;"></span>
+              <span style="height:66%;background:#EC4899;animation-delay:.6s;"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
 
-    <p class="hint" style="text-align:center;">Powered by Pillartech Solutions</p>
-  </div></div>
+<div class="trust">
+  <div class="wrap inner">
+    <span class="lbl">Everything a modern school needs</span>
+    <div class="chips">
+      <span class="chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="#0E9384" stroke-width="1.8" stroke-linejoin="round"/></svg>Bank-grade security</span>
+      <span class="chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="#0E9384" stroke-width="1.8"/><circle cx="12" cy="12" r="2.4" stroke="#0E9384" stroke-width="1.8"/></svg>M-Pesa &amp; bank payments</span>
+      <span class="chip"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 19V9M10 19V4M16 19v-7" stroke="#0E9384" stroke-width="1.8" stroke-linecap="round"/></svg>Real-time reports</span>
+    </div>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kick">Why Samaji</div>
+      <h2>One platform, your whole school</h2>
+      <p>Stop juggling spreadsheets, paper receipts and disconnected tools. Samaji brings every part of school operations together.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat reveal"><div class="ic" style="background:#E7F8EF;color:#067647;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.4" stroke="currentColor" stroke-width="1.8"/></svg></div><h3>Fees &amp; receipts that add up</h3><p>Set fee structures per class, collect by cash, M-Pesa or bank, and print colourful professional receipts. Balances update instantly.</p></div>
+      <div class="feat reveal"><div class="ic" style="background:#EEF0FF;color:#4F46E5;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><h3>Complete student records</h3><p>Full biodata, class &amp; stream, boarding house, guardians and medical notes — pick a class at registration, no typing.</p></div>
+      <div class="feat reveal"><div class="ic" style="background:#F2ECFE;color:#6D28D9;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 19V9M10 19V4M16 19v-7M22 19H2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><h3>Insightful reports</h3><p>Live dashboards and charts for enrollment, collections and attendance — know exactly where your school stands.</p></div>
+      <div class="feat reveal"><div class="ic" style="background:#FFF4ED;color:#C2410C;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div><h3>Secure &amp; private</h3><p>Each school's data is isolated with row-level security. Daily backups and 99.9% uptime keep you running.</p></div>
+      <div class="feat reveal"><div class="ic" style="background:#E7F8EF;color:#067647;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H7l-3 3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></div><h3>Reach every parent</h3><p>Send announcements and SMS to parents, teachers or the whole school — keep your community informed.</p></div>
+      <div class="feat reveal"><div class="ic" style="background:#EEF0FF;color:#4F46E5;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 2v20M5 7l7-5 7 5M5 7v10l7 5 7-5V7" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></div><h3>Buy only what you need</h3><p>Start with a base package and add modules — Payroll, SMS, Library, Transport — as your school grows.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="modules" class="modules">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kick">14 modules</div>
+      <h2>Mix and match what you need</h2>
+      <p>Every module works together on one platform. Enable more anytime — no migration, no new logins.</p>
+    </div>
+    <div class="mod-grid">
+      <div class="mod"><span class="t" style="background:#E7F8EF;color:#067647;">S</span><div><div class="nm">Students / SIS</div><div class="ds">Enrollment &amp; biodata</div></div></div>
+      <div class="mod"><span class="t" style="background:#E7F8EF;color:#067647;">A</span><div><div class="nm">Attendance</div><div class="ds">Daily registers</div></div></div>
+      <div class="mod"><span class="t" style="background:#E7F8EF;color:#067647;">A</span><div><div class="nm">Academics</div><div class="ds">Gradebook</div></div></div>
+      <div class="mod"><span class="t" style="background:#E7F8EF;color:#067647;">C</span><div><div class="nm">Communications</div><div class="ds">Announcements</div></div></div>
+      <div class="mod"><span class="t" style="background:#EEF0FF;color:#4F46E5;">F</span><div><div class="nm">Fees &amp; Invoicing</div><div class="ds">Receipts &amp; balances</div></div></div>
+      <div class="mod"><span class="t" style="background:#EEF0FF;color:#4F46E5;">E</span><div><div class="nm">Exams</div><div class="ds">Assessments</div></div></div>
+      <div class="mod"><span class="t" style="background:#EEF0FF;color:#4F46E5;">T</span><div><div class="nm">Timetable</div><div class="ds">Class scheduling</div></div></div>
+      <div class="mod"><span class="t" style="background:#EEF0FF;color:#4F46E5;">L</span><div><div class="nm">Library</div><div class="ds">Catalogue &amp; loans</div></div></div>
+      <div class="mod"><span class="t" style="background:#EEF0FF;color:#4F46E5;">T</span><div><div class="nm">Transport</div><div class="ds">Routes &amp; fees</div></div></div>
+      <div class="mod"><span class="t" style="background:#F2ECFE;color:#6D28D9;">P</span><div><div class="nm">Payroll</div><div class="ds">Staff &amp; payslips</div></div></div>
+      <div class="mod"><span class="t" style="background:#F2ECFE;color:#6D28D9;">S</span><div><div class="nm">SMS Gateway</div><div class="ds">Bulk messaging</div></div></div>
+      <div class="mod"><span class="t" style="background:#F2ECFE;color:#6D28D9;">B</span><div><div class="nm">Biometric</div><div class="ds">Access control</div></div></div>
+      <div class="mod"><span class="t" style="background:#F2ECFE;color:#6D28D9;">A</span><div><div class="nm">Analytics Pro</div><div class="ds">Deep insights</div></div></div>
+      <div class="mod"><span class="t" style="background:#F2ECFE;color:#6D28D9;">A</span><div><div class="nm">API &amp; Webhooks</div><div class="ds">Integrations</div></div></div>
+      <div class="mod" style="border-style:dashed;align-items:center;justify-content:center;color:#98A2B3;font-size:13px;font-weight:600;">+ more coming</div>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kick">Get started</div>
+      <h2>Live in a single afternoon</h2>
+      <p>No servers to manage, no complex setup. Your school is running the same day.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal"><h3>Set up your school</h3><p>Load the Kenyan CBC classes in one click, add your streams, dormitories and fee structures.</p></div>
+      <div class="step reveal"><h3>Enrol your students</h3><p>Register students with full biodata and class placement, or import your existing roster.</p></div>
+      <div class="step reveal"><h3>Start collecting</h3><p>Record payments, print receipts, message parents and watch your reports update live.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" class="pricing">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="kick">Pricing</div>
+      <h2>Simple plans that grow with you</h2>
+      <p>Every school starts with a base package. Add advanced modules as add-ons whenever you're ready.</p>
+    </div>
+    <div class="price-grid">
+      <div class="plan reveal">
+        <div class="pn">Starter</div>
+        <div class="pp">$49<small>/mo</small></div>
+        <div class="pd">Up to 500 students</div>
+        <ul>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Students, Attendance, Academics</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Communications</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Email support</li>
+        </ul>
+        <a href="#cta" class="btn ghost">Get started</a>
+      </div>
+      <div class="plan feat-plan reveal">
+        <span class="tag">Most popular</span>
+        <div class="pn">Pro</div>
+        <div class="pp">$149<small>/mo</small></div>
+        <div class="pd">Up to 1,000 students</div>
+        <ul>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Everything in Starter</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Fees, Exams &amp; Timetable</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Reports &amp; priority support</li>
+        </ul>
+        <a href="#cta" class="btn primary">Book a demo</a>
+      </div>
+      <div class="plan reveal">
+        <div class="pn">Premium</div>
+        <div class="pp">$299<small>/mo</small></div>
+        <div class="pd">Up to 3,000 students</div>
+        <ul>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Everything in Pro</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Library &amp; Transport included</li>
+          <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#34D7C2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Add Payroll, SMS, Analytics</li>
+        </ul>
+        <a href="#cta" class="btn ghost">Talk to sales</a>
+      </div>
+    </div>
+    <p style="text-align:center;color:#9AA4B2;font-size:13px;margin-top:24px;">Need a custom package for a large institution? <a href="#cta" style="color:#34D7C2;font-weight:600;">Contact us</a>.</p>
+  </div>
+</section>
+
+<div id="cta">
+  <div class="wrap" style="padding:0;">
+    <div class="cta">
+      <h2>Ready to run your school the smart way?</h2>
+      <p>Book a free demo and we'll set up your school on Samaji — classes, fees and all — so you can see it working with your own data.</p>
+      <div class="cta-row">
+        <a href="mailto:pillartechsolutions@gmail.com?subject=Samaji%20Demo%20Request" class="btn primary lg">Book a free demo</a>
+        <a href="school/" class="btn ghost lg">Sign in</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap inner">
+    <div class="logo"><span class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></span>Samaji</div>
+    <div class="row" style="display:flex;gap:22px;">
+      <a href="#features" class="muted">Features</a>
+      <a href="#pricing" class="muted">Pricing</a>
+      <a href="admin/" class="muted">Provider console</a>
+      <a href="school/" class="muted">Sign in</a>
+    </div>
+    <div class="muted">© <span id="yr"></span> Pillartech Solutions. All rights reserved.</div>
+  </div>
+</footer>
+
+<script>
+  document.getElementById("yr").textContent=new Date().getFullYear();
+  // reveal on scroll
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.style.animationPlayState="running";io.unobserve(e.target);}});},{threshold:.12});
+  document.querySelectorAll(".reveal").forEach(function(el){el.style.animationPlayState="paused";io.observe(el);});
+</script>
 </body>
 </html>
