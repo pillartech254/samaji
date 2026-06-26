@@ -494,12 +494,41 @@
           +'<td>'+esc(classOf[s.class_id]||s.grade||"—")+'</td><td>'+esc(s.gender||"—")+'</td><td>'+boarding+'</td>'
           +'<td>'+esc(s.guardian_name||"—")+'<div class="muted" style="font-size:11px;">'+esc(s.guardian_phone||"")+'</div></td>'
           +'<td><span class="pill '+(s.status==="active"?"green":"gray")+'">'+esc(s.status)+'</span></td>'
-          +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-view="'+s.id+'">View</button> <button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
+          +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-view="'+s.id+'">View</button> <button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm" data-promo="'+s.id+'">Promote</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
       });
       t.innerHTML=html+'</tbody></table>';
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ form(all.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-view]").forEach(function(b){ b.onclick=function(){ view(all.find(function(x){return x.id===b.getAttribute("data-view");})); }; });
       t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this student and all related records?"))return; var r=await sb.from("students").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("students"); toast("Student deleted"); load(); }; });
+      t.querySelectorAll("[data-promo]").forEach(function(b){ b.onclick=function(){ var s=all.find(function(x){return x.id===b.getAttribute("data-promo");}); if(s) promoteStudent(s); }; });
+    }
+    function promoteStudent(s){
+      var curClass=classes.find(function(c){return c.id===s.class_id;});
+      var fromLabel=curClass?classLabel(curClass):(s.grade||"Unknown");
+      var toOpts=classes.filter(function(c){return c.id!==s.class_id;}).map(function(c){
+        return '<option value="'+c.id+'">'+esc(classLabel(c))+'</option>';
+      }).join("");
+      if(!toOpts){ toast("No other classes available to promote to."); return; }
+      var m=modal('<h3>Promote Student</h3>'
+        +'<p class="muted" style="font-size:12.5px;margin:0;">'+esc(s.first_name+' '+s.last_name)+' ('+esc(s.admission_no||'—')+')</p>'
+        +'<div class="grid2" style="margin-top:14px;">'
+        +'<div class="field"><label>From class</label><select id="pr-from" disabled><option>'+esc(fromLabel)+'</option></select></div>'
+        +'<div class="field"><label>To class</label><select id="pr-to">'+toOpts+'</select></div>'
+        +'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Promote</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#s").onclick=async function(){
+        var toId=m.q("#pr-to").value;
+        var toClass=classes.find(function(c){return c.id===toId;});
+        if(!toClass){ toast("Select a destination class."); return; }
+        if(!await window.SM_confirm("Promote "+s.first_name+" "+s.last_name+" from "+fromLabel+" to "+classLabel(toClass)+"?")) return;
+        var btn=m.q("#s"); btn.disabled=true; btn.textContent="Promoting…";
+        var r=await sb.from("students").update({class_id:toId, grade:toClass.level}).eq("id",s.id);
+        if(r.error){ toast("Error: "+r.error.message); btn.disabled=false; btn.textContent="Promote"; return; }
+        SamajiCache.invalidate("students");
+        m.close(); toast(s.first_name+" "+s.last_name+" promoted to "+classLabel(toClass));
+        load();
+      };
     }
     function view(s){
       var c=classOf[s.class_id]||s.grade||"—";
