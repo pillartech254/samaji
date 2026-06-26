@@ -52,8 +52,16 @@
 </head>
 <body>
 
+  <!-- BOOT SPLASH (prevents login flash on reload while session resolves) -->
+  <div id="boot" style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;">
+    <div style="display:flex;align-items:center;gap:11px;opacity:.7;">
+      <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#6366F1,#4F46E5);color:#fff;display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div>
+      <strong style="font-size:16px;color:#0E1424;">Samaji</strong>
+    </div>
+  </div>
+
   <!-- AUTH -->
-  <div id="auth">
+  <div id="auth" style="display:none;">
     <div class="login-brand">
       <span class="glow g1"></span><span class="glow g2"></span>
       <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
@@ -161,8 +169,10 @@
   };
 
   async function enterApp(){
-    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) return;
+    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
+    $("boot").style.display = "none";
     $("auth").style.display = "none"; $("app").style.display = "block"; $("who").textContent = user.email;
+    startIdleWatch();
 
     // diagnostic: show the role the DB resolves for this session
     var prof = await sb.from("profiles").select("role").eq("id", user.id).maybeSingle();
@@ -274,8 +284,44 @@
     await loadSchool(CUR.schoolId);
   }
 
-  $("signout").onclick = async function(){ await sb.auth.signOut(); $("app").style.display="none"; $("auth").style.display="flex"; $("submit").disabled=false; $("msg").className="msg"; };
-  (async function(){ if (sb) { var s = await sb.auth.getSession(); if (s.data.session) enterApp(); } })();
+  // ---- session / idle-timeout security ----
+  var IDLE_MINUTES = 30;
+  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
+  var ACT_KEY = "samaji_admin_last_active";
+  var idleTimer = null;
+  function markActive(){ try{ localStorage.setItem(ACT_KEY, String(Date.now())); }catch(e){} }
+  function lastActive(){ var v = 0; try{ v = parseInt(localStorage.getItem(ACT_KEY)||"0",10); }catch(e){} return v || 0; }
+  async function doSignOut(reason){
+    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+    try{ localStorage.removeItem(ACT_KEY); }catch(e){}
+    try{ await sb.auth.signOut(); }catch(e){}
+    $("app").style.display = "none"; $("auth").style.display = "flex";
+    $("submit").disabled = false; $("msg").className = "msg";
+    if (reason) showMsg(reason, false);
+  }
+  function startIdleWatch(){
+    markActive();
+    ["mousedown","keydown","scroll","touchstart","click","mousemove"].forEach(function(ev){ window.addEventListener(ev, markActive, { passive:true }); });
+    if (idleTimer) clearInterval(idleTimer);
+    idleTimer = setInterval(function(){
+      if (Date.now() - lastActive() > IDLE_MS) { doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity."); }
+    }, 15000);
+  }
+  function showLogin(){ $("boot").style.display = "none"; $("auth").style.display = "flex"; }
+
+  $("signout").onclick = function(){ doSignOut(); };
+  (async function(){
+    if (!sb) { showLogin(); return; }
+    var s = await sb.auth.getSession();
+    if (!s.data.session) { showLogin(); return; }
+    var la = lastActive();
+    if (la && (Date.now() - la > IDLE_MS)) {
+      try{ localStorage.removeItem(ACT_KEY); }catch(e){}
+      try{ await sb.auth.signOut(); }catch(e){}
+      showLogin(); showMsg("Your session expired. Please sign in again.", false); return;
+    }
+    await enterApp();
+  })();
 </script>
 </body>
 </html>

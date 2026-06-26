@@ -59,8 +59,16 @@
 </head>
 <body>
 
+  <!-- BOOT SPLASH (prevents login flash on reload while session resolves) -->
+  <div id="boot" style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;">
+    <div style="display:flex;align-items:center;gap:11px;opacity:.7;">
+      <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div>
+      <strong style="font-size:16px;color:#0E1424;">Samaji</strong>
+    </div>
+  </div>
+
   <!-- AUTH -->
-  <div id="auth">
+  <div id="auth" style="display:none;">
     <div class="login-brand">
       <span class="glow g1"></span><span class="glow g2"></span>
       <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
@@ -139,12 +147,14 @@
   };
 
   async function enterApp(){
-    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) return;
+    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
     var pr = await sb.from("profiles").select("role, school_id").eq("id", user.id).single();
     var prof = pr.data;
-    if (!prof || !prof.school_id) { showMsg("This account isn't linked to a school. Set profiles.school_id.", false); $("submit").disabled = false; return; }
+    if (!prof || !prof.school_id) { showMsg("This account isn't linked to a school. Set profiles.school_id.", false); $("submit").disabled = false; showLogin(); return; }
     SCHOOL = prof.school_id;
+    $("boot").style.display = "none";
     $("auth").style.display = "none"; $("app").style.display = "block";
+    startIdleWatch();
 
     var sc = await sb.from("schools").select("*").eq("id", SCHOOL).single();
     var school = sc.data;
@@ -157,6 +167,7 @@
 
     var r = await sb.rpc("resolve_flags", { p_school: SCHOOL });
     FLAGS = r.data || {};
+    if (window.SamajiCache) window.SamajiCache.preload(sb, SCHOOL); // warm cache for instant page switches
     buildNav();
     showDashboard();
   }
@@ -214,30 +225,38 @@
       + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:24px;"><h2 style="margin:0;font-size:15px;">Your modules</h2><span class="muted" style="font-size:12.5px;">'+granted.length+' enabled</span></div>'
       + '<div class="tiles" id="dash-tiles" style="margin-top:13px;"></div>';
 
-    function statCard(lbl,val,bg,ink,ic){ return '<div class="stat"><div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div></div>'; }
+    function statCard(lbl,val,bg,ink,ic,drill){ return '<div class="stat"'+(drill?' data-godrill="'+drill+'" style="cursor:pointer;"':'')+'><div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div>'+(drill?'<div class="drill-hint"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>':'')+'</div>'; }
     var icP='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" stroke="currentColor" stroke-width="1.6"/></svg>';
     var icCk='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M8 12l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     var icM='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>';
     var icB='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 9.5V14c0 1.5 1.8 2.5 4 2.5s4-1 4-2.5V9.5" stroke="currentColor" stroke-width="1.8"/></svg>';
 
-    // gather data
+    // gather data (cached → instant on repeat visits)
     var students=[], stats=[], C=window.SamajiCharts;
+    var cache=window.SamajiCache;
     if (FLAGS["module.students"]) {
-      var sr=await sb.from("students").select("*").eq("school_id", SCHOOL);
-      students=sr.data||[];
+      students = cache ? await cache.get(sb, SCHOOL, "students", "*") : ((await sb.from("students").select("*").eq("school_id", SCHOOL)).data||[]);
       var active=students.filter(function(s){return s.status!=="inactive";}).length;
       var boarders=students.filter(function(s){return s.residence==="Boarder";}).length;
-      stats.push(statCard("Total students",students.length,"#EEF0FF","#4F46E5",icP));
+      stats.push(statCard("Total students",students.length,"#EEF0FF","#4F46E5",icP,"students"));
       stats.push(statCard("Active",active,"#ECFDF3","#067647",icCk));
       stats.push(statCard("Boarders",boarders,"#F1ECFE","#6D28D9",icB));
     }
     if (FLAGS["module.finance"]) {
-      var pr=await sb.from("fee_payments").select("amount").eq("school_id", SCHOOL);
-      var collected=(pr.data||[]).reduce(function(a,p){return a+Number(p.amount);},0);
-      stats.push(statCard("Fees collected",("KES "+collected.toLocaleString()),"#FFF6ED","#C2410C",icM));
+      var pays = cache ? await cache.get(sb, SCHOOL, "fee_payments", "*") : ((await sb.from("fee_payments").select("*").eq("school_id", SCHOOL)).data||[]);
+      var collected=(pays||[]).reduce(function(a,p){return a+Number(p.amount);},0);
+      stats.push(statCard("Fees collected",("KES "+collected.toLocaleString()),"#FFF6ED","#C2410C",icM,"finance"));
     }
     if (!stats.length) stats.push('<div class="empty" style="grid-column:1/-1;">Enable Students or Fees to see live figures.</div>');
     $("dash-stats").innerHTML=stats.join("");
+    // KPI cards jump to the matching report drill-down
+    document.querySelectorAll('#dash-stats [data-godrill]').forEach(function(card){
+      card.onclick=function(){
+        var d=card.getAttribute("data-godrill");
+        if(d==="finance"){ showReports(); }
+        else { showReports(); }
+      };
+    });
 
     // charts
     var charts="";
@@ -249,11 +268,12 @@
       var byLevel={}; students.forEach(function(s){ var lv=s.grade||"Unassigned"; byLevel[lv]=(byLevel[lv]||0)+1; });
       var order=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
       var ld=Object.keys(byLevel).sort(function(a,b){var ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);}).map(function(k){return {label:k.replace("Grade ","G"),value:byLevel[k]};});
-      charts+='<div class="chartcard"><div class="ch-head"><h3>Enrollment by class</h3></div>'+(ld.length?C.bar(ld,{height:190}):'')+'</div>';
-      charts+='<div class="chartcard"><div class="ch-head"><h3>Gender split</h3></div><div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(gd,{center:"Students"})+'</div><div style="flex:1;">'+C.legend(gd)+'</div></div></div>';
+      charts+='<div class="chartcard" data-goreports="1" style="cursor:pointer;"><div class="ch-head"><h3>Enrollment by class</h3><span class="muted" style="font-size:11.5px;">View report →</span></div>'+(ld.length?C.bar(ld,{height:190}):'')+'</div>';
+      charts+='<div class="chartcard" data-goreports="1" style="cursor:pointer;"><div class="ch-head"><h3>Gender split</h3><span class="muted" style="font-size:11.5px;">View report →</span></div><div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(gd,{center:"Students"})+'</div><div style="flex:1;">'+C.legend(gd)+'</div></div></div>';
     }
     $("dash-charts").innerHTML=charts;
     if(!charts) $("dash-charts").style.display="none";
+    document.querySelectorAll('#dash-charts [data-goreports]').forEach(function(c){ c.onclick=function(){ showReports(); }; });
 
     var tiles = $("dash-tiles"); tiles.innerHTML = "";
     granted.forEach(function(k){
@@ -267,8 +287,61 @@
   $("nav-dashboard").onclick = showDashboard;
   $("nav-settings").onclick = showSettings;
   $("nav-reports").onclick = showReports;
-  $("signout").onclick = async function(){ await sb.auth.signOut(); $("app").style.display="none"; $("auth").style.display="flex"; $("submit").disabled=false; $("msg").className="msg"; };
-  (async function(){ if (sb) { var s = await sb.auth.getSession(); if (s.data.session) enterApp(); } })();
+  // ---- session / idle-timeout security ----
+  var IDLE_MINUTES = 30;                 // auto sign-out after this much inactivity
+  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
+  var ACT_KEY = "samaji_last_active";
+  var idleTimer = null;
+
+  function markActive(){ try{ localStorage.setItem(ACT_KEY, String(Date.now())); }catch(e){} }
+  function lastActive(){ var v = 0; try{ v = parseInt(localStorage.getItem(ACT_KEY)||"0",10); }catch(e){} return v || 0; }
+
+  async function doSignOut(reason){
+    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+    try{ localStorage.removeItem(ACT_KEY); }catch(e){}
+    if (window.SamajiCache) window.SamajiCache.clear();
+    try{ await sb.auth.signOut(); }catch(e){}
+    $("app").style.display = "none";
+    $("auth").style.display = "flex";
+    $("submit").disabled = false;
+    $("msg").className = "msg";
+    if (reason) showMsg(reason, false);
+  }
+
+  function startIdleWatch(){
+    markActive();
+    ["mousedown","keydown","scroll","touchstart","click","mousemove"].forEach(function(ev){
+      window.addEventListener(ev, markActive, { passive:true });
+    });
+    if (idleTimer) clearInterval(idleTimer);
+    idleTimer = setInterval(function(){
+      if (Date.now() - lastActive() > IDLE_MS) {
+        doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity.");
+      }
+    }, 15000); // check every 15s
+  }
+
+  function showLogin(){ $("boot").style.display = "none"; $("auth").style.display = "flex"; }
+
+  $("signout").onclick = function(){ doSignOut(); };
+
+  // Boot: decide login vs app once, AFTER checking the session is fresh.
+  (async function(){
+    if (!sb) { showLogin(); return; }
+    var s = await sb.auth.getSession();
+    if (!s.data.session) { showLogin(); return; }
+    // A session exists — but enforce idle expiry so a stale tab can't walk straight in.
+    var la = lastActive();
+    if (la && (Date.now() - la > IDLE_MS)) {
+      try{ localStorage.removeItem(ACT_KEY); }catch(e){}
+      try{ await sb.auth.signOut(); }catch(e){}
+      showLogin();
+      showMsg("Your session expired. Please sign in again.", false);
+      return;
+    }
+    await enterApp();   // valid, fresh session
+  })();
+
 </script>
 </body>
 </html>
