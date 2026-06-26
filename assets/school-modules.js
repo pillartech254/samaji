@@ -504,7 +504,25 @@
     grades.forEach(function(g){ var o=document.createElement("option"); o.value=g; o.textContent=g; csel.appendChild(o); });
     csel.value=current; csel.onchange=function(){ current=csel.value; load(); };
 
+    // Subjects + teachers assigned to this class in Settings (if any) feed
+    // the pickers below; classes that haven't set that up yet still get
+    // plain free-text fields exactly as before.
+    async function loadClassMeta(grade){
+      var cr=await sb.from("school_classes").select("id").eq("school_id",schoolId).eq("level",grade);
+      var classIds=(cr.data||[]).map(function(c){return c.id;});
+      if(!classIds.length) return {subjects:[], teacherByName:{}};
+      var csr=await sb.from("class_subjects").select("subject_id, subjects(name)").in("class_id",classIds);
+      var seen={}, subjects=[];
+      (csr.data||[]).forEach(function(x){ if(x.subjects && !seen[x.subject_id]){ seen[x.subject_id]=true; subjects.push({id:x.subject_id, name:x.subjects.name}); } });
+      subjects.sort(function(a,b){ return a.name<b.name?-1:(a.name>b.name?1:0); });
+      var ctr=await sb.from("class_subject_teachers").select("subject_id, teachers(name)").in("class_id",classIds);
+      var teacherById={}; (ctr.data||[]).forEach(function(x){ if(x.teachers) teacherById[x.subject_id]=x.teachers.name; });
+      var teacherByName={}; subjects.forEach(function(s){ if(teacherById[s.id]) teacherByName[s.name]=teacherById[s.id]; });
+      return {subjects:subjects, teacherByName:teacherByName};
+    }
+
     async function load(){
+      var meta=await loadClassMeta(current);
       var r=await sb.from("timetable_slots").select("*").eq("school_id",schoolId).eq("grade",current);
       var map={}; (r.data||[]).forEach(function(s){ map[s.day_of_week+"-"+s.period]={subject:s.subject,teacher:s.teacher||""}; });
       var html='<table class="data" style="min-width:680px;"><thead><tr><th style="width:64px;">Period</th>';
@@ -514,13 +532,29 @@
         html+='<tr><td style="font-weight:700;color:#1A1D26;">P'+p+'</td>';
         DAYS.forEach(function(d,di){
           var key=(di+1)+"-"+p, v=map[key]||{subject:"",teacher:""};
-          html+='<td style="padding:6px;"><input class="tt-cell score-input" style="width:100%;text-align:left;margin-bottom:4px;" data-d="'+(di+1)+'" data-p="'+p+'" data-k="subject" placeholder="Subject" value="'+esc(v.subject)+'">'
-            +'<input class="tt-cell" style="width:100%;text-align:left;border:1px solid #EEF0F2;border-radius:7px;padding:5px 7px;font-family:inherit;font-size:11.5px;color:#667085;outline:none;" data-d="'+(di+1)+'" data-p="'+p+'" data-k="teacher" placeholder="Teacher" value="'+esc(v.teacher)+'"></td>';
+          var subjCell;
+          if(meta.subjects.length){
+            var opts='<option value="">— free period —</option>'+meta.subjects.map(function(s){ return '<option value="'+esc(s.name)+'"'+(v.subject===s.name?" selected":"")+'>'+esc(s.name)+'</option>'; }).join("");
+            subjCell='<select class="tt-cell tt-subj" style="width:100%;margin-bottom:4px;font-family:inherit;font-size:12px;padding:5px 6px;border:1px solid #EEF0F2;border-radius:7px;" data-d="'+(di+1)+'" data-p="'+p+'" data-k="subject" data-prev="'+esc(v.subject)+'">'+opts+'</select>';
+          } else {
+            subjCell='<input class="tt-cell score-input" style="width:100%;text-align:left;margin-bottom:4px;" data-d="'+(di+1)+'" data-p="'+p+'" data-k="subject" placeholder="Subject" value="'+esc(v.subject)+'">';
+          }
+          var teacherVal=v.teacher||meta.teacherByName[v.subject]||"";
+          html+='<td style="padding:6px;">'+subjCell
+            +'<input class="tt-cell" style="width:100%;text-align:left;border:1px solid #EEF0F2;border-radius:7px;padding:5px 7px;font-family:inherit;font-size:11.5px;color:#667085;outline:none;" data-d="'+(di+1)+'" data-p="'+p+'" data-k="teacher" placeholder="Teacher" value="'+esc(teacherVal)+'"></td>';
         });
         html+='</tr>';
       });
       html+='</tbody></table>';
       document.getElementById("tt-grid").innerHTML=html;
+      // picking a subject auto-fills its assigned teacher (still editable, e.g. for a substitute)
+      document.querySelectorAll(".tt-subj").forEach(function(sel){
+        sel.onchange=function(){
+          var teacherInp=sel.closest("td").querySelector('[data-k="teacher"]');
+          if(!teacherInp.value || teacherInp.value===meta.teacherByName[sel.getAttribute("data-prev")]) teacherInp.value=meta.teacherByName[sel.value]||"";
+          sel.setAttribute("data-prev", sel.value);
+        };
+      });
     }
     document.getElementById("tt-load").onclick=load;
     document.getElementById("tt-save").onclick=async function(){

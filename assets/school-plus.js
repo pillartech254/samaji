@@ -171,11 +171,13 @@
     el.innerHTML='<div class="mod-head"><div><h2>School Settings</h2><p>Configure classes, streams, boarding and fee structures. Set these once — they power registration and billing.</p></div></div>'
       +'<div class="tabs" id="set-tabs">'
       +'<button data-t="classes" class="on">Classes &amp; Streams</button>'
+      +'<button data-t="subjects">Subjects</button>'
+      +'<button data-t="teachers">Teachers</button>'
       +'<button data-t="dorms">Dormitories</button>'
       +'<button data-t="fees">Fee Structures</button>'
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="classes") classes(); else if(tab==="dorms") dorms(); else fees(); }
+    function render(){ if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else fees(); }
 
     // ----- classes & streams -----
     async function classes(){
@@ -193,10 +195,11 @@
         list.forEach(function(c){
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(c.level)+'</td><td>'+(c.stream?esc(c.stream):'<span class="muted">—</span>')+'</td>'
             +'<td><span class="pill gray">'+esc(c.curriculum)+'</span></td><td>'+c.capacity+'</td><td>'+(counts[c.id]||0)+'</td>'
-            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+c.id+'">Edit</button> <button class="btn-sm danger" data-del="'+c.id+'">Delete</button></td></tr>';
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-csub="'+c.id+'">Subjects &amp; teachers</button> <button class="btn-sm" data-edit="'+c.id+'">Edit</button> <button class="btn-sm danger" data-del="'+c.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ classForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+        t.querySelectorAll("[data-csub]").forEach(function(b){ b.onclick=function(){ classSubjectsForm(list.find(function(x){return x.id===b.getAttribute("data-csub");})); }; });
         t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this class? Students keep their record but lose the link."))return; var r=await sb.from("school_classes").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("school_classes"); toast("Class deleted"); classes(); }; });
       }
       document.getElementById("add-class").onclick=function(){ classForm(null); };
@@ -224,6 +227,117 @@
         if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"That level + stream already exists.":r.error.message)); return; }
         SamajiCache.invalidate("school_classes");
         m.close(); toast("Saved"); classes();
+      };
+    }
+
+    // ----- subjects & teachers assigned to a class -----
+    async function classSubjectsForm(c){
+      var sr=await sb.from("subjects").select("*").eq("school_id",schoolId).order("name"); var allSubjects=sr.data||[];
+      if(!allSubjects.length){ toast("Add subjects first, in the Subjects tab."); return; }
+      var tr=await sb.from("teachers").select("*").eq("school_id",schoolId).order("name"); var allTeachers=tr.data||[];
+      var csr=await sb.from("class_subjects").select("subject_id").eq("class_id",c.id); var assignedIds=(csr.data||[]).map(function(x){return x.subject_id;});
+      var ctr=await sb.from("class_subject_teachers").select("*").eq("class_id",c.id); var teacherBySubj={}; (ctr.data||[]).forEach(function(x){ teacherBySubj[x.subject_id]=x.teacher_id; });
+      var teacherOpts=function(selected){ return '<option value="">— unassigned —</option>'+allTeachers.map(function(t){return '<option value="'+t.id+'"'+(selected===t.id?" selected":"")+'>'+esc(t.name)+'</option>';}).join(""); };
+      var rows=allSubjects.map(function(s){
+        var checked=assignedIds.indexOf(s.id)>=0;
+        return '<div class="cst-row" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-2);">'
+          +'<label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;font-size:13px;"><input type="checkbox" class="cst-chk" data-sid="'+s.id+'"'+(checked?" checked":"")+'> '+esc(s.name)+'</label>'
+          +'<select class="cst-teacher" data-sid="'+s.id+'" style="min-width:190px;"'+(checked?"":" disabled")+'>'+teacherOpts(teacherBySubj[s.id])+'</select>'
+          +'</div>';
+      }).join("");
+      var m=modal('<h3>Subjects &amp; teachers — '+esc(classLabel(c))+'</h3><p class="muted" style="font-size:12.5px;margin:0 0 6px;">Tick the subjects this class takes and assign who teaches each one. This feeds the Timetable.</p>'
+        +'<div style="max-height:380px;overflow:auto;">'+rows+'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+      m.q("#c").onclick=m.close;
+      m.qa(".cst-chk").forEach(function(chk){ chk.onchange=function(){ var sel=m.el.querySelector('.cst-teacher[data-sid="'+chk.getAttribute("data-sid")+'"]'); sel.disabled=!chk.checked; }; });
+      m.q("#s").onclick=async function(){
+        var checkedIds=[]; m.qa(".cst-chk").forEach(function(chk){ if(chk.checked) checkedIds.push(chk.getAttribute("data-sid")); });
+        var del=await sb.from("class_subjects").delete().eq("class_id",c.id);
+        if(del.error){ toast("Error: "+del.error.message); return; }
+        if(checkedIds.length){
+          var ins=await sb.from("class_subjects").insert(checkedIds.map(function(sid){ return { class_id:c.id, subject_id:sid }; }));
+          if(ins.error){ toast("Error: "+ins.error.message); return; }
+        }
+        var delT=await sb.from("class_subject_teachers").delete().eq("class_id",c.id);
+        if(delT.error){ toast("Error: "+delT.error.message); return; }
+        var teacherRows=[];
+        checkedIds.forEach(function(sid){ var sel=m.el.querySelector('.cst-teacher[data-sid="'+sid+'"]'); if(sel.value) teacherRows.push({ class_id:c.id, subject_id:sid, teacher_id:sel.value }); });
+        if(teacherRows.length){
+          var insT=await sb.from("class_subject_teachers").insert(teacherRows);
+          if(insT.error){ toast("Saved subjects, but teacher assignment failed: "+insT.error.message); m.close(); classes(); return; }
+        }
+        m.close(); toast("Saved"); classes();
+      };
+    }
+
+    // ----- subjects catalog -----
+    async function subjects(){
+      var body=document.getElementById("set-body");
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The subject catalog for this school — used when assigning subjects to a class.</span><button class="btn-primary" id="add-subject">+ Add subject</button></div><div id="subj-table"></div>';
+      var r=await sb.from("subjects").select("*").eq("school_id",schoolId).order("name");
+      var list=r.data||[], t=document.getElementById("subj-table");
+      if(!list.length){ t.innerHTML='<div class="empty">No subjects yet. Add one, e.g. Mathematics.</div>'; }
+      else {
+        var html='<table class="data"><thead><tr><th>Name</th><th>Code</th><th></th></tr></thead><tbody>';
+        list.forEach(function(s){
+          html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.code?esc(s.code):'<span class="muted">—</span>')+'</td>'
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
+        });
+        t.innerHTML=html+'</tbody></table>';
+        t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ subjectForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this subject? It will be removed from any classes it's assigned to."))return; var r=await sb.from("subjects").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); subjects(); }; });
+      }
+      document.getElementById("add-subject").onclick=function(){ subjectForm(null); };
+    }
+    function subjectForm(s){
+      s=s||{};
+      var m=modal('<h3>'+(s.id?"Edit subject":"Add subject")+'</h3><div class="grid2">'
+        +'<div class="field"><label>Name</label><input id="sj-name" value="'+esc(s.name||"")+'" placeholder="Mathematics"></div>'
+        +'<div class="field"><label>Code (optional)</label><input id="sj-code" value="'+esc(s.code||"")+'" placeholder="MATH"></div>'
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#sv").onclick=async function(){
+        var rec={ school_id:schoolId, name:m.q("#sj-name").value.trim(), code:m.q("#sj-code").value.trim()||null };
+        if(!rec.name){ toast("Name is required."); return; }
+        var r=s.id? await sb.from("subjects").update(rec).eq("id",s.id) : await sb.from("subjects").insert(rec);
+        if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"That subject already exists.":r.error.message)); return; }
+        m.close(); toast("Saved"); subjects();
+      };
+    }
+
+    // ----- teacher directory -----
+    async function teachersTab(){
+      var body=document.getElementById("set-body");
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Teaching staff directory — assign them to classes &amp; subjects from the Classes tab.</span><button class="btn-primary" id="add-teacher">+ Add teacher</button></div><div id="tch-table"></div>';
+      var r=await sb.from("teachers").select("*").eq("school_id",schoolId).order("name");
+      var list=r.data||[], t=document.getElementById("tch-table");
+      if(!list.length){ t.innerHTML='<div class="empty">No teachers yet. Add your teaching staff here.</div>'; }
+      else {
+        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody>';
+        list.forEach(function(s){
+          html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.email?esc(s.email):'<span class="muted">—</span>')+'</td><td>'+(s.phone?esc(s.phone):'<span class="muted">—</span>')+'</td>'
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
+        });
+        t.innerHTML=html+'</tbody></table>';
+        t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ teacherForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this teacher? They will be unassigned from any classes/subjects."))return; var r=await sb.from("teachers").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); teachersTab(); }; });
+      }
+      document.getElementById("add-teacher").onclick=function(){ teacherForm(null); };
+    }
+    function teacherForm(s){
+      s=s||{};
+      var m=modal('<h3>'+(s.id?"Edit teacher":"Add teacher")+'</h3><div class="grid2">'
+        +'<div class="field full"><label>Full name</label><input id="t-name" value="'+esc(s.name||"")+'" placeholder="Jane Wambui"></div>'
+        +'<div class="field"><label>Email</label><input id="t-email" value="'+esc(s.email||"")+'" placeholder="jane@school.ac.ke"></div>'
+        +'<div class="field"><label>Phone</label><input id="t-phone" value="'+esc(s.phone||"")+'" placeholder="07XX XXX XXX"></div>'
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#sv").onclick=async function(){
+        var rec={ school_id:schoolId, name:m.q("#t-name").value.trim(), email:m.q("#t-email").value.trim()||null, phone:m.q("#t-phone").value.trim()||null };
+        if(!rec.name){ toast("Name is required."); return; }
+        var r=s.id? await sb.from("teachers").update(rec).eq("id",s.id) : await sb.from("teachers").insert(rec);
+        if(r.error){ toast("Error: "+r.error.message); return; }
+        m.close(); toast("Saved"); teachersTab();
       };
     }
 
@@ -927,23 +1041,16 @@
         +kpi("paid","Fully paid",fullyPaid+" / "+students.length,"#F1ECFE","#6D28D9",icChart(),"Avg fee "+money(avgFee))
         +'</div>';
 
-      // Collected vs target — the Zeraki view
-      html+='<div class="chartcard" style="margin-top:18px;"><div class="ch-head"><div><h3>Fee collection by '+(groupSel.value==="stream"?"stream":"class")+' — collected vs target</h3><div class="sub">'+(term==="All terms"?"All terms":term)+' · '+rate+'% overall</div></div>'
-        +'<div class="legend" style="margin:0;"><div class="li"><span class="sw" style="background:#0E9384;"></span>Collected</div><div class="li"><span class="sw" style="background:#EAF0EE;"></span>Target</div></div></div>'
-        +(ctData.length?C.targetBars(ctData,{height:220}):'<div class="empty" style="border:none;">No fee structures set'+(term==="All terms"?"":" for "+term)+'. Add them in Settings → Fee Structures.</div>')+'</div>';
-
-      // Per-group table
-      if(ctData.length){
-        html+='<div class="chartcard" style="margin-top:16px;"><div class="ch-head"><h3>Collection breakdown by '+(groupSel.value==="stream"?"stream":"class")+'</h3><span class="sub">tap a row for students</span></div>'
-          +'<table class="data" style="box-shadow:none;border:none;"><thead><tr><th>'+(groupSel.value==="stream"?"Stream":"Class")+'</th><th>Students</th><th>Target</th><th>Collected</th><th>Outstanding</th><th style="width:150px;">Progress</th></tr></thead><tbody>';
-        ctKeys.forEach(function(k){
+      // Collected vs target — Zeraki-style progress bars, one row per group
+      html+='<div class="chartcard" style="margin-top:18px;"><div class="ch-head"><div><h3>Fee collection by '+(groupSel.value==="stream"?"stream":"class")+' — collected vs target</h3><div class="sub">'+(term==="All terms"?"All terms":term)+' · '+rate+'% overall · tap a row for students</div></div></div>'
+        +(ctKeys.length?'<div class="ct-list">'+ctKeys.map(function(k){
           var g=groups[k], t=g.target, c=g.collected||0, pct=t?Math.round(c/t*100):0, col=pct>=100?"#067647":pct>=60?"#0E9384":pct>=30?"#F59E0B":"#EF4444";
-          html+='<tr data-classrow="'+esc(k)+'" style="cursor:pointer;"><td style="font-weight:600;color:#1A1D26;">'+esc(g.key)+'</td><td>'+g.students+'</td><td>'+money(t)+'</td>'
-            +'<td style="color:#067647;font-weight:600;">'+money(c)+'</td><td style="color:#C2410C;">'+money(Math.max(0,t-c))+'</td>'
-            +'<td><div style="display:flex;align-items:center;gap:8px;"><div class="bar" style="flex:1;"><span style="width:'+Math.min(100,pct)+'%;background:'+col+';"></span></div><span class="mono" style="font-size:11px;color:'+col+';font-weight:600;">'+pct+'%</span></div></td></tr>';
-        });
-        html+='</tbody></table></div>';
-      }
+          return '<div class="ct-row" data-classrow="'+esc(k)+'">'
+            +'<div class="ct-top"><span class="ct-name">'+esc(g.key)+'</span><span class="ct-students">'+g.students+' student'+(g.students===1?"":"s")+'</span></div>'
+            +'<div class="ct-amt">'+money(c)+' <span class="of">out of</span> '+money(t)+' <span class="ct-pct" style="color:'+col+';">'+pct+'%</span></div>'
+            +'<div class="bar"><span style="width:'+Math.min(100,pct)+'%;background:'+col+';"></span></div>'
+            +'</div>';
+        }).join("")+'</div>':'<div class="empty" style="border:none;">No fee structures set'+(term==="All terms"?"":" for "+term)+'. Add them in Settings → Fee Structures.</div>')+'</div>';
 
       // charts row
       html+='<div class="cardrow c2" style="margin-top:16px;">'
