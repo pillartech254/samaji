@@ -718,7 +718,8 @@
       var payments=await cget(sb, schoolId, "fee_payments", "*");
       // billed per student = structure total for their level (sum across active terms)
       var totalByLevelTerm={}; structures.forEach(function(s){ totalByLevelTerm[s.level]= (totalByLevelTerm[s.level]||0) + (s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
-      var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+Number(p.amount); });
+      function tuitionOf(p){ return Number(p.amount)-(Number(p.transport_amount)||0); }
+      var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+tuitionOf(p); });
       el.innerHTML='<div class="mod-head"><div><h2>Fees &amp; Invoicing</h2><p>Collect fees against each class\u2019s structure and issue professional receipts.</p></div>'
         +'<button class="btn-primary" id="collect">+ Collect payment</button></div>'
         +'<div class="statgrid" id="fee-stats" style="grid-template-columns:repeat(4,1fr);"></div>'
@@ -753,7 +754,7 @@
           billedTotal+=billed; outstanding+=Math.max(0,billed-paid);
         });
         var scopedIds={}; scoped.forEach(function(s){ scopedIds[s.id]=true; });
-        collected=payments.reduce(function(a,p){ return scopedIds[p.student_id]?a+Number(p.amount):a; },0);
+        collected=payments.reduce(function(a,p){ return scopedIds[p.student_id]?a+tuitionOf(p):a; },0);
         document.getElementById("fee-stats").innerHTML=
           stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
           +stat("Collected",money(collected),"#ECFDF3","#067647",icCash())
@@ -812,7 +813,7 @@
         if(r.error){ toast("Error: "+r.error.message); return; }
         payments.splice(0,payments.length, ...payments.filter(function(x){return x.id!==p.id;}));
         SamajiCache.invalidate("fee_payments");
-        paidByStudent[p.student_id]=Math.max(0,(paidByStudent[p.student_id]||0)-Number(p.amount));
+        paidByStudent[p.student_id]=Math.max(0,(paidByStudent[p.student_id]||0)-tuitionOf(p));
         toast("Payment revoked.");
         refreshStats();
         tab==="ledger"?ledger():receipts();
@@ -877,7 +878,7 @@
               toast("Error: "+r.error.message); submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
             }
             SamajiCache.invalidate("fee_payments");
-            paidByStudent[sid]=(paidByStudent[sid]||0)+amt;
+            paidByStudent[sid]=(paidByStudent[sid]||0)+(amt-(includesBus?transportFare:0));
             m.close(); toast("Payment recorded — receipt "+receiptNo);
             showReceipt(r.data, students.find(function(s){return s.id===sid;}));
             init(); // refresh stats + ledger
@@ -1038,14 +1039,15 @@
       // billed per student = target for their level
       var billed=0;
       students.forEach(function(s){ billed+=targetByLevel[levelOf(s)]||0; });
-      // collected per student
-      var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+Number(p.amount); });
+      // collected per student (tuition only — transport fare is not part of fee structures)
+      function tuitionOf(p){ return Number(p.amount)-(Number(p.transport_amount)||0); }
+      var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+tuitionOf(p); });
       // groups: by level OR by stream (level+stream) depending on toggle
       var groups={}; // key -> {key, level, students, target, collected}
       students.forEach(function(s){ var key=keyOf(s), lv=levelOf(s), t=targetByLevel[lv]||0, paid=paidByStudent[s.id]||0;
         if(!groups[key]) groups[key]={key:key, level:lv, students:0, target:0, collected:0};
         groups[key].students++; groups[key].target+=t; groups[key].collected+=Math.min(paid, t||Infinity); });
-      var collected=payments.reduce(function(a,p){return a+Number(p.amount);},0);
+      var collected=payments.reduce(function(a,p){return a+tuitionOf(p);},0);
       // sum of per-student positive balances — one student's overpayment
       // must never offset another's unpaid balance.
       var outstanding=0; students.forEach(function(s){ var t=targetByLevel[levelOf(s)]||0, paid=paidByStudent[s.id]||0; outstanding+=Math.max(0,t-paid); });
