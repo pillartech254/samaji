@@ -1008,14 +1008,20 @@
       +'<div id="rep-body"><div class="statgrid">'+skel()+skel()+skel()+skel()+'</div></div>';
     function skel(){ return '<div class="stat"><div class="skel" style="height:64px;"></div></div>'; }
 
-    var allStudents=await cget(sb, schoolId, "students", "*");
-    var classes=await loadClasses(sb, schoolId);
-    var allPayments=await cget(sb, schoolId, "fee_payments", "*");
-    var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
-    var schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
-    var allBusFare={};
-    try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e){}
-    var lastReport=null; // populated by draw(), read by printReport()
+    var allStudents, classes, allPayments, structures, schoolInfo, allBusFare={};
+    try{
+      allStudents=await cget(sb, schoolId, "students", "*");
+      classes=await loadClasses(sb, schoolId);
+      allPayments=await cget(sb, schoolId, "fee_payments", "*");
+      structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
+      schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
+      try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e2){}
+    }catch(e){
+      document.getElementById("rep-body").innerHTML='<div class="empty">Failed to load report data: '+(e&&e.message?e.message:"unknown error")+'. Please refresh.</div>';
+      return;
+    }
+    if(!allStudents) allStudents=[]; if(!allPayments) allPayments=[]; if(!structures) structures=[]; if(!classes) classes=[];
+    var lastReport=null;
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
     var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
     var C=window.SamajiCharts;
@@ -1041,7 +1047,7 @@
     var levelOrder=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
     function lord(a,b){ var ia=levelOrder.indexOf(a),ib=levelOrder.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }
 
-    function draw(){
+    function draw(){ try{
       var term=termSel.value;
       var fromV=fromSel.value, toV=toSel.value;
       var classV=classSel.value;
@@ -1153,7 +1159,7 @@
           openDrill(g.key+" — fee status", list.length+" students · target "+money(t0)+" each", rows);
         };
       });
-    }
+    }catch(e){ document.getElementById("rep-body").innerHTML='<div class="empty">Report error: '+(e&&e.message?e.message:"unknown")+'</div>'; } }
 
     function emptyc(){ return '<div class="empty" style="padding:24px;">Not enough data yet.</div>'; }
 
