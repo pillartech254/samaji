@@ -619,14 +619,20 @@
         +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart())
         +'</div>'
         +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button></div>'
-        +'<div style="margin-top:14px;max-width:340px;"><input id="fee-search" type="search" placeholder="Search by name, admission no. or class…" style="width:100%;padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;"></div>'
+        +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'
+        +'<input id="fee-search" type="search" placeholder="Search by name, admission no. or class…" style="flex:1;max-width:340px;padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;">'
+        +'<select id="fee-class" style="padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;"><option value="">All classes</option>'
+        +Array.from(new Set(students.map(function(s){return s.grade;}).filter(Boolean))).sort().map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>';}).join("")
+        +'</select></div>'
         +'<div id="fee-body" style="margin-top:16px;"></div>';
       document.getElementById("collect").onclick=function(){ if(!students.length){toast("Enrol students first.");return;} collectForm(); };
-      var tab="ledger", query="";
+      var tab="ledger", query="", classFilter="";
       el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); tab==="ledger"?ledger():receipts(); }; });
       document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); tab==="ledger"?ledger():receipts(); };
+      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; tab==="ledger"?ledger():receipts(); };
 
       function matches(name, adm, cls){
+        if(classFilter && cls!==classFilter) return false;
         if(!query) return true;
         return (name||"").toLowerCase().indexOf(query)>=0 || (adm||"").toLowerCase().indexOf(query)>=0 || (cls||"").toLowerCase().indexOf(query)>=0;
       }
