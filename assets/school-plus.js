@@ -1008,19 +1008,26 @@
       +'<div id="rep-body"><div class="statgrid">'+skel()+skel()+skel()+skel()+'</div></div>';
     function skel(){ return '<div class="stat"><div class="skel" style="height:64px;"></div></div>'; }
 
-    var allStudents, classes, allPayments, structures, schoolInfo, allBusFare={};
+    var allStudents=[], classes=[], allPayments=[], structures=[], schoolInfo={name:schoolId}, allBusFare={};
+    var _d=document.getElementById("rep-body");
     try{
-      allStudents=await cget(sb, schoolId, "students", "*");
-      classes=await loadClasses(sb, schoolId);
-      allPayments=await cget(sb, schoolId, "fee_payments", "*");
-      structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
-      schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
-      try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e2){}
+    _d.innerHTML='<div class="empty">Loading students…</div>';
+    allStudents=await cget(sb, schoolId, "students", "*")||[];
+    _d.innerHTML='<div class="empty">Loading classes…</div>';
+    classes=await loadClasses(sb, schoolId)||[];
+    _d.innerHTML='<div class="empty">Loading payments…</div>';
+    allPayments=await cget(sb, schoolId, "fee_payments", "*")||[];
+    _d.innerHTML='<div class="empty">Loading structures…</div>';
+    structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)")||[];
+    _d.innerHTML='<div class="empty">Loading school info…</div>';
+    schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
+    _d.innerHTML='<div class="empty">Loading transport…</div>';
+    try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e2){}
+    _d.innerHTML='<div class="empty">Building report…</div>';
     }catch(e){
-      document.getElementById("rep-body").innerHTML='<div class="empty">Failed to load report data: '+(e&&e.message?e.message:"unknown error")+'. Please refresh.</div>';
+      _d.innerHTML='<div class="empty">Failed to load data: '+String(e&&e.message?e.message:e)+'</div>';
       return;
     }
-    if(!allStudents) allStudents=[]; if(!allPayments) allPayments=[]; if(!structures) structures=[]; if(!classes) classes=[];
     var lastReport=null;
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
     var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
@@ -1032,7 +1039,7 @@
     var classSel=document.getElementById("rep-class");
     var classLevels=Array.from(new Set(allStudents.map(function(s){return s.grade;}).filter(Boolean))).sort(lord);
     classSel.innerHTML='<option value="">All classes</option>'+classLevels.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>';}).join("");
-    if(!hasStreams){ groupSel.parentNode.style.display="none"; } // only offer stream view if streams exist
+    if(!hasStreams){ groupSel.parentNode.style.display="none"; }
     classSel.onchange=draw;
     termSel.onchange=draw;
     groupSel.onchange=draw;
