@@ -825,7 +825,7 @@
         if(!await window.SM_confirm("Revoke payment "+p.receipt_no+" of "+money(p.amount)+(stu?" for "+stu.first_name+" "+stu.last_name:"")+"? This cannot be undone.")) return;
         var r=await sb.from("fee_payments").delete().eq("id",p.id);
         if(r.error){ toast("Error: "+r.error.message); return; }
-        payments.splice(0,payments.length, ...payments.filter(function(x){return x.id!==p.id;}));
+        var kept=payments.filter(function(x){return x.id!==p.id;}); payments.length=0; kept.forEach(function(x){payments.push(x);});
         SamajiCache.invalidate("fee_payments");
         paidByStudent[p.student_id]=Math.max(0,(paidByStudent[p.student_id]||0)-tuitionOf(p));
         if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=Math.max(0,(busPaidByStudent[p.student_id]||0)-Number(p.transport_amount));
