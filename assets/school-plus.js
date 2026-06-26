@@ -717,9 +717,9 @@
       var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
       var payments=await cget(sb, schoolId, "fee_payments", "*");
       // transport assignments — what each student owes for bus
-      var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId);
-      var busFareByStudent={}; (taRes.data||[]).forEach(function(a){ if(a.transport_routes) busFareByStudent[a.student_id]=Number(a.transport_routes.fare)||0; });
-      var busPaidByStudent={}; payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
+      var busFareByStudent={}, busPaidByStudent={};
+      try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) busFareByStudent[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e){}
+      payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
       // billed per student = structure total for their level (sum across active terms)
       var totalByLevelTerm={}; structures.forEach(function(s){ totalByLevelTerm[s.level]= (totalByLevelTerm[s.level]||0) + (s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
       function tuitionOf(p){ return Number(p.amount)-(Number(p.transport_amount)||0); }
@@ -1013,8 +1013,8 @@
     var allPayments=await cget(sb, schoolId, "fee_payments", "*");
     var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
     var schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
-    var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId);
-    var allBusFare={}; (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; });
+    var allBusFare={};
+    try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e){}
     var lastReport=null; // populated by draw(), read by printReport()
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
     var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
