@@ -354,8 +354,10 @@
       +'<span class="muted" id="stu-count" style="font-size:12.5px;margin-left:auto;"></span></div><div id="stu-table"></div>';
     var classes=await loadClasses(sb, schoolId);
     var dr=await sb.from("dormitories").select("*").eq("school_id",schoolId).order("name"); var dorms=dr.data||[];
+    var rr=await sb.from("transport_routes").select("*").eq("school_id",schoolId).order("name"); var routes=rr.data||[];
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=classLabel(c); });
     var dormOf={}; dorms.forEach(function(d){ dormOf[d.id]=d.name; });
+    var routeOf={}; routes.forEach(function(r){ routeOf[r.id]=r.name; });
     var cf=document.getElementById("stu-class-filter"); classes.forEach(function(c){ cf.innerHTML+='<option value="'+c.id+'">'+esc(classLabel(c))+'</option>'; });
     var all=[];
     async function load(){
@@ -387,27 +389,38 @@
     }
     function view(s){
       var c=classOf[s.class_id]||s.grade||"—";
-      function row(k,v){ return '<div><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;">'+k+'</div><div style="font-weight:600;font-size:13.5px;margin-top:2px;">'+esc(v||"—")+'</div></div>'; }
-      modal('<h3>'+esc(s.first_name+" "+s.last_name)+'</h3><p class="muted" style="font-size:12.5px;margin:0;">'+esc(s.admission_no||"")+' · '+esc(c)+'</p>'
+      function row(k,v,attr){ return '<div><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;">'+k+'</div><div style="font-weight:600;font-size:13.5px;margin-top:2px;"'+(attr||"")+'>'+esc(v||"—")+'</div></div>'; }
+      var modalEl=modal('<h3>'+esc(s.first_name+" "+s.last_name)+'</h3><p class="muted" style="font-size:12.5px;margin:0;">'+esc(s.admission_no||"")+' · '+esc(c)+'</p>'
         +'<div class="modal-body"><div class="grid3" style="margin-top:16px;gap:14px;">'
         +row("Gender",s.gender)+row("Date of birth",s.date_of_birth)+row("Admitted",s.admission_date)
         +row("Boarding",s.residence)+row("Dormitory",dormOf[s.dormitory_id])+row("Blood group",s.blood_group)
         +row("County",s.county)+row("Nationality",s.nationality)+row("Religion",s.religion)
+        +'<div style="grid-column:1/-1;" class="section-h">Transport</div>'
+        +row("Bus route","Loading…",' id="v-bus-route"')+'<div></div><div></div>'
         +'<div style="grid-column:1/-1;" class="section-h">Guardian</div>'
         +row("Name",s.guardian_name)+row("Relationship",s.guardian_relation)+row("Phone",s.guardian_phone)
         +row("Email",s.guardian_email)+'<div></div><div></div>'
         +'<div style="grid-column:1/-1;">'+row("Medical notes",s.medical_notes)+'</div>'
-        +'</div></div><div class="modal-actions"><button class="btn-primary" id="ok">Close</button></div>',true).q("#ok").onclick=function(){ document.querySelector(".overlay").remove(); };
+        +'</div></div><div class="modal-actions"><button class="btn-primary" id="ok">Close</button></div>',true);
+      modalEl.q("#ok").onclick=function(){ document.querySelector(".overlay").remove(); };
+      sb.from("transport_assignments").select("*, transport_routes(name,fare)").eq("student_id",s.id).maybeSingle().then(function(tr){
+        var el=modalEl.q("#v-bus-route"); if(!el) return;
+        var a=tr.data;
+        el.textContent = (a && a.transport_routes) ? (a.transport_routes.name+" ("+money(a.transport_routes.fare)+")") : "Not assigned";
+      });
     }
     function nextAdm(){
       var nums=all.map(function(s){ var m=/(\d+)$/.exec(s.admission_no||""); return m?parseInt(m[1]):0; });
       var max=nums.length?Math.max.apply(null,nums):0; return "ADM-"+String(max+1).padStart(4,"0");
     }
-    function form(s){
+    async function form(s){
       s=s||{};
+      var existingRouteId=null;
+      if(s.id){ var ta=await sb.from("transport_assignments").select("route_id").eq("student_id",s.id).maybeSingle(); existingRouteId=ta.data?ta.data.route_id:null; }
       var classOpts='<option value="">— select class —</option>'+classes.map(function(c){ return '<option value="'+c.id+'"'+(s.class_id===c.id?" selected":"")+'>'+esc(classLabel(c))+'</option>'; }).join("");
       var dormOpts='<option value="">— none —</option>'+dorms.map(function(d){ return '<option value="'+d.id+'"'+(s.dormitory_id===d.id?" selected":"")+'>'+esc(d.name)+' ('+esc(d.gender)+')</option>'; }).join("");
       var countyOpts='<option value="">—</option>'+COUNTIES.map(function(c){ return '<option'+(s.county===c?" selected":"")+'>'+esc(c)+'</option>'; }).join("");
+      var routeOpts='<option value="">— select route —</option>'+routes.map(function(r){ return '<option value="'+r.id+'"'+(existingRouteId===r.id?" selected":"")+'>'+esc(r.name)+' ('+money(r.fare)+')</option>'; }).join("");
       var m=modal('<h3>'+(s.id?"Edit student":"New student")+'</h3><p class="muted" style="font-size:12.5px;margin:0;">Full enrollment record.</p>'
         +'<div class="modal-body"><div class="grid3">'
         +'<div class="section-h">Identity</div>'
@@ -422,6 +435,9 @@
         +'<div class="field"><label>Boarding</label><select id="f-res"><option'+(s.residence!=="Boarder"?" selected":"")+'>Day</option><option'+(s.residence==="Boarder"?" selected":"")+'>Boarder</option></select></div>'
         +'<div class="field"><label>Dormitory</label><select id="f-dorm">'+dormOpts+'</select></div>'
         +'<div class="field"><label>Status</label><select id="f-status"><option'+(s.status!=="inactive"?" selected":"")+'>active</option><option'+(s.status==="inactive"?" selected":"")+'>inactive</option></select></div>'
+        +'<div class="section-h">Transport</div>'
+        +'<div class="field"><label>Uses school bus?</label><select id="f-bus"><option value="no"'+(!existingRouteId?" selected":"")+'>No</option><option value="yes"'+(existingRouteId?" selected":"")+'>Yes</option></select></div>'
+        +'<div class="field" style="grid-column:span 2;"><label>Route</label><select id="f-route"'+(!existingRouteId?" disabled":"")+'>'+routeOpts+'</select></div>'
         +'<div class="section-h">Background</div>'
         +'<div class="field"><label>County</label><select id="f-county">'+countyOpts+'</select></div>'
         +'<div class="field"><label>Nationality</label><input id="f-nat" value="'+esc(s.nationality||"Kenyan")+'"></div>'
@@ -436,9 +452,12 @@
         +'</div></div><div class="modal-actions"><button class="btn-sm" id="cancel">Cancel</button><button class="btn-primary" id="save">Save student</button></div>',true);
       // auto-select grade text from class for legacy 'grade' column
       m.q("#cancel").onclick=m.close;
+      m.q("#f-bus").onchange=function(){ m.q("#f-route").disabled=(m.q("#f-bus").value!=="yes"); };
       m.q("#save").onclick=async function(){
         var clsId=m.q("#f-class").value||null;
         var cls=classes.find(function(c){return c.id===clsId;});
+        var usesBus=m.q("#f-bus").value==="yes", routeId=m.q("#f-route").value||null;
+        if(usesBus && !routeId){ toast("Select a bus route, or set transport to No."); return; }
         var rec={ school_id:schoolId, first_name:m.q("#f-first").value.trim(), last_name:m.q("#f-last").value.trim(),
           admission_no:m.q("#f-adm").value.trim()||null, gender:m.q("#f-gender").value||null,
           date_of_birth:m.q("#f-dob").value||null, admission_date:m.q("#f-admdate").value||null,
@@ -450,8 +469,14 @@
           guardian_relation:m.q("#f-grel").value||null, guardian_phone:m.q("#f-gphone").value.trim()||null,
           guardian_email:m.q("#f-gemail").value.trim()||null };
         if(!rec.first_name||!rec.last_name){ toast("First and last name are required."); return; }
-        var r=s.id? await sb.from("students").update(rec).eq("id",s.id) : await sb.from("students").insert(rec);
+        var r=s.id? await sb.from("students").update(rec).eq("id",s.id).select().single() : await sb.from("students").insert(rec).select().single();
         if(r.error){ toast("Error: "+r.error.message); return; }
+        var studentId=r.data.id;
+        var tr= usesBus
+          ? await sb.from("transport_assignments").upsert({ school_id:schoolId, student_id:studentId, route_id:routeId },{ onConflict:"student_id" })
+          : await sb.from("transport_assignments").delete().eq("student_id",studentId);
+        if(tr.error){ toast("Saved student, but transport assignment failed: "+tr.error.message); }
+        SamajiCache.invalidate("transport_assignments");
         SamajiCache.invalidate("students");
         m.close(); toast(s.id?"Student updated":"Student enrolled"); load();
       };
@@ -611,10 +636,11 @@
             +'<td>'+esc(s.grade||"—")+'</td><td>'+money(billed)+'</td><td style="color:#067647;font-weight:600;">'+money(paid)+'</td>'
             +'<td style="font-weight:700;color:'+(bal>0?"#C2410C":"#067647")+';">'+money(Math.max(0,bal))+'</td>'
             +'<td><span class="pill '+st+'">'+lbl+'</span></td>'
-            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-primary" style="padding:6px 12px;font-size:12px;" data-pay="'+s.id+'">Collect</button></td></tr>';
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-stmt="'+s.id+'">Statement</button> <button class="btn-primary" style="padding:6px 12px;font-size:12px;" data-pay="'+s.id+'">Collect</button></td></tr>';
         });
         body.innerHTML=html+'</tbody></table>';
         body.querySelectorAll("[data-pay]").forEach(function(b){ b.onclick=function(){ collectForm(b.getAttribute("data-pay")); }; });
+        body.querySelectorAll("[data-stmt]").forEach(function(b){ b.onclick=function(){ showStatement(b.getAttribute("data-stmt")); }; });
       }
       async function receipts(){
         var body=document.getElementById("fee-body");
@@ -742,6 +768,50 @@
         });
       });
     }
+    // Full per-student fee statement — running ledger, not just a single
+    // receipt. The thing a parent or auditor asks for: every payment to
+    // date, the balance after each, and a clear current total.
+    async function showStatement(studentId){
+      var sr=await sb.from("students").select("*").eq("id",studentId).single();
+      var stu=sr.data; if(!stu){ toast("Student not found."); return; }
+      var pr=await sb.from("fee_payments").select("*").eq("school_id",schoolId).eq("student_id",studentId).order("paid_at",{ascending:true});
+      var payments=pr.data||[];
+      var fr=await sb.from("fee_structures").select("level, term, year, fee_items(amount)").eq("school_id",schoolId).eq("level",stu.grade||"");
+      var billed=(fr.data||[]).reduce(function(a,s){return a+(s.fee_items||[]).reduce(function(x,i){return x+Number(i.amount);},0);},0);
+      var running=0;
+      var rows=payments.map(function(p){
+        running+=Number(p.amount);
+        return '<tr><td>'+new Date(p.paid_at).toLocaleDateString()+'</td><td>'+esc(p.receipt_no)+'</td><td>'+esc(p.term)+' '+p.year+'</td><td>'+esc(p.method)+(p.includes_transport?' + bus':'')+'</td><td class="num">'+money(p.amount)+'</td><td class="num">'+money(Math.max(0,billed-running))+'</td></tr>';
+      }).join("") || '<tr><td colspan="6" style="text-align:center;color:#888;">No payments recorded yet.</td></tr>';
+      var paid=payments.reduce(function(a,p){return a+Number(p.amount);},0), bal=Math.max(0,billed-paid);
+
+      var body='<div class="st-head">'
+        +'<div class="st-school"><div class="st-logo">'+esc((school.name||"S").charAt(0))+'</div><div><div class="st-name">'+esc(school.name||"School")+'</div><div class="st-addr">Official Fee Statement</div></div></div>'
+        +'<div class="st-doc">FEE STATEMENT</div></div>'
+        +'<table class="st-meta"><tr>'
+        +'<td><span class="k">Student</span><span class="v">'+esc(stu.first_name+" "+stu.last_name)+'</span></td>'
+        +'<td><span class="k">Adm No</span><span class="v">'+esc(stu.admission_no||"—")+'</span></td>'
+        +'<td><span class="k">Class</span><span class="v">'+esc(stu.grade||"—")+'</span></td>'
+        +'<td><span class="k">Generated</span><span class="v">'+esc(new Date().toLocaleDateString())+'</span></td>'
+        +'</tr></table>'
+        +'<table class="st-summary"><tr>'
+        +'<td><span class="k">Total billed</span><span class="v">'+money(billed)+'</span></td>'
+        +'<td><span class="k">Total paid</span><span class="v" style="color:#067647;">'+money(paid)+'</span></td>'
+        +'<td><span class="k">Balance due</span><span class="v" style="color:'+(bal>0?"#C2410C":"#067647")+';">'+money(bal)+'</span></td>'
+        +'</tr></table>'
+        +'<h4>Payment history</h4>'
+        +'<table class="st-table"><thead><tr><th>Date</th><th>Receipt</th><th>Term</th><th>Method</th><th class="num">Amount</th><th class="num">Balance after</th></tr></thead><tbody>'+rows+'</tbody></table>'
+        +'<div class="st-foot">Computer-generated statement · Samaji School Management · '+new Date().toLocaleDateString()+'</div>';
+
+      var ov=document.createElement("div"); ov.className="overlay";
+      ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
+        +'<div id="print-area" class="statement">'+body+'</div>'
+        +'<div style="display:flex;gap:10px;"><button class="btn-sm" id="st-close">Close</button><button class="btn-primary" id="st-print">🖨 Print / Save as PDF</button></div></div>';
+      ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+      document.body.appendChild(ov);
+      ov.querySelector("#st-close").onclick=function(){ ov.remove(); };
+      ov.querySelector("#st-print").onclick=function(){ window.print(); };
+    }
     function stat(lbl,val,bg,ink,ic){ return '<div class="stat"><div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div></div>'; }
     init();
   }
@@ -764,6 +834,8 @@
     var classes=await loadClasses(sb, schoolId);
     var allPayments=await cget(sb, schoolId, "fee_payments", "*");
     var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
+    var schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
+    var lastReport=null; // populated by draw(), read by printReport()
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
     var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
     var C=window.SamajiCharts;
@@ -868,6 +940,10 @@
 
       document.getElementById("rep-body").innerHTML=html;
 
+      lastReport={ term:term, fromV:fromV, toV:toV, groupBy:groupSel.value, students:students.length, boarders:boarders, day:day,
+        billed:billed, collected:collected, outstanding:outstanding, rate:rate, fullyPaid:fullyPaid, avgFee:avgFee,
+        ctKeys:ctKeys, groups:groups, methodData:methodData };
+
       // wire drill-downs
       document.querySelectorAll("#rep-body [data-drill]").forEach(function(card){
         card.onclick=function(){ drill(card.getAttribute("data-drill"), {students:students, levelOf:levelOf, paidByStudent:paidByStudent, targetByLevel:targetByLevel, byLevel:byLevel, levelKeys:levelKeys, payments:payments}); };
@@ -887,15 +963,56 @@
     }
 
     function emptyc(){ return '<div class="empty" style="padding:24px;">Not enough data yet.</div>'; }
+
+    // A clean, document-style statement for printing/PDF — tables and
+    // numbers only, no charts. Charts are for the screen; a report you
+    // hand to a board or auditor should read like a financial statement.
     function printReport(){
-      var range=(fromSel.value||toSel.value)?((fromSel.value||"…")+" to "+(toSel.value||"…")):"All dates";
+      if(!lastReport){ toast("Report still loading — try again in a moment."); return; }
+      var r=lastReport;
+      var range=(r.fromV||r.toV)?((r.fromV||"start")+" → "+(r.toV||"today")):"All dates";
+      var groupLabel=r.groupBy==="stream"?"Stream":"Class";
+      var rows=r.ctKeys.map(function(k){
+        var g=r.groups[k], t=g.target, c=g.collected||0, pct=t?Math.round(c/t*100):0;
+        return '<tr><td>'+esc(g.key)+'</td><td class="num">'+g.students+'</td><td class="num">'+money(t)+'</td>'
+          +'<td class="num">'+money(c)+'</td><td class="num">'+money(Math.max(0,t-c))+'</td><td class="num">'+pct+'%</td></tr>';
+      }).join("") || '<tr><td colspan="6" style="text-align:center;color:#888;">No fee structures set for this selection.</td></tr>';
+      var methodRows=r.methodData.length? r.methodData.map(function(d){
+        var pct=r.collected?Math.round(d.value/r.collected*100):0;
+        return '<tr><td>'+esc(d.label)+'</td><td class="num">'+money(d.value)+'</td><td class="num">'+pct+'%</td></tr>';
+      }).join("") : '<tr><td colspan="3" style="text-align:center;color:#888;">No payments recorded.</td></tr>';
+      var body='<div class="st-head">'
+        +'<div class="st-school"><div class="st-logo">'+esc((schoolInfo.name||"S").charAt(0))+'</div><div><div class="st-name">'+esc(schoolInfo.name||"School")+'</div><div class="st-addr">'+esc(schoolInfo.address||"")+(schoolInfo.phone?' · '+esc(schoolInfo.phone):"")+'</div></div></div>'
+        +'<div class="st-doc">FEE COLLECTION REPORT</div></div>'
+        +'<table class="st-meta"><tr>'
+        +'<td><span class="k">Term</span><span class="v">'+esc(r.term)+'</span></td>'
+        +'<td><span class="k">Date range</span><span class="v">'+esc(range)+'</span></td>'
+        +'<td><span class="k">Grouped by</span><span class="v">'+esc(groupLabel)+'</span></td>'
+        +'<td><span class="k">Generated</span><span class="v">'+esc(new Date().toLocaleString())+'</span></td>'
+        +'</tr></table>'
+
+        +'<table class="st-summary"><tr>'
+        +'<td><span class="k">Total students</span><span class="v">'+r.students+'</span><span class="sub">'+r.boarders+' boarders · '+r.day+' day</span></td>'
+        +'<td><span class="k">Total billed</span><span class="v">'+money(r.billed)+'</span></td>'
+        +'<td><span class="k">Collected</span><span class="v" style="color:#067647;">'+money(r.collected)+'</span><span class="sub">'+r.rate+'% of target</span></td>'
+        +'<td><span class="k">Outstanding</span><span class="v" style="color:#C2410C;">'+money(r.outstanding)+'</span><span class="sub">'+(r.students-r.fullyPaid)+' with balance</span></td>'
+        +'</tr></table>'
+
+        +'<h4>Collection by '+esc(groupLabel.toLowerCase())+' — collected vs target</h4>'
+        +'<table class="st-table"><thead><tr><th>'+esc(groupLabel)+'</th><th class="num">Students</th><th class="num">Target</th><th class="num">Collected</th><th class="num">Outstanding</th><th class="num">% collected</th></tr></thead>'
+        +'<tbody>'+rows+'</tbody></table>'
+
+        +'<h4>Collection by payment method</h4>'
+        +'<table class="st-table"><thead><tr><th>Method</th><th class="num">Amount</th><th class="num">% of total</th></tr></thead>'
+        +'<tbody>'+methodRows+'</tbody></table>'
+
+        +'<div class="st-sign"><div><div class="line"></div>Prepared by</div><div><div class="line"></div>Approved by (Head/Bursar)</div></div>'
+        +'<div class="st-foot">Computer-generated statement · Samaji School Management · '+new Date().toLocaleDateString()+'</div>';
+
       var ov=document.createElement("div"); ov.className="overlay";
       ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
-        +'<div id="print-area" style="background:#fff;max-width:880px;width:100%;padding:24px;">'
-        +'<h2 style="margin:0 0 2px;">Fees &amp; Reports — '+esc(termSel.value)+'</h2>'
-        +'<p class="muted" style="margin:0 0 16px;font-size:12.5px;">'+esc(range)+' · Grouped by '+(groupSel.value==="stream"?"stream":"class")+' · Generated '+new Date().toLocaleString()+'</p>'
-        +document.getElementById("rep-body").innerHTML
-        +'</div><div style="display:flex;gap:10px;"><button class="btn-sm" id="rp-close">Close</button><button class="btn-primary" id="rp-print">🖨 Print / Save as PDF</button></div></div>';
+        +'<div id="print-area" class="statement">'+body+'</div>'
+        +'<div style="display:flex;gap:10px;"><button class="btn-sm" id="rp-close">Close</button><button class="btn-primary" id="rp-print">🖨 Print / Save as PDF</button></div></div>';
       ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
       document.body.appendChild(ov);
       ov.querySelector("#rp-close").onclick=function(){ ov.remove(); };
