@@ -62,7 +62,57 @@
       +'<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" font-size="10" fill="#98A2B3">'+esc(opts.center||"Total")+'</text></svg>';
   }
   function legend(data){ return '<div class="legend">'+data.map(function(d,i){return '<div class="li"><span class="sw" style="background:'+(d.color||PAL[i%PAL.length])+'"></span>'+esc(d.label)+' <strong style="color:#15171E;margin-left:2px;">'+d.value+'</strong></div>';}).join("")+'</div>'; }
-  window.SamajiCharts={ bar:barChart, line:lineChart, donut:donut, legend:legend, PAL:PAL };
+  // collected-vs-target columns (Zeraki style): light track = target, colored fill = collected, % label
+  function targetBars(data, opts){ // data:[{label,collected,target}]
+    opts=opts||{}; var h=opts.height||210, w=opts.width||560, pad=30, bw=opts.bw||30;
+    var max=Math.max(1,Math.max.apply(null,data.map(function(d){return Math.max(d.target,d.collected);})));
+    var n=data.length, gap=(w-pad-8)/Math.max(n,1), plotH=h-pad-30;
+    var grid=""; for(var g=0;g<=3;g++){ var gy=h-26-plotH*g/3; grid+='<line x1="'+pad+'" y1="'+gy+'" x2="'+w+'" y2="'+gy+'" stroke="#F0F1F4"></line>'; }
+    var cols=data.map(function(d,i){
+      var x=pad+i*gap+(gap-bw)/2;
+      var th=plotH*d.target/max, ch=plotH*Math.min(d.collected,max)/max;
+      var ty=h-26-th, cy=h-26-ch;
+      var pct=d.target>0?Math.round(d.collected/d.target*100):0;
+      var col=pct>=100?"#067647":pct>=60?"#0E9384":pct>=30?"#F59E0B":"#EF4444";
+      return '<rect x="'+x+'" y="'+ty+'" width="'+bw+'" height="'+Math.max(th,2)+'" rx="5" fill="#EAF0EE"></rect>'
+        +'<rect x="'+x+'" y="'+cy+'" width="'+bw+'" height="'+Math.max(ch,2)+'" rx="5" fill="'+col+'"><title>'+esc(d.label)+': '+pct+'% ('+Math.round(d.collected).toLocaleString()+' / '+Math.round(d.target).toLocaleString()+')</title></rect>'
+        +'<text x="'+(x+bw/2)+'" y="'+(cy-5)+'" text-anchor="middle" font-size="9.5" font-weight="700" fill="'+col+'">'+pct+'%</text>'
+        +'<text x="'+(x+bw/2)+'" y="'+(h-10)+'" text-anchor="middle" font-size="10" fill="#98A2B3">'+esc(d.label)+'</text>';
+    }).join("");
+    return '<svg viewBox="0 0 '+w+' '+h+'" width="100%" preserveAspectRatio="xMidYMid meet">'+grid+cols+'</svg>';
+  }
+  window.SamajiCharts={ bar:barChart, line:lineChart, donut:donut, legend:legend, targetBars:targetBars, PAL:PAL };
+
+  // ====================================================
+  //  Cache layer — instant page switches + login preload
+  // ====================================================
+  var SamajiCache=(function(){
+    var store={}, TTL=90000;
+    function k(table,sel){ return table+"|"+(sel||"*"); }
+    async function get(sb, schoolId, table, sel){
+      var key=k(table,sel), hit=store[key];
+      if(hit && Date.now()-hit.t<TTL) return hit.data;
+      var r=await sb.from(table).select(sel||"*").eq("school_id",schoolId);
+      store[key]={t:Date.now(), data:r.data||[]};
+      return store[key].data;
+    }
+    return {
+      get:get,
+      invalidate:function(table){ Object.keys(store).forEach(function(key){ if(!table||key.indexOf(table+"|")===0) delete store[key]; }); },
+      clear:function(){ store={}; },
+      preload:function(sb, schoolId){
+        return Promise.all([
+          get(sb,schoolId,"students","*"),
+          get(sb,schoolId,"school_classes","*"),
+          get(sb,schoolId,"dormitories","*"),
+          get(sb,schoolId,"fee_structures","*, fee_items(amount)"),
+          get(sb,schoolId,"fee_payments","*")
+        ]).catch(function(){});
+      }
+    };
+  })();
+  window.SamajiCache=SamajiCache;
+  function cget(sb, schoolId, table, sel){ return SamajiCache.get(sb, schoolId, table, sel); }
 
   // ====================================================
   //  Custom alerts, confirms & toasts (replace native)
@@ -107,7 +157,10 @@
   window.SM_alert=function(message, opts){ opts=opts||{}; return dialog({ kind:opts.kind||"info", title:opts.title||"Notice", message:message, okText:opts.okText||"Got it", confirm:false }); };
 
   // shared loaders
-  async function loadClasses(sb, schoolId){ var r=await sb.from("school_classes").select("*").eq("school_id",schoolId).order("sort").order("stream"); return r.data||[]; }
+  async function loadClasses(sb, schoolId){
+    var rows=await cget(sb, schoolId, "school_classes", "*");
+    return rows.slice().sort(function(a,b){ return ((a.sort||0)-(b.sort||0)) || ((a.stream||"")<(b.stream||"")?-1:(a.stream||"")>(b.stream||"")?1:0); });
+  }
   function classLabel(c){ return c.level + (c.stream? " "+c.stream : ""); }
 
   // ====================================================
@@ -144,7 +197,7 @@
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ classForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
-        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this class? Students keep their record but lose the link."))return; var r=await sb.from("school_classes").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Class deleted"); classes(); }; });
+        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this class? Students keep their record but lose the link."))return; var r=await sb.from("school_classes").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("school_classes"); toast("Class deleted"); classes(); }; });
       }
       document.getElementById("add-class").onclick=function(){ classForm(null); };
       document.getElementById("seed-cbc").onclick=async function(){
@@ -169,6 +222,7 @@
         if(!rec.level){ toast("Level is required."); return; }
         var r=c.id? await sb.from("school_classes").update(rec).eq("id",c.id) : await sb.from("school_classes").insert(rec);
         if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"That level + stream already exists.":r.error.message)); return; }
+        SamajiCache.invalidate("school_classes");
         m.close(); toast("Saved"); classes();
       };
     }
@@ -193,7 +247,7 @@
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ dormForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
-        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this dormitory?"))return; var r=await sb.from("dormitories").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); dorms(); }; });
+        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this dormitory?"))return; var r=await sb.from("dormitories").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("dormitories"); toast("Deleted"); dorms(); }; });
       }
       document.getElementById("add-dorm").onclick=function(){ dormForm(null); };
     }
@@ -210,7 +264,7 @@
         var rec={ school_id:schoolId, name:m.q("#d-name").value.trim(), gender:m.q("#d-gender").value, capacity:Number(m.q("#d-cap").value)||30, captain:m.q("#d-cap2").value.trim()||null };
         if(!rec.name){ toast("Name required."); return; }
         var r=d.id? await sb.from("dormitories").update(rec).eq("id",d.id) : await sb.from("dormitories").insert(rec);
-        if(r.error){ toast("Error: "+r.error.message); return; } m.close(); toast("Saved"); dorms();
+        if(r.error){ toast("Error: "+r.error.message); return; } SamajiCache.invalidate("dormitories"); m.close(); toast("Saved"); dorms();
       };
     }
 
@@ -231,7 +285,7 @@
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ fsEditor(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
-        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this fee structure and its items?"))return; var r=await sb.from("fee_structures").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); fees(); }; });
+        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this fee structure and its items?"))return; var r=await sb.from("fee_structures").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("fee_structures"); toast("Deleted"); fees(); }; });
       }
       document.getElementById("add-fs").onclick=async function(){
         var classes=await loadClasses(sb, schoolId);
@@ -246,7 +300,7 @@
         m.q("#c").onclick=m.close;
         m.q("#s").onclick=async function(){
           var rec={ school_id:schoolId, level:m.q("#fs-level").value, term:m.q("#fs-term").value, year:Number(m.q("#fs-year").value)||yr, name:m.q("#fs-level").value+" — "+m.q("#fs-term").value };
-          var r=await sb.from("fee_structures").insert(rec).select().single();
+          var r=await sb.from("fee_structures").insert(rec).select().single(); SamajiCache.invalidate("fee_structures");
           if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"A structure for that class/term/year exists.":r.error.message)); return; }
           m.close(); fsEditor(r.data);
         };
@@ -268,7 +322,7 @@
           items.forEach(function(i){ html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(i.name)+'</td><td>'+(i.mandatory?'<span class="pill green">Mandatory</span>':'<span class="pill gray">Optional</span>')+'</td><td style="font-weight:600;">'+money(i.amount)+'</td><td style="text-align:right;"><button class="btn-sm danger" data-del="'+i.id+'">Remove</button></td></tr>'; });
           html+='<tr><td colspan="2" style="text-align:right;font-weight:700;">Total per student</td><td style="font-weight:700;color:#0E9384;">'+money(total)+'</td><td></td></tr>';
           t.innerHTML=html+'</tbody></table>';
-          t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ var r=await sb.from("fee_items").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} draw(); }; });
+          t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ var r=await sb.from("fee_items").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("fee_structures"); draw(); }; });
         }
       }
       document.getElementById("fi-add").onclick=function(){
@@ -280,7 +334,7 @@
         m.q("#c").onclick=m.close;
         m.q("#s").onclick=async function(){
           var name=m.q("#fi-name").value.trim(); if(!name){ toast("Name required."); return; }
-          var r=await sb.from("fee_items").insert({ structure_id:fs.id, name:name, amount:Number(m.q("#fi-amt").value)||0, mandatory:m.q("#fi-mand").value==="true" });
+          var r=await sb.from("fee_items").insert({ structure_id:fs.id, name:name, amount:Number(m.q("#fi-amt").value)||0, mandatory:m.q("#fi-mand").value==="true" }); SamajiCache.invalidate("fee_structures");
           if(r.error){ toast("Error: "+r.error.message); return; } m.close(); draw();
         };
       };
@@ -304,9 +358,9 @@
     var cf=document.getElementById("stu-class-filter"); classes.forEach(function(c){ cf.innerHTML+='<option value="'+c.id+'">'+esc(classLabel(c))+'</option>'; });
     var all=[];
     async function load(){
-      var r=await sb.from("students").select("*").eq("school_id",schoolId).order("created_at",{ascending:true});
-      if(r.error){ document.getElementById("stu-table").innerHTML='<div class="empty">'+esc(r.error.message)+'</div>'; return; }
-      all=r.data||[]; draw();
+      var all2=await cget(sb, schoolId, "students", "*");
+      all=all2.slice().sort(function(a,b){ return new Date(a.created_at||0)-new Date(b.created_at||0); });
+      draw();
     }
     function draw(){
       var q=(document.getElementById("stu-search").value||"").toLowerCase();
@@ -328,7 +382,7 @@
       t.innerHTML=html+'</tbody></table>';
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ form(all.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-view]").forEach(function(b){ b.onclick=function(){ view(all.find(function(x){return x.id===b.getAttribute("data-view");})); }; });
-      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this student and all related records?"))return; var r=await sb.from("students").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Student deleted"); load(); }; });
+      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this student and all related records?"))return; var r=await sb.from("students").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("students"); toast("Student deleted"); load(); }; });
     }
     function view(s){
       var c=classOf[s.class_id]||s.grade||"—";
@@ -397,6 +451,7 @@
         if(!rec.first_name||!rec.last_name){ toast("First and last name are required."); return; }
         var r=s.id? await sb.from("students").update(rec).eq("id",s.id) : await sb.from("students").insert(rec);
         if(r.error){ toast("Error: "+r.error.message); return; }
+        SamajiCache.invalidate("students");
         m.close(); toast(s.id?"Student updated":"Student enrolled"); load();
       };
     }
@@ -416,9 +471,9 @@
     var school=null;
     async function init(){
       var sc=await sb.from("schools").select("*").eq("id",schoolId).single(); school=sc.data||{name:schoolId};
-      var students=(await sb.from("students").select("id,first_name,last_name,grade,class_id,admission_no").eq("school_id",schoolId)).data||[];
-      var structures=(await sb.from("fee_structures").select("*, fee_items(amount)").eq("school_id",schoolId)).data||[];
-      var payments=(await sb.from("fee_payments").select("*").eq("school_id",schoolId)).data||[];
+      var students=await cget(sb, schoolId, "students", "*");
+      var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
+      var payments=await cget(sb, schoolId, "fee_payments", "*");
       // billed per student = structure total for their level (sum across active terms)
       var totalByLevelTerm={}; structures.forEach(function(s){ totalByLevelTerm[s.level]= (totalByLevelTerm[s.level]||0) + (s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
       var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+Number(p.amount); });
@@ -498,6 +553,7 @@
           var rec={ school_id:schoolId, student_id:sid, receipt_no:receiptNo, amount:amt, method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:m.q("#p-term").value, year:new Date().getFullYear(), note:m.q("#p-note").value.trim()||null, received_by:who };
           var r=await sb.from("fee_payments").insert(rec).select().single();
           if(r.error){ toast("Error: "+r.error.message); return; }
+          SamajiCache.invalidate("fee_payments");
           paidByStudent[sid]=(paidByStudent[sid]||0)+amt;
           m.close(); toast("Payment recorded — receipt "+receiptNo);
           showReceipt(r.data, students.find(function(s){return s.id===sid;}));
@@ -553,60 +609,183 @@
   //  REPORTS
   // ====================================================
   async function renderReports(sb, schoolId, el){
-    el.innerHTML='<div class="mod-head"><div><h2>Reports &amp; Analytics</h2><p>Live insight across enrollment, finance and attendance.</p></div></div><div id="rep-body"><div class="empty">Loading insights…</div></div>';
-    var students=(await sb.from("students").select("*").eq("school_id",schoolId)).data||[];
+    el.innerHTML='<div class="mod-head"><div><h2>Reports &amp; Analytics</h2><p>Live insight across enrollment, finance and collections. Tap any card for details.</p></div>'
+      +'<div style="display:flex;gap:10px;align-items:flex-end;"><div class="field"><label>Group by</label><select id="rep-group"><option value="level">Class level</option><option value="stream">Stream</option></select></div>'
+      +'<div class="field"><label>Term</label><select id="rep-term"><option>All terms</option><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div></div></div>'
+      +'<div id="rep-body"><div class="statgrid">'+skel()+skel()+skel()+skel()+'</div></div>';
+    function skel(){ return '<div class="stat"><div class="skel" style="height:64px;"></div></div>'; }
+
+    var students=await cget(sb, schoolId, "students", "*");
     var classes=await loadClasses(sb, schoolId);
-    var payments=(await sb.from("fee_payments").select("*").eq("school_id",schoolId)).data||[];
-    var structures=(await sb.from("fee_structures").select("*, fee_items(amount)").eq("school_id",schoolId)).data||[];
+    var allPayments=await cget(sb, schoolId, "fee_payments", "*");
+    var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
-
-    // enrollment by gender
-    var male=students.filter(function(s){return s.gender==="M";}).length, female=students.filter(function(s){return s.gender==="F";}).length, other=students.length-male-female;
-    // enrollment by level
-    var byLevel={}; students.forEach(function(s){ var lv=s.grade||classOf[s.class_id]||"Unassigned"; byLevel[lv]=(byLevel[lv]||0)+1; });
-    var levelOrder=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
-    var levelData=Object.keys(byLevel).sort(function(a,b){ var ia=levelOrder.indexOf(a),ib=levelOrder.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }).map(function(k){ return {label:k.replace("Grade ","G"),value:byLevel[k]}; });
-    // collection by method
-    var byMethod={}; payments.forEach(function(p){ byMethod[p.method]=(byMethod[p.method]||0)+Number(p.amount); });
-    var methodData=Object.keys(byMethod).map(function(k){ return {label:k,value:Math.round(byMethod[k])}; });
-    // collection trend by month (last 6)
-    var months=[]; var now=new Date();
-    for(var i=5;i>=0;i--){ var d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({key:d.getFullYear()+"-"+d.getMonth(),label:d.toLocaleString("en",{month:"short"}),value:0}); }
-    payments.forEach(function(p){ var d=new Date(p.paid_at); var key=d.getFullYear()+"-"+d.getMonth(); var m=months.find(function(x){return x.key===key;}); if(m) m.value+=Number(p.amount); });
-    // finance totals
-    var totalByLevel={}; structures.forEach(function(s){ totalByLevel[s.level]=(totalByLevel[s.level]||0)+(s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
-    var billed=students.reduce(function(a,s){return a+(totalByLevel[s.grade]||0);},0);
-    var collected=payments.reduce(function(a,p){return a+Number(p.amount);},0);
-    var outstanding=Math.max(0,billed-collected);
+    var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
     var C=window.SamajiCharts;
+    var termSel=document.getElementById("rep-term");
+    var groupSel=document.getElementById("rep-group");
+    if(!hasStreams){ groupSel.parentNode.style.display="none"; } // only offer stream view if streams exist
+    termSel.onchange=draw;
+    groupSel.onchange=draw;
 
-    var genderData=[{label:"Male",value:male,color:"#4F46E5"},{label:"Female",value:female,color:"#EC4899"}]; if(other>0) genderData.push({label:"Other",value:other,color:"#94A3B8"});
+    function levelOf(s){ return s.grade||classOf[s.class_id]||"Unassigned"; }
+    function keyOf(s){ return groupSel.value==="stream" ? (classFull[s.class_id]||levelOf(s)) : levelOf(s); }
+    var levelOrder=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
+    function lord(a,b){ var ia=levelOrder.indexOf(a),ib=levelOrder.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }
 
-    document.getElementById("rep-body").innerHTML=
-      '<div class="statgrid">'
-      +sCard("Total students",students.length,"#EEF0FF","#4F46E5")
-      +sCard("Boarders",students.filter(function(s){return s.residence==="Boarder";}).length,"#F1ECFE","#6D28D9")
-      +sCard("Fees collected",money(collected),"#ECFDF3","#067647")
-      +sCard("Outstanding",money(outstanding),"#FFF6ED","#C2410C")
-      +'</div>'
-      +'<div class="cardrow c2">'
-      +'<div class="chartcard"><div class="ch-head"><h3>Fee collection trend</h3><span class="sub">Last 6 months</span></div>'+C.line(months,{height:200})+'</div>'
-      +'<div class="chartcard"><div class="ch-head"><h3>Enrollment by gender</h3></div><div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(genderData,{center:"Students"})+'</div><div style="flex:1;">'+C.legend(genderData)+'</div></div></div>'
-      +'</div>'
-      +'<div class="cardrow c2">'
-      +'<div class="chartcard"><div class="ch-head"><h3>Enrollment by class</h3></div>'+(levelData.length?C.bar(levelData,{height:190}):empty())+'</div>'
-      +'<div class="chartcard"><div class="ch-head"><h3>Collection by method</h3></div>'+(methodData.length?'<div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(methodData,{center:"KES"})+'</div><div style="flex:1;">'+C.legend(methodData.map(function(d,i){return {label:d.label,value:money(d.value),color:C.PAL[i%C.PAL.length]};}))+'</div></div>':empty())+'</div>'
-      +'</div>'
-      +'<div class="chartcard"><div class="ch-head"><h3>Finance summary</h3><span class="sub">'+(billed?Math.round(collected/billed*100):0)+'% collected</span></div>'
-      +'<div class="bar" style="height:14px;"><span style="width:'+(billed?Math.round(collected/billed*100):0)+'%;background:linear-gradient(90deg,#0E9384,#10B981);"></span></div>'
-      +'<div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12.5px;"><span class="muted">Collected <strong style="color:#067647;">'+money(collected)+'</strong></span><span class="muted">Billed <strong style="color:#15171E;">'+money(billed)+'</strong></span></div></div>';
+    function draw(){
+      var term=termSel.value;
+      var payments=term==="All terms"?allPayments:allPayments.filter(function(p){return p.term===term;});
+      // target per level (sum of its structures' items; respect term filter)
+      var structForTerm=term==="All terms"?structures:structures.filter(function(s){return s.term===term;});
+      var targetByLevel={}; structForTerm.forEach(function(s){ targetByLevel[s.level]=(targetByLevel[s.level]||0)+(s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
+      // billed per student = target for their level
+      var billed=0;
+      students.forEach(function(s){ billed+=targetByLevel[levelOf(s)]||0; });
+      // collected per student
+      var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+Number(p.amount); });
+      // groups: by level OR by stream (level+stream) depending on toggle
+      var groups={}; // key -> {key, level, students, target, collected}
+      students.forEach(function(s){ var key=keyOf(s), lv=levelOf(s), t=targetByLevel[lv]||0, paid=paidByStudent[s.id]||0;
+        if(!groups[key]) groups[key]={key:key, level:lv, students:0, target:0, collected:0};
+        groups[key].students++; groups[key].target+=t; groups[key].collected+=Math.min(paid, t||Infinity); });
+      var collected=payments.reduce(function(a,p){return a+Number(p.amount);},0);
+      var outstanding=Math.max(0,billed-collected);
+      var rate=billed?Math.round(collected/billed*100):0;
+      var fullyPaid=students.filter(function(s){ var lv=levelOf(s); var t=targetByLevel[lv]||0; return t>0 && (paidByStudent[s.id]||0)>=t; }).length;
+      var avgFee=students.length?Math.round(billed/students.length):0;
 
-    function sCard(l,v,bg,ink){ return '<div class="stat"><div class="lbl">'+l+'</div><div class="val" style="color:'+ink+'">'+v+'</div></div>'; }
-    function empty(){ return '<div class="empty" style="padding:24px;">Not enough data yet.</div>'; }
+      // gender + enrollment
+      var male=students.filter(function(s){return s.gender==="M";}).length, female=students.filter(function(s){return s.gender==="F";}).length, other=students.length-male-female;
+      var genderData=[{label:"Male",value:male,color:"#4F46E5"},{label:"Female",value:female,color:"#EC4899"}]; if(other>0) genderData.push({label:"Other",value:other,color:"#94A3B8"});
+      var byLevel={}; students.forEach(function(s){ var lv=levelOf(s); byLevel[lv]=(byLevel[lv]||0)+1; });
+      var levelKeys=Object.keys(byLevel).sort(lord);
+      var enrollData=levelKeys.map(function(k){ return {label:k.replace("Grade ","G"),value:byLevel[k]}; });
+      // collected vs target by group (level or stream)
+      function gord(a,b){ var la=lord(groups[a].level,groups[b].level); return la!==0?la:(a<b?-1:a>b?1:0); }
+      var ctKeys=Object.keys(groups).filter(function(k){return groups[k].target>0;}).sort(gord);
+      var ctData=ctKeys.map(function(k){ return {label:groups[k].key.replace("Grade ","G"),collected:groups[k].collected,target:groups[k].target}; });
+      // method + boarding
+      var byMethod={}; payments.forEach(function(p){ byMethod[p.method]=(byMethod[p.method]||0)+Number(p.amount); });
+      var methodData=Object.keys(byMethod).map(function(k){ return {label:k,value:Math.round(byMethod[k])}; });
+      var boarders=students.filter(function(s){return s.residence==="Boarder";}).length, day=students.length-boarders;
+      // trend last 6 months
+      var months=[]; var now=new Date();
+      for(var i=5;i>=0;i--){ var d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({key:d.getFullYear()+"-"+d.getMonth(),label:d.toLocaleString("en",{month:"short"}),value:0}); }
+      payments.forEach(function(p){ var d=new Date(p.paid_at); var key=d.getFullYear()+"-"+d.getMonth(); var m=months.find(function(x){return x.key===key;}); if(m) m.value+=Number(p.amount); });
+
+      // KPI cards (clickable)
+      function kpi(drill,lbl,val,bg,ink,ic,sub){ return '<div class="stat" data-drill="'+drill+'" style="cursor:pointer;"><div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div>'+(sub?'<div class="delta flat">'+sub+'</div>':'')+'<div class="drill-hint">'+icArrow()+'</div></div>'; }
+
+      var html='<div class="statgrid">'
+        +kpi("students","Total students",students.length,"#EEF0FF","#4F46E5",icP(),boarders+" boarders · "+day+" day")
+        +kpi("collected","Fees collected",money(collected),"#ECFDF3","#067647",icCash(),rate+"% of target")
+        +kpi("outstanding","Outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert(),(students.length-fullyPaid)+" with balance")
+        +kpi("paid","Fully paid",fullyPaid+" / "+students.length,"#F1ECFE","#6D28D9",icChart(),"Avg fee "+money(avgFee))
+        +'</div>';
+
+      // Collected vs target — the Zeraki view
+      html+='<div class="chartcard" style="margin-top:18px;"><div class="ch-head"><div><h3>Fee collection by '+(groupSel.value==="stream"?"stream":"class")+' — collected vs target</h3><div class="sub">'+(term==="All terms"?"All terms":term)+' · '+rate+'% overall</div></div>'
+        +'<div class="legend" style="margin:0;"><div class="li"><span class="sw" style="background:#0E9384;"></span>Collected</div><div class="li"><span class="sw" style="background:#EAF0EE;"></span>Target</div></div></div>'
+        +(ctData.length?C.targetBars(ctData,{height:220}):'<div class="empty" style="border:none;">No fee structures set'+(term==="All terms"?"":" for "+term)+'. Add them in Settings → Fee Structures.</div>')+'</div>';
+
+      // Per-group table
+      if(ctData.length){
+        html+='<div class="chartcard" style="margin-top:16px;"><div class="ch-head"><h3>Collection breakdown by '+(groupSel.value==="stream"?"stream":"class")+'</h3><span class="sub">tap a row for students</span></div>'
+          +'<table class="data" style="box-shadow:none;border:none;"><thead><tr><th>'+(groupSel.value==="stream"?"Stream":"Class")+'</th><th>Students</th><th>Target</th><th>Collected</th><th>Outstanding</th><th style="width:150px;">Progress</th></tr></thead><tbody>';
+        ctKeys.forEach(function(k){
+          var g=groups[k], t=g.target, c=g.collected||0, pct=t?Math.round(c/t*100):0, col=pct>=100?"#067647":pct>=60?"#0E9384":pct>=30?"#F59E0B":"#EF4444";
+          html+='<tr data-classrow="'+esc(k)+'" style="cursor:pointer;"><td style="font-weight:600;color:#1A1D26;">'+esc(g.key)+'</td><td>'+g.students+'</td><td>'+money(t)+'</td>'
+            +'<td style="color:#067647;font-weight:600;">'+money(c)+'</td><td style="color:#C2410C;">'+money(Math.max(0,t-c))+'</td>'
+            +'<td><div style="display:flex;align-items:center;gap:8px;"><div class="bar" style="flex:1;"><span style="width:'+Math.min(100,pct)+'%;background:'+col+';"></span></div><span class="mono" style="font-size:11px;color:'+col+';font-weight:600;">'+pct+'%</span></div></td></tr>';
+        });
+        html+='</tbody></table></div>';
+      }
+
+      // charts row
+      html+='<div class="cardrow c2" style="margin-top:16px;">'
+        +'<div class="chartcard"><div class="ch-head"><h3>Collection trend</h3><span class="sub">Last 6 months</span></div>'+C.line(months,{height:200})+'</div>'
+        +'<div class="chartcard" data-drill="enroll" style="cursor:pointer;"><div class="ch-head"><h3>Enrollment by class</h3><div class="drill-hint" style="position:static;">'+icArrow()+'</div></div>'+(enrollData.length?C.bar(enrollData,{height:190}):emptyc())+'</div>'
+        +'</div>';
+      html+='<div class="cardrow c2" style="margin-top:16px;">'
+        +'<div class="chartcard"><div class="ch-head"><h3>Gender split</h3></div><div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(genderData,{center:"Students"})+'</div><div style="flex:1;">'+C.legend(genderData)+'</div></div></div>'
+        +'<div class="chartcard"><div class="ch-head"><h3>Collection by method</h3></div>'+(methodData.length?'<div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(methodData,{center:"KES"})+'</div><div style="flex:1;">'+C.legend(methodData.map(function(d,i){return {label:d.label,value:money(d.value),color:C.PAL[i%C.PAL.length]};}))+'</div></div>':emptyc())+'</div>'
+        +'</div>';
+
+      document.getElementById("rep-body").innerHTML=html;
+
+      // wire drill-downs
+      document.querySelectorAll("#rep-body [data-drill]").forEach(function(card){
+        card.onclick=function(){ drill(card.getAttribute("data-drill"), {students:students, levelOf:levelOf, paidByStudent:paidByStudent, targetByLevel:targetByLevel, byLevel:byLevel, levelKeys:levelKeys, payments:payments}); };
+      });
+      document.querySelectorAll("#rep-body [data-classrow]").forEach(function(row){
+        row.onclick=function(){
+          var key=row.getAttribute("data-classrow"); var g=groups[key];
+          var t0=targetByLevel[g.level]||0;
+          var list=students.filter(function(s){return keyOf(s)===key;}).map(function(s){ var p=paidByStudent[s.id]||0; return {s:s,paid:p,bal:Math.max(0,t0-p)}; }).sort(function(a,b){return b.bal-a.bal;});
+          var rows='<table class="data"><thead><tr><th>Student</th><th>Adm No</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>'+list.map(function(x){
+            var st=x.bal<=0&&t0>0?'<span class="pill green">Cleared</span>':(x.paid>0?'<span class="pill amber">Partial</span>':'<span class="pill red">Unpaid</span>');
+            return '<tr><td style="font-weight:600;">'+esc(x.s.first_name+" "+x.s.last_name)+'</td><td class="mono" style="font-size:11px;">'+esc(x.s.admission_no||"—")+'</td><td style="color:#067647;">'+money(x.paid)+'</td><td style="color:#C2410C;font-weight:600;">'+money(x.bal)+'</td><td>'+st+'</td></tr>';
+          }).join("")+'</tbody></table>';
+          openDrill(g.key+" — fee status", list.length+" students · target "+money(t0)+" each", rows);
+        };
+      });
+    }
+
+    function emptyc(){ return '<div class="empty" style="padding:24px;">Not enough data yet.</div>'; }
+    draw();
   }
+
+  // drill-down modals for report KPIs
+  function drill(type, ctx){
+    var rows="", title="", sub="";
+    if(type==="students"){
+      title="All students"; sub=ctx.students.length+" enrolled";
+      var byL={}; ctx.students.forEach(function(s){ var lv=ctx.levelOf(s); byL[lv]=(byL[lv]||0)+1; });
+      rows='<table class="data"><thead><tr><th>Class</th><th>Students</th></tr></thead><tbody>'+Object.keys(byL).map(function(k){return '<tr><td style="font-weight:600;">'+esc(k)+'</td><td>'+byL[k]+'</td></tr>';}).join("")+'</tbody></table>';
+    } else if(type==="outstanding"){
+      title="Students with a balance"; 
+      var list=ctx.students.map(function(s){ var lv=ctx.levelOf(s); var t=ctx.targetByLevel[lv]||0; var p=ctx.paidByStudent[s.id]||0; return {s:s,lv:lv,bal:t-p}; }).filter(function(x){return x.bal>0;}).sort(function(a,b){return b.bal-a.bal;});
+      sub=list.length+" students owe "+money(list.reduce(function(a,x){return a+x.bal;},0));
+      rows='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Balance</th></tr></thead><tbody>'+list.slice(0,100).map(function(x){return '<tr><td style="font-weight:600;">'+esc(x.s.first_name+" "+x.s.last_name)+'</td><td>'+esc(x.lv)+'</td><td style="color:#C2410C;font-weight:600;">'+money(x.bal)+'</td></tr>';}).join("")+'</tbody></table>';
+    } else if(type==="paid"){
+      title="Fully paid students";
+      var pl=ctx.students.filter(function(s){ var lv=ctx.levelOf(s); var t=ctx.targetByLevel[lv]||0; return t>0 && (ctx.paidByStudent[s.id]||0)>=t; });
+      sub=pl.length+" cleared";
+      rows=pl.length?'<table class="data"><thead><tr><th>Student</th><th>Class</th></tr></thead><tbody>'+pl.slice(0,100).map(function(s){return '<tr><td style="font-weight:600;">'+esc(s.first_name+" "+s.last_name)+'</td><td>'+esc(ctx.levelOf(s))+'</td></tr>';}).join("")+'</tbody></table>':'<div class="empty">No students fully cleared yet.</div>';
+    } else if(type==="collected"){
+      title="Recent payments"; 
+      var ps=ctx.payments.slice().sort(function(a,b){return new Date(b.paid_at)-new Date(a.paid_at);}).slice(0,100);
+      sub=ctx.payments.length+" payments";
+      var nameOf={}; ctx.students.forEach(function(s){nameOf[s.id]=s.first_name+" "+s.last_name;});
+      rows='<table class="data"><thead><tr><th>Receipt</th><th>Student</th><th>Method</th><th>Amount</th></tr></thead><tbody>'+ps.map(function(p){return '<tr><td class="mono" style="font-size:11px;">'+esc(p.receipt_no||"—")+'</td><td>'+esc(nameOf[p.student_id]||"—")+'</td><td><span class="pill gray">'+esc(p.method)+'</span></td><td style="color:#067647;font-weight:600;">'+money(p.amount)+'</td></tr>';}).join("")+'</tbody></table>';
+    } else if(type==="enroll"){
+      title="Enrollment by class";
+      rows='<table class="data"><thead><tr><th>Class</th><th>Students</th></tr></thead><tbody>'+ctx.levelKeys.map(function(k){return '<tr><td style="font-weight:600;">'+esc(k)+'</td><td>'+ctx.byLevel[k]+'</td></tr>';}).join("")+'</tbody></table>';
+    }
+    openDrill(title, sub, rows);
+  }
+  function classDrill(level, students, levelOf, paidByStudent, targetByLevel){
+    var t=targetByLevel[level]||0;
+    var list=students.filter(function(s){return levelOf(s)===level;}).map(function(s){ var p=paidByStudent[s.id]||0; return {s:s,paid:p,bal:Math.max(0,t-p)}; }).sort(function(a,b){return b.bal-a.bal;});
+    var rows='<table class="data"><thead><tr><th>Student</th><th>Adm No</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>'+list.map(function(x){
+      var st=x.bal<=0&&t>0?'<span class="pill green">Cleared</span>':(x.paid>0?'<span class="pill amber">Partial</span>':'<span class="pill red">Unpaid</span>');
+      return '<tr><td style="font-weight:600;">'+esc(x.s.first_name+" "+x.s.last_name)+'</td><td class="mono" style="font-size:11px;">'+esc(x.s.admission_no||"—")+'</td><td style="color:#067647;">'+money(x.paid)+'</td><td style="color:#C2410C;font-weight:600;">'+money(x.bal)+'</td><td>'+st+'</td></tr>';
+    }).join("")+'</tbody></table>';
+    openDrill(level+" — fee status", list.length+" students · target "+money(t)+" each", rows);
+  }
+  function openDrill(title, sub, body){
+    var ov=document.createElement("div"); ov.className="overlay";
+    ov.innerHTML='<div class="modal wide"><h3>'+esc(title)+'</h3><p class="muted" style="font-size:12.5px;margin:0 0 4px;">'+esc(sub||"")+'</p><div class="modal-body" style="margin-top:12px;">'+body+'</div><div class="modal-actions"><button class="btn-primary" id="dd-close">Close</button></div></div>';
+    ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+    ov.querySelector("#dd-close").onclick=function(){ ov.remove(); };
+  }
+  function icArrow(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
 
   // icons
   function icDoc(){ return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3v4h4" stroke="currentColor" stroke-width="1.8"/></svg>'; }
+  function icP(){ return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" stroke="currentColor" stroke-width="1.6"/></svg>'; }
   function icCash(){ return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>'; }
   function icAlert(){ return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 4l9 16H3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v4M12 17h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'; }
   function icChart(){ return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'; }
