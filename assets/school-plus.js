@@ -619,16 +619,25 @@
         +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart())
         +'</div>'
         +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button></div>'
+        +'<div style="margin-top:14px;max-width:340px;"><input id="fee-search" type="search" placeholder="Search by name, admission no. or class…" style="width:100%;padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;"></div>'
         +'<div id="fee-body" style="margin-top:16px;"></div>';
       document.getElementById("collect").onclick=function(){ if(!students.length){toast("Enrol students first.");return;} collectForm(); };
-      var tab="ledger";
+      var tab="ledger", query="";
       el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); tab==="ledger"?ledger():receipts(); }; });
+      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); tab==="ledger"?ledger():receipts(); };
+
+      function matches(name, adm, cls){
+        if(!query) return true;
+        return (name||"").toLowerCase().indexOf(query)>=0 || (adm||"").toLowerCase().indexOf(query)>=0 || (cls||"").toLowerCase().indexOf(query)>=0;
+      }
 
       function ledger(){
         var body=document.getElementById("fee-body");
         if(!students.length){ body.innerHTML='<div class="empty">No students yet.</div>'; return; }
+        var filtered=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
+        if(!filtered.length){ body.innerHTML='<div class="empty">No students match “'+esc(query)+'”.</div>'; return; }
         var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Billed</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
-        students.forEach(function(s){
+        filtered.forEach(function(s){
           var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0, bal=billed-paid;
           var st= bal<=0&&billed>0?"green":(paid>0?"amber":"red"), lbl= billed===0?"No structure":(bal<=0?"Cleared":(paid>0?"Partial":"Unpaid"));
           if(billed===0) st="gray";
@@ -645,8 +654,10 @@
       async function receipts(){
         var body=document.getElementById("fee-body");
         var r=await sb.from("fee_payments").select("*").eq("school_id",schoolId).order("paid_at",{ascending:false});
-        var rows=r.data||[]; var nameOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; });
+        var rows=r.data||[]; var nameOf={}, admOf={}, gradeOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; admOf[s.id]=s.admission_no; gradeOf[s.id]=s.grade; });
         if(!rows.length){ body.innerHTML='<div class="empty">No receipts issued yet.</div>'; return; }
+        rows=rows.filter(function(p){ return matches(nameOf[p.student_id], admOf[p.student_id], gradeOf[p.student_id]); });
+        if(!rows.length){ body.innerHTML='<div class="empty">No receipts match “'+esc(query)+'”.</div>'; return; }
         var html='<table class="data"><thead><tr><th>Receipt no</th><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th></th></tr></thead><tbody>';
         rows.forEach(function(p){
           html+='<tr><td class="mono" style="font-size:12px;font-weight:600;">'+esc(p.receipt_no)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(nameOf[p.student_id]||"—")+'</td>'
