@@ -745,11 +745,15 @@
       // matching the class/search filters, so the cards mirror the table.
       function refreshStats(){
         var scoped=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
-        var billedTotal=0, collected=0;
-        scoped.forEach(function(s){ billedTotal+=totalByLevelTerm[s.grade]||0; });
+        var billedTotal=0, collected=0, outstanding=0;
+        // per-student balances, not a flat billedTotal-collected subtraction —
+        // one student's overpayment must never offset another's unpaid balance.
+        scoped.forEach(function(s){
+          var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0;
+          billedTotal+=billed; outstanding+=Math.max(0,billed-paid);
+        });
         var scopedIds={}; scoped.forEach(function(s){ scopedIds[s.id]=true; });
         collected=payments.reduce(function(a,p){ return scopedIds[p.student_id]?a+Number(p.amount):a; },0);
-        var outstanding=Math.max(0,billedTotal-collected);
         document.getElementById("fee-stats").innerHTML=
           stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
           +stat("Collected",money(collected),"#ECFDF3","#067647",icCash())
@@ -1042,7 +1046,9 @@
         if(!groups[key]) groups[key]={key:key, level:lv, students:0, target:0, collected:0};
         groups[key].students++; groups[key].target+=t; groups[key].collected+=Math.min(paid, t||Infinity); });
       var collected=payments.reduce(function(a,p){return a+Number(p.amount);},0);
-      var outstanding=Math.max(0,billed-collected);
+      // sum of per-student positive balances — one student's overpayment
+      // must never offset another's unpaid balance.
+      var outstanding=0; students.forEach(function(s){ var t=targetByLevel[levelOf(s)]||0, paid=paidByStudent[s.id]||0; outstanding+=Math.max(0,t-paid); });
       var rate=billed?Math.round(collected/billed*100):0;
       var fullyPaid=students.filter(function(s){ var lv=levelOf(s); var t=targetByLevel[lv]||0; return t>0 && (paidByStudent[s.id]||0)>=t; }).length;
       var avgFee=students.length?Math.round(billed/students.length):0;
