@@ -1009,30 +1009,26 @@
     function skel(){ return '<div class="stat"><div class="skel" style="height:64px;"></div></div>'; }
 
     var allStudents=[], classes=[], allPayments=[], structures=[], schoolInfo={name:schoolId}, allBusFare={};
-    var _d=document.getElementById("rep-body");
     try{
-    _d.innerHTML='<div class="empty">Loading students…</div>';
     allStudents=await cget(sb, schoolId, "students", "*")||[];
-    _d.innerHTML='<div class="empty">Loading classes…</div>';
     classes=await loadClasses(sb, schoolId)||[];
-    _d.innerHTML='<div class="empty">Loading payments…</div>';
     allPayments=await cget(sb, schoolId, "fee_payments", "*")||[];
-    _d.innerHTML='<div class="empty">Loading structures…</div>';
     structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)")||[];
-    _d.innerHTML='<div class="empty">Loading school info…</div>';
     schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
-    _d.innerHTML='<div class="empty">Loading transport…</div>';
     try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e2){}
-    _d.innerHTML='<div class="empty">Building report…</div>';
     }catch(e){
-      _d.innerHTML='<div class="empty">Failed to load data: '+String(e&&e.message?e.message:e)+'</div>';
+      document.getElementById("rep-body").innerHTML='<div class="empty" style="color:#C2410C;">Failed to load data: '+String(e)+'</div>';
       return;
     }
-    try{
     var lastReport=null;
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
     var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
     var C=window.SamajiCharts;
+    var levelOrder=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
+    function lord(a,b){ var ia=levelOrder.indexOf(a),ib=levelOrder.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }
+    function levelOf(s){ return s.grade||classOf[s.class_id]||"Unassigned"; }
+    var levelOfAll=levelOf;
+    function keyOf(s){ return groupSel.value==="stream" ? (classFull[s.class_id]||levelOf(s)) : levelOf(s); }
     var termSel=document.getElementById("rep-term");
     var groupSel=document.getElementById("rep-group");
     var fromSel=document.getElementById("rep-from");
@@ -1048,12 +1044,6 @@
     toSel.onchange=draw;
     document.getElementById("rep-clear").onclick=function(){ fromSel.value=""; toSel.value=""; draw(); };
     document.getElementById("rep-print").onclick=function(){ printReport(); };
-
-    function levelOf(s){ return s.grade||classOf[s.class_id]||"Unassigned"; }
-    var levelOfAll=levelOf;
-    function keyOf(s){ return groupSel.value==="stream" ? (classFull[s.class_id]||levelOf(s)) : levelOf(s); }
-    var levelOrder=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
-    function lord(a,b){ var ia=levelOrder.indexOf(a),ib=levelOrder.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }
 
     function draw(){ try{
       var term=termSel.value;
@@ -1232,7 +1222,6 @@
       ov.querySelector("#rp-print").onclick=function(){ window.print(); };
     }
     draw();
-    }catch(e){ _d.innerHTML='<div class="empty" style="color:#C2410C;font-weight:600;">Setup error: '+String(e)+'</div>'; }
   }
 
   // drill-down modals for report KPIs
