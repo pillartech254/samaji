@@ -716,13 +716,17 @@
       var students=await cget(sb, schoolId, "students", "*");
       var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
       var payments=await cget(sb, schoolId, "fee_payments", "*");
+      // transport assignments — what each student owes for bus
+      var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId);
+      var busFareByStudent={}; (taRes.data||[]).forEach(function(a){ if(a.transport_routes) busFareByStudent[a.student_id]=Number(a.transport_routes.fare)||0; });
+      var busPaidByStudent={}; payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
       // billed per student = structure total for their level (sum across active terms)
       var totalByLevelTerm={}; structures.forEach(function(s){ totalByLevelTerm[s.level]= (totalByLevelTerm[s.level]||0) + (s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
       function tuitionOf(p){ return Number(p.amount)-(Number(p.transport_amount)||0); }
       var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+tuitionOf(p); });
       el.innerHTML='<div class="mod-head"><div><h2>Fees &amp; Invoicing</h2><p>Collect fees against each class\u2019s structure and issue professional receipts.</p></div>'
         +'<button class="btn-primary" id="collect">+ Collect payment</button></div>'
-        +'<div class="statgrid" id="fee-stats" style="grid-template-columns:repeat(4,1fr);"></div>'
+        +'<div class="statgrid" id="fee-stats" style="grid-template-columns:repeat(3,1fr);"></div>'
         +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button></div>'
         +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'
         +'<input id="fee-search" type="search" placeholder="Search by name, admission no. or class…" style="flex:1;max-width:340px;padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;">'
@@ -747,19 +751,23 @@
       function refreshStats(){
         var scoped=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
         var billedTotal=0, collected=0, outstanding=0;
-        // per-student balances, not a flat billedTotal-collected subtraction —
-        // one student's overpayment must never offset another's unpaid balance.
+        var busBilled=0, busCollected=0, busOutstanding=0;
         scoped.forEach(function(s){
           var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0;
           billedTotal+=billed; outstanding+=Math.max(0,billed-paid);
+          var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0;
+          busBilled+=bf; busCollected+=bp; busOutstanding+=Math.max(0,bf-bp);
         });
         var scopedIds={}; scoped.forEach(function(s){ scopedIds[s.id]=true; });
         collected=payments.reduce(function(a,p){ return scopedIds[p.student_id]?a+tuitionOf(p):a; },0);
+        var icBus='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="7.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><circle cx="16.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 11h18" stroke="currentColor" stroke-width="1.5"/></svg>';
         document.getElementById("fee-stats").innerHTML=
           stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
-          +stat("Collected",money(collected),"#ECFDF3","#067647",icCash())
-          +stat("Outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert())
-          +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart());
+          +stat("Tuition collected",money(collected),"#ECFDF3","#067647",icCash())
+          +stat("Tuition outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert())
+          +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart())
+          +stat("Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus)
+          +stat("Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus);
       }
       refreshStats();
 
@@ -768,14 +776,20 @@
         if(!students.length){ body.innerHTML='<div class="empty">No students yet.</div>'; return; }
         var filtered=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
         if(!filtered.length){ body.innerHTML='<div class="empty">No students match “'+esc(query)+'”.</div>'; return; }
-        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Billed</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
         filtered.forEach(function(s){
-          var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0, bal=billed-paid;
-          var st= bal<=0&&billed>0?"green":(paid>0?"amber":"red"), lbl= billed===0?"No structure":(bal<=0?"Cleared":(paid>0?"Partial":"Unpaid"));
-          if(billed===0) st="gray";
+          var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0, tBal=Math.max(0,billed-paid);
+          var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0, bBal=Math.max(0,bf-bp);
+          var totalBal=tBal+bBal, totalOwed=billed+bf, totalPaid=paid+bp;
+          var cleared=totalBal<=0&&totalOwed>0;
+          var st= cleared?"green":(totalPaid>0?"amber":"red"), lbl= totalOwed===0?"No structure":(cleared?"Cleared":(totalPaid>0?"Partial":"Unpaid"));
+          if(totalOwed===0) st="gray";
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'<div class="muted" style="font-size:11px;">'+esc(s.admission_no||"")+'</div></td>'
-            +'<td>'+esc(s.grade||"—")+'</td><td>'+money(billed)+'</td><td style="color:#067647;font-weight:600;">'+money(paid)+'</td>'
-            +'<td style="font-weight:700;color:'+(bal>0?"#C2410C":"#067647")+';">'+money(Math.max(0,bal))+'</td>'
+            +'<td>'+esc(s.grade||"—")+'</td>'
+            +'<td>'+money(billed)+(paid>0?' <span style="color:#067647;font-size:11px;">paid '+money(paid)+'</span>':'')+'</td>'
+            +'<td>'+(bf>0?money(bf)+(bp>0?' <span style="color:#067647;font-size:11px;">paid '+money(bp)+'</span>':''):'—')+'</td>'
+            +'<td style="color:#067647;font-weight:600;">'+money(totalPaid)+'</td>'
+            +'<td style="font-weight:700;color:'+(totalBal>0?"#C2410C":"#067647")+';">'+money(totalBal)+'</td>'
             +'<td><span class="pill '+st+'">'+lbl+'</span></td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-stmt="'+s.id+'">Statement</button> <button class="btn-primary" style="padding:6px 12px;font-size:12px;" data-pay="'+s.id+'">Collect</button></td></tr>';
         });
@@ -814,6 +828,7 @@
         payments.splice(0,payments.length, ...payments.filter(function(x){return x.id!==p.id;}));
         SamajiCache.invalidate("fee_payments");
         paidByStudent[p.student_id]=Math.max(0,(paidByStudent[p.student_id]||0)-tuitionOf(p));
+        if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=Math.max(0,(busPaidByStudent[p.student_id]||0)-Number(p.transport_amount));
         toast("Payment revoked.");
         refreshStats();
         tab==="ledger"?ledger():receipts();
@@ -879,6 +894,7 @@
             }
             SamajiCache.invalidate("fee_payments");
             paidByStudent[sid]=(paidByStudent[sid]||0)+(amt-(includesBus?transportFare:0));
+            if(includesBus) busPaidByStudent[sid]=(busPaidByStudent[sid]||0)+transportFare;
             m.close(); toast("Payment recorded — receipt "+receiptNo);
             showReceipt(r.data, students.find(function(s){return s.id===sid;}));
             init(); // refresh stats + ledger
@@ -997,6 +1013,8 @@
     var allPayments=await cget(sb, schoolId, "fee_payments", "*");
     var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
     var schoolInfo=((await sb.from("schools").select("*").eq("id",schoolId).single()).data)||{name:schoolId};
+    var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId);
+    var allBusFare={}; (taRes.data||[]).forEach(function(a){ if(a.transport_routes) allBusFare[a.student_id]=Number(a.transport_routes.fare)||0; });
     var lastReport=null; // populated by draw(), read by printReport()
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
     var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
@@ -1052,7 +1070,11 @@
       // must never offset another's unpaid balance.
       var outstanding=0; students.forEach(function(s){ var t=targetByLevel[levelOf(s)]||0, paid=paidByStudent[s.id]||0; outstanding+=Math.max(0,t-paid); });
       var rate=billed?Math.round(collected/billed*100):0;
-      var fullyPaid=students.filter(function(s){ var lv=levelOf(s); var t=targetByLevel[lv]||0; return t>0 && (paidByStudent[s.id]||0)>=t; }).length;
+      // bus fare
+      var busPaidByStudent={}; payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
+      var busBilled=0, busCollected=0, busOutstanding=0;
+      students.forEach(function(s){ var bf=allBusFare[s.id]||0, bp=busPaidByStudent[s.id]||0; busBilled+=bf; busCollected+=bp; busOutstanding+=Math.max(0,bf-bp); });
+      var fullyPaid=students.filter(function(s){ var lv=levelOf(s); var t=targetByLevel[lv]||0; var bf=allBusFare[s.id]||0, bp=busPaidByStudent[s.id]||0; return (t+bf)>0 && (paidByStudent[s.id]||0)>=t && bp>=bf; }).length;
       var avgFee=students.length?Math.round(billed/students.length):0;
 
       // gender + enrollment
@@ -1077,11 +1099,14 @@
       // KPI cards (clickable)
       function kpi(drill,lbl,val,bg,ink,ic,sub){ return '<div class="stat" data-drill="'+drill+'" style="cursor:pointer;"><div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div>'+(sub?'<div class="delta flat">'+sub+'</div>':'')+'<div class="drill-hint">'+icArrow()+'</div></div>'; }
 
+      var icBus='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="7.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><circle cx="16.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 11h18" stroke="currentColor" stroke-width="1.5"/></svg>';
       var html='<div class="statgrid">'
         +kpi("students","Total students",students.length,"#EEF0FF","#4F46E5",icP(),boarders+" boarders · "+day+" day")
-        +kpi("collected","Fees collected",money(collected),"#ECFDF3","#067647",icCash(),rate+"% of target")
-        +kpi("outstanding","Outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert(),(students.length-fullyPaid)+" with balance")
+        +kpi("collected","Tuition collected",money(collected),"#ECFDF3","#067647",icCash(),rate+"% of target")
+        +kpi("outstanding","Tuition outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert(),(students.length-fullyPaid)+" with balance")
         +kpi("paid","Fully paid",fullyPaid+" / "+students.length,"#F1ECFE","#6D28D9",icChart(),"Avg fee "+money(avgFee))
+        +kpi("buscollected","Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus,(busBilled?Math.round(busCollected/busBilled*100):0)+"% of target")
+        +kpi("busoutstanding","Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus,busBilled?money(busBilled)+" billed":"No assignments")
         +'</div>';
 
       // Collected vs target — Zeraki-style progress bars, one row per group
@@ -1109,7 +1134,8 @@
 
       lastReport={ term:term, fromV:fromV, toV:toV, groupBy:groupSel.value, students:students.length, boarders:boarders, day:day,
         billed:billed, collected:collected, outstanding:outstanding, rate:rate, fullyPaid:fullyPaid, avgFee:avgFee,
-        ctKeys:ctKeys, groups:groups, methodData:methodData };
+        ctKeys:ctKeys, groups:groups, methodData:methodData,
+        busBilled:busBilled, busCollected:busCollected, busOutstanding:busOutstanding };
 
       // wire drill-downs
       document.querySelectorAll("#rep-body [data-drill]").forEach(function(card){
@@ -1164,6 +1190,12 @@
         +'<td><span class="k">Collected</span><span class="v" style="color:#067647;">'+money(r.collected)+'</span><span class="sub">'+r.rate+'% of target</span></td>'
         +'<td><span class="k">Outstanding</span><span class="v" style="color:#C2410C;">'+money(r.outstanding)+'</span><span class="sub">'+(r.students-r.fullyPaid)+' with balance</span></td>'
         +'</tr></table>'
+
+        +(r.busBilled>0?'<table class="st-summary"><tr>'
+        +'<td><span class="k">Bus fare billed</span><span class="v">'+money(r.busBilled)+'</span></td>'
+        +'<td><span class="k">Bus fare collected</span><span class="v" style="color:#067647;">'+money(r.busCollected)+'</span></td>'
+        +'<td><span class="k">Bus fare outstanding</span><span class="v" style="color:#C2410C;">'+money(r.busOutstanding)+'</span></td>'
+        +'</tr></table>':'')
 
         +'<h4>Collection by '+esc(groupLabel.toLowerCase())+' — collected vs target</h4>'
         +'<table class="st-table"><thead><tr><th>'+esc(groupLabel)+'</th><th class="num">Students</th><th class="num">Target</th><th class="num">Collected</th><th class="num">Outstanding</th><th class="num">% collected</th></tr></thead>'
