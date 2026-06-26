@@ -1028,6 +1028,7 @@
       _d.innerHTML='<div class="empty">Failed to load data: '+String(e&&e.message?e.message:e)+'</div>';
       return;
     }
+    try{
     var lastReport=null;
     var classOf={}; classes.forEach(function(c){ classOf[c.id]=c.level; });
     var classFull={}; var hasStreams=false; classes.forEach(function(c){ classFull[c.id]=c.level+(c.stream?" "+c.stream:""); if(c.stream) hasStreams=true; });
@@ -1166,7 +1167,7 @@
           openDrill(g.key+" — fee status", list.length+" students · target "+money(t0)+" each", rows);
         };
       });
-    }catch(e){ document.getElementById("rep-body").innerHTML='<div class="empty">Report error: '+(e&&e.message?e.message:"unknown")+'</div>'; } }
+    }catch(e){ document.getElementById("rep-body").innerHTML='<div class="empty" style="color:#C2410C;font-weight:600;">Report error: '+String(e)+'</div>'; } }
 
     function emptyc(){ return '<div class="empty" style="padding:24px;">Not enough data yet.</div>'; }
 
@@ -1231,6 +1232,7 @@
       ov.querySelector("#rp-print").onclick=function(){ window.print(); };
     }
     draw();
+    }catch(e){ _d.innerHTML='<div class="empty" style="color:#C2410C;font-weight:600;">Setup error: '+String(e)+'</div>'; }
   }
 
   // drill-down modals for report KPIs
