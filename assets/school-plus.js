@@ -347,7 +347,8 @@
   //  STUDENTS v2  (rich biodata, class & dorm dropdowns)
   // ====================================================
   async function renderStudentsV2(sb, schoolId, el){
-    el.innerHTML='<div class="mod-head"><div><h2>Students</h2><p>Enrollment records, biodata, class and boarding.</p></div><button class="btn-primary" id="add-student">+ New student</button></div>'
+    el.innerHTML='<div class="mod-head"><div><h2>Students</h2><p>Enrollment records, biodata, class and boarding.</p></div>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn-sm" id="import-students">⭱ Import CSV</button><button class="btn-sm" id="promote-students">⇪ Promote to next class</button><button class="btn-primary" id="add-student">+ New student</button></div></div>'
       +'<div class="toolbar"><div class="search"><span style="color:#98A2B3;">⌕</span><input id="stu-search" placeholder="Search name or admission no…"></div>'
       +'<select id="stu-class-filter"><option value="">All classes</option></select>'
       +'<span class="muted" id="stu-count" style="font-size:12.5px;margin-left:auto;"></span></div><div id="stu-table"></div>';
@@ -461,6 +462,108 @@
     };
     document.getElementById("stu-search").oninput=draw;
     document.getElementById("stu-class-filter").onchange=draw;
+
+    // ---------- promote to next class ----------
+    document.getElementById("promote-students").onclick=function(){
+      if(classes.length<2){ toast("Add at least two classes first (Settings → Classes & Streams)."); return; }
+      var sorted=classes; // already sorted by sort/stream from loadClasses()
+      var fromOpts=sorted.map(function(c){ return '<option value="'+c.id+'">'+esc(classLabel(c))+'</option>'; }).join("");
+      var m=modal('<h3>Promote students to next class</h3><p class="muted" style="font-size:12.5px;margin:0;">Moves every student in the "From" class into the "To" class. This updates their class permanently — review before confirming.</p>'
+        +'<div class="grid2" style="margin-top:14px;">'
+        +'<div class="field"><label>From class</label><select id="pr-from">'+fromOpts+'</select></div>'
+        +'<div class="field"><label>To class</label><select id="pr-to">'+fromOpts+'</select></div>'
+        +'</div><div id="pr-count" class="muted" style="font-size:12.5px;margin-top:10px;"></div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Promote</button></div>');
+      function nextClassId(fromId){
+        var i=sorted.findIndex(function(c){return c.id===fromId;});
+        return (i>=0 && i+1<sorted.length)? sorted[i+1].id : fromId;
+      }
+      function refreshCount(){
+        var fromId=m.q("#pr-from").value;
+        var n=all.filter(function(s){return s.class_id===fromId;}).length;
+        m.q("#pr-count").textContent=n+" student"+(n===1?"":"s")+" currently in "+classLabel(sorted.find(function(c){return c.id===fromId;}));
+        m.q("#pr-to").value=nextClassId(fromId);
+      }
+      m.q("#pr-from").onchange=refreshCount; refreshCount();
+      m.q("#c").onclick=m.close;
+      m.q("#s").onclick=async function(){
+        var fromId=m.q("#pr-from").value, toId=m.q("#pr-to").value;
+        if(fromId===toId){ toast("Pick a different destination class."); return; }
+        var toClass=sorted.find(function(c){return c.id===toId;});
+        var list=all.filter(function(s){return s.class_id===fromId;});
+        if(!list.length){ toast("No students in that class."); return; }
+        if(!await window.SM_confirm("Promote "+list.length+" student(s) from "+classLabel(sorted.find(function(c){return c.id===fromId;}))+" to "+classLabel(toClass)+"? This cannot be undone automatically.")) return;
+        var btn=m.q("#s"); btn.disabled=true; btn.textContent="Promoting…";
+        var r=await sb.from("students").update({ class_id:toId, grade:toClass.level }).eq("school_id",schoolId).eq("class_id",fromId);
+        if(r.error){ toast("Error: "+r.error.message); btn.disabled=false; btn.textContent="Promote"; return; }
+        SamajiCache.invalidate("students");
+        m.close(); toast(list.length+" student(s) promoted to "+classLabel(toClass));
+        load();
+      };
+    };
+
+    // ---------- bulk import (CSV) ----------
+    document.getElementById("import-students").onclick=function(){
+      if(!classes.length){ toast("Set up classes first (Settings → Classes & Streams)."); return; }
+      var m=modal('<h3>Import students from CSV</h3>'
+        +'<p class="muted" style="font-size:12.5px;margin:0;">Header row required: <code>first_name,last_name,admission_no,gender,class,guardian_name,guardian_phone</code>. "class" must match an existing class level (e.g. "Grade 6") and may include a stream ("Grade 6 East").</p>'
+        +'<div class="field full" style="margin-top:12px;"><input type="file" id="im-file" accept=".csv,text/csv"></div>'
+        +'<div id="im-preview" style="margin-top:12px;max-height:300px;overflow:auto;"></div>'
+        +'<div class="modal-actions"><a id="im-template" download="students-template.csv" style="margin-right:auto;align-self:center;font-size:12.5px;">Download template</a><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s" disabled>Import</button></div>', true);
+      var tplCsv="first_name,last_name,admission_no,gender,class,guardian_name,guardian_phone\nJane,Doe,ADM-0101,F,Grade 6,Mary Doe,+254700000000\n";
+      m.q("#im-template").href="data:text/csv;charset=utf-8,"+encodeURIComponent(tplCsv);
+      m.q("#c").onclick=m.close;
+      var parsed=[];
+      function parseCsv(text){
+        var lines=text.split(/\r?\n/).filter(function(l){return l.trim().length;});
+        if(!lines.length) return {rows:[],errors:["Empty file."]};
+        var header=lines[0].split(",").map(function(h){return h.trim().toLowerCase();});
+        var rows=[], errors=[];
+        for(var i=1;i<lines.length;i++){
+          var cells=lines[i].split(",").map(function(c){return c.trim();});
+          var row={}; header.forEach(function(h,idx){ row[h]=cells[idx]||""; });
+          if(!row.first_name||!row.last_name){ errors.push("Row "+(i+1)+": missing first_name/last_name — skipped."); continue; }
+          var cls=null;
+          if(row["class"]){
+            cls=classes.find(function(c){ return classLabel(c).toLowerCase()===row["class"].toLowerCase() || c.level.toLowerCase()===row["class"].toLowerCase(); });
+            if(!cls) errors.push("Row "+(i+1)+": class \""+row["class"]+"\" not found — student left unassigned.");
+          }
+          rows.push({ school_id:schoolId, first_name:row.first_name, last_name:row.last_name, admission_no:row.admission_no||null,
+            gender:(row.gender||"").toUpperCase()==="F"?"F":(row.gender||"").toUpperCase()==="M"?"M":null,
+            class_id:cls?cls.id:null, grade:cls?cls.level:(row["class"]||null),
+            guardian_name:row.guardian_name||null, guardian_phone:row.guardian_phone||null, status:"active", residence:"Day" });
+        }
+        return {rows:rows, errors:errors};
+      }
+      m.q("#im-file").onchange=function(e){
+        var f=e.target.files[0]; if(!f) return;
+        var reader=new FileReader();
+        reader.onload=function(){
+          var res=parseCsv(String(reader.result));
+          parsed=res.rows;
+          var html='';
+          if(res.errors.length) html+='<div class="empty" style="border-color:#FDE68A;background:#FFFBEB;color:#92400E;margin-bottom:10px;">'+res.errors.map(esc).join("<br>")+'</div>';
+          if(parsed.length){
+            html+='<table class="data"><thead><tr><th>Name</th><th>Adm No</th><th>Class</th><th>Guardian</th></tr></thead><tbody>'
+              +parsed.slice(0,50).map(function(p){ return '<tr><td>'+esc(p.first_name+" "+p.last_name)+'</td><td class="mono" style="font-size:11px;">'+esc(p.admission_no||"—")+'</td><td>'+esc(p.grade||"—")+'</td><td>'+esc(p.guardian_name||"—")+'</td></tr>'; }).join("")
+              +'</tbody></table>'+(parsed.length>50?'<p class="muted" style="font-size:11.5px;">+'+(parsed.length-50)+' more rows…</p>':'');
+          } else html+='<div class="empty">No valid rows found.</div>';
+          m.q("#im-preview").innerHTML=html;
+          m.q("#s").disabled=!parsed.length;
+          m.q("#s").textContent="Import "+parsed.length+" student"+(parsed.length===1?"":"s");
+        };
+        reader.readAsText(f);
+      };
+      m.q("#s").onclick=async function(){
+        if(!parsed.length) return;
+        var btn=m.q("#s"); btn.disabled=true; btn.textContent="Importing…";
+        var r=await sb.from("students").insert(parsed);
+        if(r.error){ toast("Error: "+r.error.message); btn.disabled=false; return; }
+        SamajiCache.invalidate("students");
+        m.close(); toast(parsed.length+" student(s) imported."); load();
+      };
+    };
+
     load();
   }
 
@@ -531,33 +634,70 @@
 
       function collectForm(preId){
         var opts=students.map(function(s){ return '<option value="'+s.id+'"'+(preId===s.id?" selected":"")+'>'+esc(s.first_name+" "+s.last_name)+(s.admission_no?" ("+esc(s.admission_no)+")":"")+'</option>'; }).join("");
+        // a fresh key per form, sent with the insert; a duplicate insert
+        // (e.g. a fast double-click of "Record") collides on this key at
+        // the database level instead of creating a second payment.
+        var idemKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+        var transportFare=0;
         function balOf(id){ var s=students.find(function(x){return x.id===id;}); var billed=s?(totalByLevelTerm[s.grade]||0):0; var paid=paidByStudent[id]||0; return {billed:billed,paid:paid,bal:Math.max(0,billed-paid),s:s}; }
         var m=modal('<h3>Collect payment</h3><div class="grid2">'
           +'<div class="field full"><label>Student</label><select id="p-stu">'+opts+'</select></div>'
           +'<div class="field full"><div id="p-bal" style="background:#F8FAFB;border:1px solid #EEF0F2;border-radius:10px;padding:11px 13px;font-size:12.5px;"></div></div>'
+          +'<div class="field full" id="p-bus-wrap" style="display:none;">'
+          +'<label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;">'
+          +'<input type="checkbox" id="p-bus"> 🚌 <span id="p-bus-label">Include bus transport</span></label></div>'
           +'<div class="field"><label>Amount (KES)</label><input id="p-amt" type="number" placeholder="0"></div>'
           +'<div class="field"><label>Method</label><select id="p-method"><option>Cash</option><option>M-Pesa</option><option>Bank</option><option>Cheque</option><option>Card</option></select></div>'
           +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
           +'<div class="field"><label>Reference (M-Pesa/Cheque)</label><input id="p-ref" placeholder="e.g. SLJ7XK2P"></div>'
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Record &amp; print receipt</button></div>');
-        function refreshBal(){ var b=balOf(m.q("#p-stu").value); m.q("#p-bal").innerHTML='Billed <strong>'+money(b.billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(b.paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(b.bal)+'</strong>'+(b.billed===0?' <span class="muted">(no fee structure for '+esc(b.s?b.s.grade:"")+')</span>':''); if(!m.q("#p-amt").value&&b.bal>0) m.q("#p-amt").value=b.bal; }
-        m.q("#p-stu").onchange=refreshBal; refreshBal();
+        function refreshBal(){
+          var b=balOf(m.q("#p-stu").value);
+          var extra=(m.q("#p-bus").checked?transportFare:0);
+          m.q("#p-bal").innerHTML='Billed <strong>'+money(b.billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(b.paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(b.bal)+'</strong>'+(b.billed===0?' <span class="muted">(no fee structure for '+esc(b.s?b.s.grade:"")+')</span>':'');
+          if(!m.q("#p-amt").value&&(b.bal+extra)>0) m.q("#p-amt").value=b.bal+extra;
+        }
+        async function loadTransport(){
+          var wrap=m.q("#p-bus-wrap"); wrap.style.display="none"; transportFare=0;
+          var sid=m.q("#p-stu").value;
+          var r=await sb.from("transport_assignments").select("*, transport_routes(name,fare)").eq("student_id",sid).maybeSingle();
+          if(r.data && r.data.transport_routes){
+            transportFare=Number(r.data.transport_routes.fare)||0;
+            m.q("#p-bus-label").textContent="Include bus transport — "+esc(r.data.transport_routes.name)+" ("+money(transportFare)+")";
+            wrap.style.display="";
+          }
+          refreshBal();
+        }
+        m.q("#p-stu").onchange=function(){ m.q("#p-amt").value=""; loadTransport(); };
+        m.q("#p-bus").onchange=function(){ var was=m.q("#p-amt").value; m.q("#p-amt").value=""; refreshBal(); if(!m.q("#p-amt").value) m.q("#p-amt").value=was; };
+        loadTransport();
         m.q("#c").onclick=m.close;
-        m.q("#s").onclick=async function(){
+        var submitBtn=m.q("#s"), submitting=false;
+        submitBtn.onclick=async function(){
+          if(submitting) return; // guard against double-click firing two inserts
           var sid=m.q("#p-stu").value, amt=Number(m.q("#p-amt").value)||0;
           if(amt<=0){ toast("Enter an amount."); return; }
-          var rn=await sb.rpc("next_receipt_no",{ p_school:schoolId });
-          var receiptNo=rn.data||("RCT-"+Date.now());
-          var who=(await sb.auth.getUser()).data.user; who=who?who.email:null;
-          var rec={ school_id:schoolId, student_id:sid, receipt_no:receiptNo, amount:amt, method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:m.q("#p-term").value, year:new Date().getFullYear(), note:m.q("#p-note").value.trim()||null, received_by:who };
-          var r=await sb.from("fee_payments").insert(rec).select().single();
-          if(r.error){ toast("Error: "+r.error.message); return; }
-          SamajiCache.invalidate("fee_payments");
-          paidByStudent[sid]=(paidByStudent[sid]||0)+amt;
-          m.close(); toast("Payment recorded — receipt "+receiptNo);
-          showReceipt(r.data, students.find(function(s){return s.id===sid;}));
-          init(); // refresh stats + ledger
+          submitting=true; submitBtn.disabled=true; var origLabel=submitBtn.textContent; submitBtn.textContent="Recording…";
+          try{
+            var rn=await sb.rpc("next_receipt_no",{ p_school:schoolId });
+            var receiptNo=rn.data||("RCT-"+Date.now());
+            var who=(await sb.auth.getUser()).data.user; who=who?who.email:null;
+            var includesBus=m.q("#p-bus").checked && transportFare>0;
+            var rec={ school_id:schoolId, student_id:sid, receipt_no:receiptNo, amount:amt, method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:m.q("#p-term").value, year:new Date().getFullYear(), note:m.q("#p-note").value.trim()||null, received_by:who, client_ref:idemKey, includes_transport:includesBus, transport_amount:includesBus?transportFare:0 };
+            var r=await sb.from("fee_payments").insert(rec).select().single();
+            if(r.error){
+              if(/duplicate|unique/i.test(r.error.message||"")){ toast("This payment was already recorded."); m.close(); init(); return; }
+              toast("Error: "+r.error.message); submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
+            }
+            SamajiCache.invalidate("fee_payments");
+            paidByStudent[sid]=(paidByStudent[sid]||0)+amt;
+            m.close(); toast("Payment recorded — receipt "+receiptNo);
+            showReceipt(r.data, students.find(function(s){return s.id===sid;}));
+            init(); // refresh stats + ledger
+          }catch(e){
+            toast("Error: "+(e&&e.message?e.message:"could not record payment")); submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel;
+          }
         };
       }
       ledger();
@@ -589,6 +729,7 @@
             +'</div>'
             +'<div class="rc-amt"><div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#067647;">Amount Paid</div><div class="big">'+money(p.amount)+'</div></div>'
             +'<svg width="40" height="40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#067647"/><path d="M8 12.5l2.5 2.5L16 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'
+            +(p.includes_transport?'<div class="rc-line">🚌 Includes bus transport <strong>'+money(p.transport_amount)+'</strong></div>':'')
             +(billed>0?'<div class="rc-bal"><span class="muted">Term billed: '+money(billed)+'</span><span style="font-weight:700;color:'+(bal>0?"#C2410C":"#067647")+';">Balance: '+money(bal)+'</span></div>':'')
             +(p.note?'<div class="rc-line" style="border:none;color:#667085;">Note: '+esc(p.note)+'</div>':'')
             +'</div><div class="rc-foot">Thank you. This is a computer-generated receipt — '+esc(p.receipt_no)+'<br>Powered by Samaji · Pillartech Solutions</div>'
@@ -610,8 +751,12 @@
   // ====================================================
   async function renderReports(sb, schoolId, el){
     el.innerHTML='<div class="mod-head"><div><h2>Reports &amp; Analytics</h2><p>Live insight across enrollment, finance and collections. Tap any card for details.</p></div>'
-      +'<div style="display:flex;gap:10px;align-items:flex-end;"><div class="field"><label>Group by</label><select id="rep-group"><option value="level">Class level</option><option value="stream">Stream</option></select></div>'
-      +'<div class="field"><label>Term</label><select id="rep-term"><option>All terms</option><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div></div></div>'
+      +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;"><div class="field"><label>Group by</label><select id="rep-group"><option value="level">Class level</option><option value="stream">Stream</option></select></div>'
+      +'<div class="field"><label>Term</label><select id="rep-term"><option>All terms</option><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+      +'<div class="field"><label>From</label><input type="date" id="rep-from"></div>'
+      +'<div class="field"><label>To</label><input type="date" id="rep-to"></div>'
+      +'<button class="btn-sm" id="rep-clear">Clear dates</button>'
+      +'<button class="btn-primary" id="rep-print">🖨 Print / Export PDF</button></div></div>'
       +'<div id="rep-body"><div class="statgrid">'+skel()+skel()+skel()+skel()+'</div></div>';
     function skel(){ return '<div class="stat"><div class="skel" style="height:64px;"></div></div>'; }
 
@@ -624,9 +769,15 @@
     var C=window.SamajiCharts;
     var termSel=document.getElementById("rep-term");
     var groupSel=document.getElementById("rep-group");
+    var fromSel=document.getElementById("rep-from");
+    var toSel=document.getElementById("rep-to");
     if(!hasStreams){ groupSel.parentNode.style.display="none"; } // only offer stream view if streams exist
     termSel.onchange=draw;
     groupSel.onchange=draw;
+    fromSel.onchange=draw;
+    toSel.onchange=draw;
+    document.getElementById("rep-clear").onclick=function(){ fromSel.value=""; toSel.value=""; draw(); };
+    document.getElementById("rep-print").onclick=function(){ printReport(); };
 
     function levelOf(s){ return s.grade||classOf[s.class_id]||"Unassigned"; }
     function keyOf(s){ return groupSel.value==="stream" ? (classFull[s.class_id]||levelOf(s)) : levelOf(s); }
@@ -635,7 +786,10 @@
 
     function draw(){
       var term=termSel.value;
+      var fromV=fromSel.value, toV=toSel.value;
       var payments=term==="All terms"?allPayments:allPayments.filter(function(p){return p.term===term;});
+      if(fromV) payments=payments.filter(function(p){return (p.paid_at||"").slice(0,10)>=fromV;});
+      if(toV) payments=payments.filter(function(p){return (p.paid_at||"").slice(0,10)<=toV;});
       // target per level (sum of its structures' items; respect term filter)
       var structForTerm=term==="All terms"?structures:structures.filter(function(s){return s.term===term;});
       var targetByLevel={}; structForTerm.forEach(function(s){ targetByLevel[s.level]=(targetByLevel[s.level]||0)+(s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
@@ -733,6 +887,20 @@
     }
 
     function emptyc(){ return '<div class="empty" style="padding:24px;">Not enough data yet.</div>'; }
+    function printReport(){
+      var range=(fromSel.value||toSel.value)?((fromSel.value||"…")+" to "+(toSel.value||"…")):"All dates";
+      var ov=document.createElement("div"); ov.className="overlay";
+      ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
+        +'<div id="print-area" style="background:#fff;max-width:880px;width:100%;padding:24px;">'
+        +'<h2 style="margin:0 0 2px;">Fees &amp; Reports — '+esc(termSel.value)+'</h2>'
+        +'<p class="muted" style="margin:0 0 16px;font-size:12.5px;">'+esc(range)+' · Grouped by '+(groupSel.value==="stream"?"stream":"class")+' · Generated '+new Date().toLocaleString()+'</p>'
+        +document.getElementById("rep-body").innerHTML
+        +'</div><div style="display:flex;gap:10px;"><button class="btn-sm" id="rp-close">Close</button><button class="btn-primary" id="rp-print">🖨 Print / Save as PDF</button></div></div>';
+      ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
+      document.body.appendChild(ov);
+      ov.querySelector("#rp-close").onclick=function(){ ov.remove(); };
+      ov.querySelector("#rp-print").onclick=function(){ window.print(); };
+    }
     draw();
   }
 
