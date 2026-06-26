@@ -719,19 +719,9 @@
       // billed per student = structure total for their level (sum across active terms)
       var totalByLevelTerm={}; structures.forEach(function(s){ totalByLevelTerm[s.level]= (totalByLevelTerm[s.level]||0) + (s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
       var paidByStudent={}; payments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+Number(p.amount); });
-      var billedTotal=0, collected=0;
-      students.forEach(function(s){ var b=totalByLevelTerm[s.grade]||0; billedTotal+=b; });
-      collected=payments.reduce(function(a,p){return a+Number(p.amount);},0);
-      var outstanding=Math.max(0,billedTotal-collected);
-
       el.innerHTML='<div class="mod-head"><div><h2>Fees &amp; Invoicing</h2><p>Collect fees against each class\u2019s structure and issue professional receipts.</p></div>'
         +'<button class="btn-primary" id="collect">+ Collect payment</button></div>'
-        +'<div class="statgrid" style="grid-template-columns:repeat(4,1fr);">'
-        +stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
-        +stat("Collected",money(collected),"#ECFDF3","#067647",icCash())
-        +stat("Outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert())
-        +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart())
-        +'</div>'
+        +'<div class="statgrid" id="fee-stats" style="grid-template-columns:repeat(4,1fr);"></div>'
         +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button></div>'
         +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'
         +'<input id="fee-search" type="search" placeholder="Search by name, admission no. or class…" style="flex:1;max-width:340px;padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;">'
@@ -742,14 +732,31 @@
       document.getElementById("collect").onclick=function(){ if(!students.length){toast("Enrol students first.");return;} collectForm(); };
       var tab="ledger", query="", classFilter="";
       el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); tab==="ledger"?ledger():receipts(); }; });
-      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); tab==="ledger"?ledger():receipts(); };
-      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; tab==="ledger"?ledger():receipts(); };
+      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); tab==="ledger"?ledger():receipts(); };
+      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); tab==="ledger"?ledger():receipts(); };
 
       function matches(name, adm, cls){
         if(classFilter && cls!==classFilter) return false;
         if(!query) return true;
         return (name||"").toLowerCase().indexOf(query)>=0 || (adm||"").toLowerCase().indexOf(query)>=0 || (cls||"").toLowerCase().indexOf(query)>=0;
       }
+
+      // Recompute the four KPI cards from only the students currently
+      // matching the class/search filters, so the cards mirror the table.
+      function refreshStats(){
+        var scoped=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
+        var billedTotal=0, collected=0;
+        scoped.forEach(function(s){ billedTotal+=totalByLevelTerm[s.grade]||0; });
+        var scopedIds={}; scoped.forEach(function(s){ scopedIds[s.id]=true; });
+        collected=payments.reduce(function(a,p){ return scopedIds[p.student_id]?a+Number(p.amount):a; },0);
+        var outstanding=Math.max(0,billedTotal-collected);
+        document.getElementById("fee-stats").innerHTML=
+          stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
+          +stat("Collected",money(collected),"#ECFDF3","#067647",icCash())
+          +stat("Outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert())
+          +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart());
+      }
+      refreshStats();
 
       function ledger(){
         var body=document.getElementById("fee-body");
@@ -783,10 +790,28 @@
           html+='<tr><td class="mono" style="font-size:12px;font-weight:600;">'+esc(p.receipt_no)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(nameOf[p.student_id]||"—")+'</td>'
             +'<td style="font-weight:700;color:#067647;">'+money(p.amount)+'</td><td><span class="pill gray">'+esc(p.method)+'</span></td>'
             +'<td class="muted" style="font-size:12px;">'+new Date(p.paid_at).toLocaleDateString()+'</td>'
-            +'<td style="text-align:right;"><button class="btn-sm" data-r="'+p.id+'">View receipt</button></td></tr>';
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-r="'+p.id+'">View receipt</button> <button class="btn-sm" style="color:#C2410C;" data-revoke="'+p.id+'">Revoke</button></td></tr>';
         });
         body.innerHTML=html+'</tbody></table>';
         body.querySelectorAll("[data-r]").forEach(function(b){ b.onclick=function(){ var p=rows.find(function(x){return x.id===b.getAttribute("data-r");}); showReceipt(p, students.find(function(s){return s.id===p.student_id;})); }; });
+        body.querySelectorAll("[data-revoke]").forEach(function(b){ b.onclick=function(){ var p=rows.find(function(x){return x.id===b.getAttribute("data-revoke");}); revokePayment(p); }; });
+      }
+
+      // Reverses an accidental/disapproved payment: deletes the fee_payments
+      // row and rolls back the in-memory totals so the ledger, KPI cards and
+      // receipts list all reflect the reversal immediately (Reports/Dashboard
+      // pick it up on their next load since they read fee_payments fresh).
+      async function revokePayment(p){
+        var stu=students.find(function(s){return s.id===p.student_id;});
+        if(!await window.SM_confirm("Revoke payment "+p.receipt_no+" of "+money(p.amount)+(stu?" for "+stu.first_name+" "+stu.last_name:"")+"? This cannot be undone.")) return;
+        var r=await sb.from("fee_payments").delete().eq("id",p.id);
+        if(r.error){ toast("Error: "+r.error.message); return; }
+        payments.splice(0,payments.length, ...payments.filter(function(x){return x.id!==p.id;}));
+        SamajiCache.invalidate("fee_payments");
+        paidByStudent[p.student_id]=Math.max(0,(paidByStudent[p.student_id]||0)-Number(p.amount));
+        toast("Payment revoked.");
+        refreshStats();
+        tab==="ledger"?ledger():receipts();
       }
 
       function collectForm(preId){
@@ -952,7 +977,8 @@
   // ====================================================
   async function renderReports(sb, schoolId, el){
     el.innerHTML='<div class="mod-head"><div><h2>Reports &amp; Analytics</h2><p>Live insight across enrollment, finance and collections. Tap any card for details.</p></div>'
-      +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;"><div class="field"><label>Group by</label><select id="rep-group"><option value="level">Class level</option><option value="stream">Stream</option></select></div>'
+      +'<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;"><div class="field"><label>Class</label><select id="rep-class"><option value="">All classes</option></select></div>'
+      +'<div class="field"><label>Group by</label><select id="rep-group"><option value="level">Class level</option><option value="stream">Stream</option></select></div>'
       +'<div class="field"><label>Term</label><select id="rep-term"><option>All terms</option><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
       +'<div class="field"><label>From</label><input type="date" id="rep-from"></div>'
       +'<div class="field"><label>To</label><input type="date" id="rep-to"></div>'
@@ -961,7 +987,7 @@
       +'<div id="rep-body"><div class="statgrid">'+skel()+skel()+skel()+skel()+'</div></div>';
     function skel(){ return '<div class="stat"><div class="skel" style="height:64px;"></div></div>'; }
 
-    var students=await cget(sb, schoolId, "students", "*");
+    var allStudents=await cget(sb, schoolId, "students", "*");
     var classes=await loadClasses(sb, schoolId);
     var allPayments=await cget(sb, schoolId, "fee_payments", "*");
     var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
@@ -974,7 +1000,11 @@
     var groupSel=document.getElementById("rep-group");
     var fromSel=document.getElementById("rep-from");
     var toSel=document.getElementById("rep-to");
+    var classSel=document.getElementById("rep-class");
+    var classLevels=Array.from(new Set(allStudents.map(function(s){return s.grade;}).filter(Boolean))).sort(lord);
+    classSel.innerHTML='<option value="">All classes</option>'+classLevels.map(function(g){return '<option value="'+esc(g)+'">'+esc(g)+'</option>';}).join("");
     if(!hasStreams){ groupSel.parentNode.style.display="none"; } // only offer stream view if streams exist
+    classSel.onchange=draw;
     termSel.onchange=draw;
     groupSel.onchange=draw;
     fromSel.onchange=draw;
@@ -983,6 +1013,7 @@
     document.getElementById("rep-print").onclick=function(){ printReport(); };
 
     function levelOf(s){ return s.grade||classOf[s.class_id]||"Unassigned"; }
+    var levelOfAll=levelOf;
     function keyOf(s){ return groupSel.value==="stream" ? (classFull[s.class_id]||levelOf(s)) : levelOf(s); }
     var levelOrder=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
     function lord(a,b){ var ia=levelOrder.indexOf(a),ib=levelOrder.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }
@@ -990,7 +1021,11 @@
     function draw(){
       var term=termSel.value;
       var fromV=fromSel.value, toV=toSel.value;
+      var classV=classSel.value;
+      var students=classV?allStudents.filter(function(s){return levelOfAll(s)===classV;}):allStudents;
+      var studentIds=null; if(classV){ studentIds={}; students.forEach(function(s){studentIds[s.id]=true;}); }
       var payments=term==="All terms"?allPayments:allPayments.filter(function(p){return p.term===term;});
+      if(studentIds) payments=payments.filter(function(p){return studentIds[p.student_id];});
       if(fromV) payments=payments.filter(function(p){return (p.paid_at||"").slice(0,10)>=fromV;});
       if(toV) payments=payments.filter(function(p){return (p.paid_at||"").slice(0,10)<=toV;});
       // target per level (sum of its structures' items; respect term filter)
