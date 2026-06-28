@@ -157,6 +157,25 @@
   var CUR_SCHOOL = null; // for licensing
   var CUR_LICENSE = null; // { schoolId, sub, pkgSet, addonSet }
 
+  // ---- Edge function for user management ----
+  var EDGE_URL = (window.SAMAJI_CONFIG ? window.SAMAJI_CONFIG.SUPABASE_URL : "") + "/functions/v1/admin-users";
+  async function adminUsersAPI(body) {
+    var session = (await sb.auth.getSession()).data.session;
+    if (!session) throw new Error("Not authenticated");
+    var resp = await fetch(EDGE_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + session.access_token,
+        "apikey": window.SAMAJI_CONFIG ? window.SAMAJI_CONFIG.SUPABASE_ANON_KEY : ""
+      },
+      body: JSON.stringify(body)
+    });
+    var data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || "Request failed");
+    return data;
+  }
+
   // ---- Helpers ----
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
@@ -661,16 +680,18 @@
           var email = cleanPhone + "@parent.samaji.app";
           b.disabled = true;
           b.textContent = "Creating...";
-          var r = await sb.rpc("admin_create_user", {
-            p_email: email,
-            p_password: cleanPhone,
-            p_role: "parent",
-            p_school_id: schoolId,
-            p_phone: phone,
-            p_full_name: name
-          });
-          if (r.error) { toast("Error: " + r.error.message); b.disabled = false; b.textContent = "Create Account"; return; }
-          toast("Parent account created for " + phone);
+          try {
+            await adminUsersAPI({
+              action: "create_user",
+              email: email,
+              password: cleanPhone,
+              role: "parent",
+              school_id: schoolId,
+              phone: phone,
+              full_name: name
+            });
+            toast("Parent account created for " + phone);
+          } catch(e) { toast("Error: " + e.message); b.disabled = false; b.textContent = "Create Account"; return; }
           loadUsers(schoolId);
         };
       });
@@ -681,9 +702,10 @@
       list.querySelectorAll("[data-del]").forEach(function(b){
         b.onclick = async function(){
           if (!await confirmDialog("Delete this user? This cannot be undone.")) return;
-          var r = await sb.rpc("admin_delete_user", { p_user_id: b.getAttribute("data-del") });
-          if (r.error) { toast("Error: " + r.error.message); return; }
-          toast("User deleted."); loadUsers(curSchool);
+          try {
+            await adminUsersAPI({ action: "delete_user", user_id: b.getAttribute("data-del") });
+            toast("User deleted."); loadUsers(curSchool);
+          } catch(e) { toast("Error: " + e.message); }
         };
       });
     }
@@ -698,9 +720,10 @@
       m.q("#rp-save").onclick = async function(){
         var pw = m.q("#rp-pw").value;
         if (!pw || pw.length < 6) { toast("Password must be at least 6 characters."); return; }
-        var r = await sb.rpc("admin_reset_password", { p_user_id: userId, p_new_password: pw });
-        if (r.error) { toast("Error: " + r.error.message); return; }
-        toast("Password reset."); m.close();
+        try {
+          await adminUsersAPI({ action: "reset_password", user_id: userId, new_password: pw });
+          toast("Password reset."); m.close();
+        } catch(e) { toast("Error: " + e.message); }
       };
     }
 
@@ -737,16 +760,18 @@
           if (cleanPhone.length === 10 && cleanPhone.charAt(0) === "0") cleanPhone = "254" + cleanPhone.substring(1);
           email = cleanPhone + "@parent.samaji.app";
           password = cleanPhone;
-          var r = await sb.rpc("admin_create_user", { p_email: email, p_password: password, p_role: "parent", p_school_id: curSchool, p_phone: phone, p_full_name: fullName || null });
-          if (r.error) { toast("Error: " + r.error.message); return; }
+          try {
+            await adminUsersAPI({ action: "create_user", email: email, password: password, role: "parent", school_id: curSchool, phone: phone, full_name: fullName || null });
+          } catch(e) { toast("Error: " + e.message); return; }
         } else {
           email = m.q("#au-email").value.trim();
           fullName = m.q("#au-name").value.trim();
           password = m.q("#au-pw").value;
           phone = null;
           if (!email || !password) { toast("Email and password are required."); return; }
-          var r = await sb.rpc("admin_create_user", { p_email: email, p_password: password, p_role: role, p_school_id: curSchool, p_phone: phone, p_full_name: fullName || null });
-          if (r.error) { toast("Error: " + r.error.message); return; }
+          try {
+            await adminUsersAPI({ action: "create_user", email: email, password: password, role: role, school_id: curSchool, phone: phone, full_name: fullName || null });
+          } catch(e) { toast("Error: " + e.message); return; }
         }
         toast("User created."); m.close(); loadUsers(curSchool);
       };
