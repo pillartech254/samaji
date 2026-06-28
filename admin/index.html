@@ -7,16 +7,18 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/styles.css">
 <style>
-  header{background:#fff;border-bottom:1px solid #EAECEF;}
-  .hbar{max-width:1120px;margin:0 auto;padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;}
-  .wrap{max-width:1120px;margin:0 auto;padding:28px 24px 64px;}
-  .grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start;margin-top:20px;}
-  .flag{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #F4F5F7;}
-  .dot{width:7px;height:7px;border-radius:50%;flex:none;}
-  .tag{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;flex:none;}
-  .sub-line{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:13px;}
-  #app{display:none;}
-  /* module control rows */
+  #app{display:none;min-height:100vh;}
+  .layout{display:flex;min-height:100vh;}
+  aside{width:236px;flex:none;background:#fff;border-right:1px solid #EAECEF;padding:16px 12px;display:flex;flex-direction:column;}
+  .brand{display:flex;align-items:center;gap:11px;padding:8px 8px 16px;}
+  .nav-h{font-size:10.5px;font-weight:700;color:#B0B5BE;text-transform:uppercase;letter-spacing:.06em;padding:12px 9px 5px;}
+  .navitem{display:flex;align-items:center;gap:11px;padding:9px;border:none;border-radius:9px;background:none;cursor:pointer;font-family:inherit;text-align:left;width:100%;font-size:13.5px;font-weight:600;color:#344054;}
+  .navitem:hover{background:#F6F7F9;}
+  .navitem.active{background:#EEF0FF;color:#4F46E5;}
+  .navitem .tile{flex:none;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;}
+  main{flex:1;min-width:0;padding:26px 30px 60px;}
+
+  /* module control rows (licensing) */
   .mrow{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid #F4F5F7;}
   .mrow .tile{flex:none;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;}
   .src{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;}
@@ -25,8 +27,11 @@
   .act.rm{color:#B42318;background:#fff;border-color:#FECDCA;} .act.rm:hover{background:#FEF3F2;}
   .act:disabled{opacity:.5;cursor:default;}
   .catlbl{font-size:10.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.05em;padding:14px 0 2px;}
-  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:#15171E;color:#fff;font-size:13px;font-weight:500;padding:11px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;transition:opacity .2s, transform .2s;pointer-events:none;z-index:50;}
-  #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .flag{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid #F4F5F7;}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none;}
+  .tag{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;flex:none;}
+  .sub-line{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:13px;}
+  .grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;align-items:start;margin-top:20px;}
 
   /* split login (indigo) */
   #auth{display:flex;min-height:100vh;background:#fff;}
@@ -48,11 +53,28 @@
   .login-inner h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:8px 0 4px;}
   .login-inner .sub{font-size:13.5px;color:#667085;margin:0 0 8px;}
   @media (max-width:840px){ .login-brand{display:none;} .login-form{flex:1;width:auto;} }
+
+  /* overlay/modal for admin console (self-contained) */
+  .adm-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;}
+  .adm-modal{background:#fff;border-radius:14px;box-shadow:0 16px 48px rgba(0,0,0,.18);padding:24px;min-width:360px;max-width:520px;width:100%;max-height:90vh;overflow:auto;}
+  .adm-modal h3{margin:0 0 16px;font-size:17px;font-weight:700;}
+  .adm-modal label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:12px 0 5px;}
+  .adm-modal input,.adm-modal select,.adm-modal textarea{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:10px 12px;outline:none;font-family:inherit;box-sizing:border-box;}
+  .adm-modal input:focus,.adm-modal select:focus{border-color:#4F46E5;box-shadow:0 0 0 3px rgba(79,70,229,.12);}
+  .adm-modal .btn-row{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;}
+
+  /* user table */
+  .user-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #F4F5F7;}
+  .user-row .avatar{width:32px;height:32px;border-radius:50%;background:#EEF0FF;color:#4F46E5;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex:none;}
+
+  /* checkbox grid for db reset */
+  .cb-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;margin:12px 0;}
+  .cb-grid label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;cursor:pointer;}
 </style>
 </head>
 <body>
 
-  <!-- BOOT SPLASH (prevents login flash on reload while session resolves) -->
+  <!-- BOOT SPLASH -->
   <div id="boot" style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;">
     <div style="display:flex;align-items:center;gap:11px;opacity:.7;">
       <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#6366F1,#4F46E5);color:#fff;display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div>
@@ -66,25 +88,24 @@
       <span class="glow g1"></span><span class="glow g2"></span>
       <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
       <h2>Run your entire school network from one console</h2>
-      <p class="lead">Provision schools, build packages, toggle modules and watch licenses resolve live across every institution.</p>
+      <p class="lead">Provision schools, build packages, toggle modules and manage users across every institution.</p>
       <div class="trust">
         <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2v20M4 7l8-5 8 5M4 7v10l8 5 8-5V7" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></span>Database-driven feature flags &amp; permissions</div>
         <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M3 13h4l3 7 4-14 3 7h4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Live revenue &amp; usage across all schools</div>
         <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Bank-grade security &amp; isolation</div>
       </div>
-      <div class="bfoot">© <span id="year-b"></span> Pillartech Solutions. All rights reserved.</div>
+      <div class="bfoot">&copy; <span id="year-b"></span> Pillartech Solutions. All rights reserved.</div>
     </div>
     <div class="login-form">
       <div class="login-inner">
-        <div class="warn" id="config-warn" style="margin-bottom:18px;">⚠ Set your Supabase keys in <span class="mono">assets/config.js</span> first.</div>
-        <div class="eyebrow">Provider Console</div>
-        <h1 id="auth-title">Sign in</h1>
-        <p class="sub" id="auth-sub">Sign in to the licensing console.</p>
+        <div class="warn" id="config-warn" style="margin-bottom:18px;">&#9888; Set your Supabase keys in <span class="mono">assets/config.js</span> first.</div>
+        <div class="eyebrow">Admin Console</div>
+        <h1>Sign in</h1>
+        <p class="sub">Sign in to the super-admin console.</p>
         <label>Email</label><input id="email" type="email" placeholder="admin@samaji.app" autocomplete="email">
-        <label>Password</label><input id="password" type="password" placeholder="••••••••" autocomplete="current-password">
+        <label>Password</label><input id="password" type="password" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;" autocomplete="current-password">
         <button class="btn indigo" id="submit">Sign in</button>
         <div class="msg" id="msg"></div>
-        <div class="toggle" id="toggle-line">First time here? <a id="toggle">Create an account</a></div>
         <div class="pfoot" style="text-align:center;font-size:12px;color:#B0B5BE;margin-top:24px;padding-top:18px;border-top:1px solid #F0F1F4;">Powered by <strong style="color:#667085;">Pillartech Solutions</strong></div>
       </div>
     </div>
@@ -92,39 +113,27 @@
 
   <!-- APP -->
   <div id="app">
-    <header><div class="hbar">
-      <div class="row"><div class="logo indigo"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:15px;">Samaji</strong><span class="badge">Admin Console</span></div>
-      <div class="row"><a class="muted" href="../" style="font-size:13px;text-decoration:none;">All portals</a><span class="muted" id="who" style="font-size:13px;"></span><button class="ghost" id="signout">Sign out</button></div>
-    </div></header>
-    <div class="wrap">
-      <div class="row" style="justify-content:space-between;">
-        <div><h1 style="margin:0;font-size:21px;">Licensing console</h1><p class="muted" style="margin-top:4px;font-size:13.5px;">Changes write to Postgres and re-resolve instantly. The school portal reflects them on refresh.</p></div>
-        <div class="row"><span class="muted">School</span><select id="school-select"></select></div>
-      </div>
-      <div class="grid">
-        <!-- LEFT: editable modules -->
-        <div class="panel">
-          <div class="row" style="justify-content:space-between;margin-bottom:4px;">
-            <strong style="font-size:14px;">Modules</strong>
-            <span class="muted" style="font-size:12px;">In-package · add-on · off</span>
-          </div>
-          <div id="modules"></div>
+    <div class="layout">
+      <button class="hamburger" id="hamburger" aria-label="Menu">&#9776;</button>
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
+      <aside>
+        <div class="brand">
+          <div class="logo indigo"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div>
+          <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;">Samaji</div><div style="font-size:11px;color:#98A2B3;">Admin Console</div></div>
         </div>
-        <!-- RIGHT: package + resolved flags -->
-        <div style="display:flex;flex-direction:column;gap:16px;">
-          <div class="panel">
-            <strong style="font-size:14px;">Base package</strong>
-            <p class="muted" style="font-size:12px;margin:4px 0 10px;">Switching re-grants the package's flags.</p>
-            <select id="package-select" style="width:100%;"></select>
-            <div id="sub" style="margin-top:12px;"></div>
-          </div>
-          <div class="panel">
-            <div class="row" style="justify-content:space-between;margin-bottom:6px;"><strong style="font-size:14px;">Effective flags</strong><span class="tag" style="color:#475467;background:#F4F5F7;" id="flag-count">—</span></div>
-            <div class="mono" style="font-size:10.5px;color:#98A2B3;background:#FAFAFB;border:1px solid #F0F1F4;border-radius:7px;padding:7px 9px;">core ∪ package ∪ add-ons ∪ overrides</div>
-            <div id="flags" style="margin-top:4px;max-height:280px;overflow:auto;"></div>
-          </div>
-        </div>
-      </div>
+        <div class="nav-h">Overview</div>
+        <button class="navitem active" id="nav-dashboard"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9670;</span>Dashboard</button>
+        <div class="nav-h">Management</div>
+        <button class="navitem" id="nav-schools"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9632;</span>Schools</button>
+        <button class="navitem" id="nav-licensing"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9881;</span>Licensing</button>
+        <button class="navitem" id="nav-users"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9679;</span>Users</button>
+        <div class="nav-h">Operations</div>
+        <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9733;</span>M-Pesa Config</button>
+        <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9636;</span>Database</button>
+        <div style="flex:1;"></div>
+        <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;">&#9881;</span>Settings</button>
+      </aside>
+      <main id="view"></main>
     </div>
   </div>
 
@@ -134,36 +143,75 @@
 <script src="../assets/config.js"></script>
 <script src="../assets/app.js"></script>
 <script>
+(function(){
+  "use strict";
   var $ = function(id){ return document.getElementById(id); };
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
-  var _yb=$("year-b"); if(_yb) _yb.textContent=new Date().getFullYear();
+  var _yb = $("year-b"); if (_yb) _yb.textContent = new Date().getFullYear();
   var sb = window.getSB();
-  var mode = "signin";
-  var MODULES = [], PACKAGES = [], CUR = null; // CUR = { schoolId, sub, pkgSet, addonSet }
+
+  // ---- Shared state ----
+  var SCHOOLS = [];
+  var MODULES = [];
+  var PACKAGES = [];
+  var CUR_SCHOOL = null; // for licensing
+  var CUR_LICENSE = null; // { schoolId, sub, pkgSet, addonSet }
+
+  // ---- Helpers ----
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
   var toastT;
   function toast(t){ var el = $("toast"); el.textContent = t; el.className = "show"; clearTimeout(toastT); toastT = setTimeout(function(){ el.className = ""; }, 2200); }
 
-  document.addEventListener("click", function(e){
-    if (e.target && e.target.id === "toggle") {
-      mode = mode === "signin" ? "signup" : "signin";
-      $("auth-title").textContent = mode === "signin" ? "Sign in" : "Create account";
-      $("auth-sub").textContent   = mode === "signin" ? "Sign in to the licensing console." : "Set up your super-admin login.";
-      $("submit").textContent     = mode === "signin" ? "Sign in" : "Create account";
-      $("toggle-line").innerHTML  = mode === "signin" ? 'First time here? <a id="toggle">Create an account</a>' : 'Have an account? <a id="toggle">Sign in</a>';
-    }
-  });
+  function modal(html){
+    var ov = document.createElement("div"); ov.className = "adm-overlay";
+    ov.innerHTML = '<div class="adm-modal">' + html + '</div>';
+    ov.addEventListener("click", function(e){ if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+    return { el: ov, close: function(){ ov.remove(); }, q: function(sel){ return ov.querySelector(sel); } };
+  }
 
+  function confirmDialog(message){
+    return new Promise(function(resolve){
+      var m = modal(
+        '<h3>Please confirm</h3>' +
+        '<p style="font-size:14px;color:#475467;margin:0 0 20px;">' + esc(message) + '</p>' +
+        '<div class="btn-row">' +
+        '<button class="ghost" id="adm-cancel">Cancel</button>' +
+        '<button class="btn-primary btn-sm" style="background:#B42318;" id="adm-ok">Yes, continue</button>' +
+        '</div>'
+      );
+      m.q("#adm-cancel").onclick = function(){ m.close(); resolve(false); };
+      m.q("#adm-ok").onclick = function(){ m.close(); resolve(true); };
+    });
+  }
+
+  // ---- Nav ----
+  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","database","settings"];
+  function setActive(key){
+    NAV_KEYS.forEach(function(k){
+      var el = $("nav-" + k);
+      if (el) { if (k === key) el.classList.add("active"); else el.classList.remove("active"); }
+    });
+  }
+
+  $("nav-dashboard").onclick = function(){ showDashboard(); };
+  $("nav-schools").onclick = function(){ showSchools(); };
+  $("nav-licensing").onclick = function(){ showLicensing(); };
+  $("nav-users").onclick = function(){ showUsers(); };
+  $("nav-mpesa").onclick = function(){ showMpesa(); };
+  $("nav-database").onclick = function(){ showDatabase(); };
+  $("nav-settings").onclick = function(){ showSettings(); };
+
+  // ---- Auth ----
   $("submit").onclick = async function(){
-    if (!sb) { showMsg("Supabase keys not set — edit assets/config.js.", false); return; }
+    if (!sb) { showMsg("Supabase keys not set.", false); return; }
     var email = $("email").value.trim(), password = $("password").value;
     if (!email || !password) { showMsg("Enter an email and password.", false); return; }
     $("submit").disabled = true;
     try {
-      var res = mode === "signin" ? await sb.auth.signInWithPassword({ email: email, password: password })
-                                  : await sb.auth.signUp({ email: email, password: password });
+      var res = await sb.auth.signInWithPassword({ email: email, password: password });
       if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
-      if (mode === "signup" && !res.data.session) { showMsg("Account created. Confirm email (if on), then sign in.", true); $("submit").disabled = false; return; }
       enterApp();
     } catch (err) { showMsg(String(err), false); $("submit").disabled = false; }
   };
@@ -171,157 +219,677 @@
   async function enterApp(){
     var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
     $("boot").style.display = "none";
-    $("auth").style.display = "none"; $("app").style.display = "block"; $("who").textContent = user.email;
+    $("auth").style.display = "none"; $("app").style.display = "block";
     startIdleWatch();
 
-    // diagnostic: show the role the DB resolves for this session
+    // verify role
     var prof = await sb.from("profiles").select("role").eq("id", user.id).maybeSingle();
-    var role = prof.data ? prof.data.role : (prof.error ? "error: " + prof.error.message : "no profile row");
-    $("who").textContent = user.email + "  ·  role: " + role;
+    var role = prof.data ? prof.data.role : "unknown";
 
-    // load reference data once
+    // load reference data
+    var sres = await sb.from("schools").select("*").order("name");
+    SCHOOLS = sres.data || [];
+
     var mres = await sb.from("modules").select("*").eq("active", true);
-    MODULES = (mres.data || []).sort(function(a,b){ var o={core:0,standard:1,advanced:2}; return (o[a.tier]-o[b.tier]) || a.name.localeCompare(b.name); });
+    MODULES = (mres.data || []).sort(function(a, b){ var o = {core:0,standard:1,advanced:2}; return (o[a.tier] - o[b.tier]) || a.name.localeCompare(b.name); });
+
     var pres = await sb.from("packages").select("*").eq("active", true);
     PACKAGES = pres.data || [];
-    var psel = $("package-select"); psel.innerHTML = "";
-    PACKAGES.forEach(function(p){ var o = document.createElement("option"); o.value = p.id; o.textContent = p.name + "  ·  $" + p.price + "/mo"; psel.appendChild(o); });
-    psel.onchange = function(){ changePackage(psel.value); };
 
-    var sres = await sb.from("schools").select("*").order("name");
-    var sel = $("school-select"); sel.innerHTML = "";
-    (sres.data || []).forEach(function(s){ var o = document.createElement("option"); o.value = s.id; o.textContent = s.name; sel.appendChild(o); });
-    sel.onchange = function(){ loadSchool(sel.value); };
-    if (sres.data && sres.data.length) { loadSchool(sres.data[0].id); }
-    else if (sres.error) { $("modules").innerHTML = '<p class="muted">Could not load schools — <strong>' + sres.error.message + '</strong><br>This is usually an RLS/permission issue. Re-run the permission-helper SQL in the README.</p>'; }
-    else { $("modules").innerHTML = '<p class="muted">Signed in as <strong>' + role + '</strong>, but no schools are visible. If your role is not <strong>super_admin</strong>, fix your profile row. If it is, confirm setup.sql seeded the schools.</p>'; }
+    showDashboard();
   }
 
-  async function loadSchool(schoolId){
-    // subscription
+  // ---- School selector helper ----
+  function schoolSelector(selectId, onChange){
+    var sel = document.getElementById(selectId);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- Select school --</option>';
+    SCHOOLS.forEach(function(s){
+      var o = document.createElement("option"); o.value = s.id; o.textContent = s.name; sel.appendChild(o);
+    });
+    if (onChange) sel.onchange = function(){ onChange(sel.value); };
+  }
+
+  // ====================================================
+  //  1. DASHBOARD
+  // ====================================================
+  async function showDashboard(){
+    setActive("dashboard");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:24px;"><h2 style="margin:0;font-size:21px;">Dashboard</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Overview of all schools and activity.</p></div>' +
+      '<div class="statgrid" id="dash-stats"><div class="stat"><div class="lbl">Loading...</div></div></div>' +
+      '<div style="margin-top:28px;"><h3 style="font-size:15px;margin:0 0 12px;">Schools</h3>' +
+      '<table class="data" id="dash-table"><thead><tr><th>School</th><th>Region</th><th>Students</th><th>Status</th></tr></thead><tbody id="dash-tbody"></tbody></table></div>';
+
+    // Fetch stats
+    var students = (await sb.from("students").select("school_id")).data || [];
+    var profiles = (await sb.from("profiles").select("id")).data || [];
+    var payments = (await sb.from("fee_payments").select("amount")).data || [];
+    var totalCollections = 0;
+    payments.forEach(function(p){ totalCollections += Number(p.amount || 0); });
+
+    // Count students per school
+    var perSchool = {};
+    students.forEach(function(s){
+      perSchool[s.school_id] = (perSchool[s.school_id] || 0) + 1;
+    });
+
+    var statsHtml =
+      '<div class="stat"><div class="ic" style="background:#EEF0FF;color:#4F46E5"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="lbl">Total Schools</div><div class="val">' + SCHOOLS.length + '</div></div>' +
+      '<div class="stat"><div class="ic" style="background:#ECFDF3;color:#067647"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="lbl">Total Students</div><div class="val">' + students.length + '</div></div>' +
+      '<div class="stat"><div class="ic" style="background:#FEF3F2;color:#B42318"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="lbl">Total Collections</div><div class="val">KES ' + totalCollections.toLocaleString() + '</div></div>' +
+      '<div class="stat"><div class="ic" style="background:#F1ECFE;color:#6D28D9"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 19a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="lbl">Active Users</div><div class="val">' + profiles.length + '</div></div>';
+    $("dash-stats").innerHTML = statsHtml;
+
+    // School table
+    var tbody = $("dash-tbody");
+    var rows = "";
+    SCHOOLS.forEach(function(s){
+      var cnt = perSchool[s.id] || 0;
+      var st = s.status || "active";
+      var stColor = st === "active" ? "color:#067647;background:#ECFDF3" : "color:#B42318;background:#FEF3F2";
+      rows +=
+        '<tr>' +
+        '<td style="font-weight:600;">' + esc(s.name) + '</td>' +
+        '<td>' + esc(s.region || "—") + '</td>' +
+        '<td>' + cnt + '</td>' +
+        '<td><span class="tag" style="' + stColor + '">' + esc(st) + '</span></td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = rows || '<tr><td colspan="4" class="muted" style="text-align:center;">No schools found.</td></tr>';
+  }
+
+  // ====================================================
+  //  2. SCHOOLS
+  // ====================================================
+  async function showSchools(){
+    setActive("schools");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">' +
+      '<div><h2 style="margin:0;font-size:21px;">Schools</h2><p class="muted" style="margin-top:4px;font-size:13.5px;">Manage all schools on the platform.</p></div>' +
+      '<button class="btn-primary btn-sm" id="add-school-btn">+ Add school</button></div>' +
+      '<table class="data" id="schools-table"><thead><tr><th>Name</th><th>Subdomain</th><th>Region</th><th>Status</th><th></th></tr></thead><tbody id="schools-tbody"></tbody></table>';
+
+    function renderRows(){
+      var tbody = document.getElementById("schools-tbody");
+      var rows = "";
+      SCHOOLS.forEach(function(s){
+        var st = s.status || "active";
+        var stColor = st === "active" ? "color:#067647;background:#ECFDF3" : "color:#B42318;background:#FEF3F2";
+        rows +=
+          '<tr>' +
+          '<td style="font-weight:600;">' + esc(s.name) + '</td>' +
+          '<td class="mono" style="font-size:12px;">' + esc(s.subdomain || "—") + '</td>' +
+          '<td>' + esc(s.region || "—") + '</td>' +
+          '<td><span class="tag" style="' + stColor + '">' + esc(st) + '</span></td>' +
+          '<td><button class="ghost" data-edit="' + s.id + '" style="font-size:12px;">Edit</button></td>' +
+          '</tr>';
+      });
+      tbody.innerHTML = rows || '<tr><td colspan="5" class="muted" style="text-align:center;">No schools.</td></tr>';
+      tbody.querySelectorAll("[data-edit]").forEach(function(b){
+        b.onclick = function(){ editSchool(b.getAttribute("data-edit")); };
+      });
+    }
+
+    renderRows();
+
+    document.getElementById("add-school-btn").onclick = function(){
+      var m = modal(
+        '<h3>Add School</h3>' +
+        '<label>School ID (UUID)</label><input id="ns-id" placeholder="Leave blank for auto-generate">' +
+        '<label>Name</label><input id="ns-name" placeholder="School name">' +
+        '<label>Subdomain</label><input id="ns-sub" placeholder="e.g. greenhill">' +
+        '<label>Region</label><input id="ns-region" placeholder="e.g. Nairobi">' +
+        '<div class="btn-row"><button class="ghost" id="ns-cancel">Cancel</button><button class="btn-primary btn-sm" id="ns-save">Add School</button></div>'
+      );
+      m.q("#ns-cancel").onclick = function(){ m.close(); };
+      m.q("#ns-save").onclick = async function(){
+        var name = m.q("#ns-name").value.trim();
+        var subdomain = m.q("#ns-sub").value.trim();
+        var region = m.q("#ns-region").value.trim();
+        var sid = m.q("#ns-id").value.trim() || crypto.randomUUID();
+        if (!name) { toast("Name is required."); return; }
+        var r = await sb.rpc("admin_add_school", { p_id: sid, p_name: name, p_subdomain: subdomain || null, p_region: region || null });
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast("School added.");
+        m.close();
+        // reload
+        var sres = await sb.from("schools").select("*").order("name");
+        SCHOOLS = sres.data || [];
+        renderRows();
+      };
+    };
+
+    function editSchool(id){
+      var school = null;
+      SCHOOLS.forEach(function(s){ if (s.id === id) school = s; });
+      if (!school) return;
+      var m = modal(
+        '<h3>Edit School</h3>' +
+        '<label>Name</label><input id="es-name" value="' + esc(school.name) + '">' +
+        '<label>Region</label><input id="es-region" value="' + esc(school.region || "") + '">' +
+        '<label>Status</label><select id="es-status"><option value="active"' + (school.status === "active" ? " selected" : "") + '>Active</option><option value="suspended"' + (school.status === "suspended" ? " selected" : "") + '>Suspended</option><option value="archived"' + (school.status === "archived" ? " selected" : "") + '>Archived</option></select>' +
+        '<div class="btn-row"><button class="ghost" id="es-cancel">Cancel</button><button class="btn-primary btn-sm" id="es-save">Save</button></div>'
+      );
+      m.q("#es-cancel").onclick = function(){ m.close(); };
+      m.q("#es-save").onclick = async function(){
+        var name = m.q("#es-name").value.trim();
+        var region = m.q("#es-region").value.trim();
+        var status = m.q("#es-status").value;
+        if (!name) { toast("Name required."); return; }
+        var r = await sb.from("schools").update({ name: name, region: region, status: status }).eq("id", id);
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast("School updated.");
+        m.close();
+        var sres = await sb.from("schools").select("*").order("name");
+        SCHOOLS = sres.data || [];
+        renderRows();
+      };
+    }
+  }
+
+  // ====================================================
+  //  3. LICENSING (preserved from original)
+  // ====================================================
+  async function showLicensing(){
+    setActive("licensing");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+      '<div><h2 style="margin:0;font-size:21px;">Licensing console</h2><p class="muted" style="margin-top:4px;font-size:13.5px;">Changes write to Postgres and re-resolve instantly.</p></div>' +
+      '<div class="row"><span class="muted">School</span><select id="lic-school"></select></div></div>' +
+      '<div class="grid">' +
+      '<div class="panel"><div class="row" style="justify-content:space-between;margin-bottom:4px;"><strong style="font-size:14px;">Modules</strong><span class="muted" style="font-size:12px;">In-package &middot; add-on &middot; off</span></div><div id="lic-modules"></div></div>' +
+      '<div style="display:flex;flex-direction:column;gap:16px;">' +
+      '<div class="panel"><strong style="font-size:14px;">Base package</strong><p class="muted" style="font-size:12px;margin:4px 0 10px;">Switching re-grants the package\'s flags.</p><select id="lic-package" style="width:100%;"></select><div id="lic-sub" style="margin-top:12px;"></div></div>' +
+      '<div class="panel"><div class="row" style="justify-content:space-between;margin-bottom:6px;"><strong style="font-size:14px;">Effective flags</strong><span class="tag" style="color:#475467;background:#F4F5F7;" id="lic-flag-count">--</span></div><div class="mono" style="font-size:10.5px;color:#98A2B3;background:#FAFAFB;border:1px solid #F0F1F4;border-radius:7px;padding:7px 9px;">core &#8746; package &#8746; add-ons &#8746; overrides</div><div id="lic-flags" style="margin-top:4px;max-height:280px;overflow:auto;"></div></div>' +
+      '</div></div>';
+
+    // populate package selector
+    var psel = document.getElementById("lic-package");
+    psel.innerHTML = "";
+    PACKAGES.forEach(function(p){
+      var o = document.createElement("option"); o.value = p.id; o.textContent = p.name + "  $" + p.price + "/mo"; psel.appendChild(o);
+    });
+    psel.onchange = function(){ licChangePackage(psel.value); };
+
+    // school selector
+    schoolSelector("lic-school", function(val){ if (val) licLoadSchool(val); });
+    var sel = document.getElementById("lic-school");
+    if (SCHOOLS.length) { sel.value = SCHOOLS[0].id; licLoadSchool(SCHOOLS[0].id); }
+  }
+
+  async function licLoadSchool(schoolId){
+    CUR_SCHOOL = schoolId;
     var subs = await sb.from("subscriptions").select("*, packages(name,price,student_limit)").eq("school_id", schoolId).limit(1);
     var sub = subs.data && subs.data[0];
-    if (!sub) { $("modules").innerHTML = '<p class="muted">No subscription for this school.</p>'; $("flags").innerHTML=""; $("sub").innerHTML=""; return; }
-    // package contents + current add-ons
+    if (!sub) {
+      document.getElementById("lic-modules").innerHTML = '<p class="muted">No subscription for this school.</p>';
+      document.getElementById("lic-flags").innerHTML = "";
+      document.getElementById("lic-sub").innerHTML = "";
+      CUR_LICENSE = null;
+      return;
+    }
     var pm = await sb.from("package_modules").select("module_id").eq("package_id", sub.package_id);
     var pkgSet = {}; (pm.data || []).forEach(function(r){ pkgSet[r.module_id] = true; });
     var ad = await sb.from("subscription_addons").select("module_id").eq("subscription_id", sub.id);
     var addonSet = {}; (ad.data || []).forEach(function(r){ addonSet[r.module_id] = true; });
-    CUR = { schoolId: schoolId, sub: sub, pkgSet: pkgSet, addonSet: addonSet };
-    $("package-select").value = sub.package_id;
-    renderSub(); renderModules(); refreshFlags();
+    CUR_LICENSE = { schoolId: schoolId, sub: sub, pkgSet: pkgSet, addonSet: addonSet };
+    document.getElementById("lic-package").value = sub.package_id;
+    licRenderSub(); licRenderModules(); licRefreshFlags();
   }
 
-  function renderSub(){
-    var sub = CUR.sub, addonCount = Object.keys(CUR.addonSet).length;
-    var addonSum = MODULES.filter(function(m){ return CUR.addonSet[m.id]; }).reduce(function(a,m){ return a + m.monthly_price; }, 0);
-    $("sub").innerHTML =
+  function licRenderSub(){
+    var sub = CUR_LICENSE.sub;
+    var addonCount = Object.keys(CUR_LICENSE.addonSet).length;
+    var addonSum = MODULES.filter(function(m){ return CUR_LICENSE.addonSet[m.id]; }).reduce(function(a, m){ return a + m.monthly_price; }, 0);
+    document.getElementById("lic-sub").innerHTML =
       '<div class="sub-line"><span class="muted">Status</span><strong>' + sub.status + '</strong></div>' +
       '<div class="sub-line"><span class="muted">Base price</span><strong>$' + (sub.packages ? sub.packages.price : 0) + '/mo</strong></div>' +
-      '<div class="sub-line"><span class="muted">Add-ons</span><strong>' + addonCount + ' · +$' + addonSum + '/mo</strong></div>' +
-      '<div class="sub-line" style="border-top:1px solid #EEF0F2;margin-top:4px;padding-top:8px;"><span style="font-weight:600;">Total</span><strong style="color:#4F46E5;">$' + ((sub.packages?sub.packages.price:0) + addonSum) + '/mo</strong></div>';
+      '<div class="sub-line"><span class="muted">Add-ons</span><strong>' + addonCount + ' &middot; +$' + addonSum + '/mo</strong></div>' +
+      '<div class="sub-line" style="border-top:1px solid #EEF0F2;margin-top:4px;padding-top:8px;"><span style="font-weight:600;">Total</span><strong style="color:#4F46E5;">$' + ((sub.packages ? sub.packages.price : 0) + addonSum) + '/mo</strong></div>';
   }
 
-  function renderModules(){
-    var box = $("modules"); box.innerHTML = "";
-    var lastTier = null, tierName = { core:"Core", standard:"Standard", advanced:"Advanced (add-on only)" };
+  function licRenderModules(){
+    var box = document.getElementById("lic-modules"); box.innerHTML = "";
+    var lastTier = null;
+    var tierName = { core: "Core", standard: "Standard", advanced: "Advanced (add-on only)" };
     MODULES.forEach(function(m){
       if (m.tier !== lastTier) { var h = document.createElement("div"); h.className = "catlbl"; h.textContent = tierName[m.tier]; box.appendChild(h); lastTier = m.tier; }
       var meta = window.metaFor(m.key);
-      var inPkg = !!CUR.pkgSet[m.id], isAddon = !!CUR.addonSet[m.id], isCore = m.tier === "core";
+      var inPkg = !!CUR_LICENSE.pkgSet[m.id], isAddon = !!CUR_LICENSE.addonSet[m.id], isCore = m.tier === "core";
       var row = document.createElement("div"); row.className = "mrow";
       var src, srcStyle, action = "";
       if (isCore) { src = "Core"; srcStyle = "color:#475467;background:#F1F2F6;"; }
       else if (inPkg) { src = "In package"; srcStyle = "color:#4F46E5;background:#EEF0FF;"; }
-      else if (isAddon) { src = "Add-on · $" + m.monthly_price; srcStyle = "color:#067647;background:#ECFDF3;"; action = '<button class="act rm" data-rm="'+m.id+'">Remove</button>'; }
-      else { src = "Off"; srcStyle = "color:#98A2B3;background:#F4F5F7;"; action = '<button class="act add" data-add="'+m.id+'">+ Add $' + m.monthly_price + '</button>'; }
+      else if (isAddon) { src = "Add-on &middot; $" + m.monthly_price; srcStyle = "color:#067647;background:#ECFDF3;"; action = '<button class="act rm" data-rm="' + m.id + '">Remove</button>'; }
+      else { src = "Off"; srcStyle = "color:#98A2B3;background:#F4F5F7;"; action = '<button class="act add" data-add="' + m.id + '">+ Add $' + m.monthly_price + '</button>'; }
       row.innerHTML =
-        '<span class="tile" style="background:'+meta.tint+';color:'+meta.ink+'">'+meta.mono+'</span>' +
-        '<div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;">'+m.name+'</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">'+m.key+'</div></div>' +
-        '<span class="src" style="'+srcStyle+'">'+src+'</span>' +
-        '<span style="width:96px;text-align:right;">'+action+'</span>';
+        '<span class="tile" style="background:' + meta.tint + ';color:' + meta.ink + '">' + meta.mono + '</span>' +
+        '<div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;">' + m.name + '</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">' + m.key + '</div></div>' +
+        '<span class="src" style="' + srcStyle + '">' + src + '</span>' +
+        '<span style="width:96px;text-align:right;">' + action + '</span>';
       box.appendChild(row);
     });
-    box.querySelectorAll("[data-add]").forEach(function(b){ b.onclick = function(){ addAddon(b.getAttribute("data-add")); }; });
-    box.querySelectorAll("[data-rm]").forEach(function(b){ b.onclick = function(){ removeAddon(b.getAttribute("data-rm")); }; });
+    box.querySelectorAll("[data-add]").forEach(function(b){ b.onclick = function(){ licAddAddon(b.getAttribute("data-add")); }; });
+    box.querySelectorAll("[data-rm]").forEach(function(b){ b.onclick = function(){ licRemoveAddon(b.getAttribute("data-rm")); }; });
   }
 
-  async function refreshFlags(){
-    var r = await sb.rpc("resolve_flags", { p_school: CUR.schoolId });
-    var box = $("flags"); box.innerHTML = "";
+  async function licRefreshFlags(){
+    var r = await sb.rpc("resolve_flags", { p_school: CUR_LICENSE.schoolId });
+    var box = document.getElementById("lic-flags"); box.innerHTML = "";
     if (r.error) { box.innerHTML = '<p class="muted">' + r.error.message + '</p>'; return; }
-    var flags = r.data || {}, entries = Object.keys(flags).map(function(k){ return [k, flags[k]]; });
+    var flags = r.data || {};
+    var entries = Object.keys(flags).map(function(k){ return [k, flags[k]]; });
     var granted = entries.filter(function(e){ return e[1]; });
-    $("flag-count").textContent = granted.length + " / " + entries.length;
-    entries.sort(function(a,b){ return (b[1]?1:0) - (a[1]?1:0); });
+    document.getElementById("lic-flag-count").textContent = granted.length + " / " + entries.length;
+    entries.sort(function(a, b){ return (b[1] ? 1 : 0) - (a[1] ? 1 : 0); });
     entries.forEach(function(e){
-      var k = e[0], v = e[1], row = document.createElement("div"); row.className = "flag";
-      row.innerHTML = '<span class="row"><span class="dot" style="background:' + (v?'#12B76A':'#D0D5DD') + '"></span><span class="mono" style="font-size:11.5px;color:' + (v?'#1A1D26':'#98A2B3') + '">' + k + '</span></span>' +
-        '<span class="tag" style="color:' + (v?'#067647':'#98A2B3') + ';background:' + (v?'#ECFDF3':'#F4F5F7') + '">' + (v?'true':'false') + '</span>';
+      var k = e[0], v = e[1];
+      var row = document.createElement("div"); row.className = "flag";
+      row.innerHTML = '<span class="row"><span class="dot" style="background:' + (v ? '#12B76A' : '#D0D5DD') + '"></span><span class="mono" style="font-size:11.5px;color:' + (v ? '#1A1D26' : '#98A2B3') + '">' + k + '</span></span>' +
+        '<span class="tag" style="color:' + (v ? '#067647' : '#98A2B3') + ';background:' + (v ? '#ECFDF3' : '#F4F5F7') + '">' + (v ? 'true' : 'false') + '</span>';
       box.appendChild(row);
     });
   }
 
-  // ---- WRITE ACTIONS (super-admin only, enforced by RLS) ----
-  async function addAddon(moduleId){
-    var m = MODULES.find(function(x){ return x.id === moduleId; });
-    var r = await sb.from("subscription_addons").insert({ subscription_id: CUR.sub.id, module_id: moduleId, price: m.monthly_price });
+  async function licAddAddon(moduleId){
+    var m = null; MODULES.forEach(function(x){ if (x.id === moduleId) m = x; });
+    var r = await sb.from("subscription_addons").insert({ subscription_id: CUR_LICENSE.sub.id, module_id: moduleId, price: m.monthly_price });
     if (r.error) { toast("Error: " + r.error.message); return; }
-    CUR.addonSet[moduleId] = true; renderModules(); renderSub(); await refreshFlags();
-    toast("Added " + m.name + " — " + m.key + " is now true");
+    CUR_LICENSE.addonSet[moduleId] = true; licRenderModules(); licRenderSub(); await licRefreshFlags();
+    toast("Added " + m.name);
   }
-  async function removeAddon(moduleId){
-    var m = MODULES.find(function(x){ return x.id === moduleId; });
-    var r = await sb.from("subscription_addons").delete().eq("subscription_id", CUR.sub.id).eq("module_id", moduleId);
+
+  async function licRemoveAddon(moduleId){
+    var m = null; MODULES.forEach(function(x){ if (x.id === moduleId) m = x; });
+    var r = await sb.from("subscription_addons").delete().eq("subscription_id", CUR_LICENSE.sub.id).eq("module_id", moduleId);
     if (r.error) { toast("Error: " + r.error.message); return; }
-    delete CUR.addonSet[moduleId]; renderModules(); renderSub(); await refreshFlags();
+    delete CUR_LICENSE.addonSet[moduleId]; licRenderModules(); licRenderSub(); await licRefreshFlags();
     toast("Removed " + m.name);
   }
-  async function changePackage(newPkgId){
-    var r = await sb.from("subscriptions").update({ package_id: newPkgId }).eq("id", CUR.sub.id);
+
+  async function licChangePackage(newPkgId){
+    var r = await sb.from("subscriptions").update({ package_id: newPkgId }).eq("id", CUR_LICENSE.sub.id);
     if (r.error) { toast("Error: " + r.error.message); return; }
-    toast("Package changed to " + (PACKAGES.find(function(p){return p.id===newPkgId;})||{}).name);
-    await loadSchool(CUR.schoolId);
+    var pkg = null; PACKAGES.forEach(function(p){ if (p.id === newPkgId) pkg = p; });
+    toast("Package changed to " + (pkg ? pkg.name : newPkgId));
+    await licLoadSchool(CUR_LICENSE.schoolId);
   }
 
-  // ---- session / idle-timeout security ----
+  // ====================================================
+  //  4. USERS
+  // ====================================================
+  async function showUsers(){
+    setActive("users");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">' +
+      '<div><h2 style="margin:0;font-size:21px;">User Management</h2><p class="muted" style="margin-top:4px;font-size:13.5px;">Manage users per school.</p></div>' +
+      '<div class="row" style="gap:10px;"><span class="muted">School</span><select id="usr-school"></select>' +
+      '<button class="btn-primary btn-sm" id="usr-add" disabled>+ Add user</button></div></div>' +
+      '<div id="usr-list"></div>';
+
+    var curSchool = null;
+    schoolSelector("usr-school", function(val){
+      curSchool = val;
+      document.getElementById("usr-add").disabled = !val;
+      if (val) loadUsers(val);
+      else document.getElementById("usr-list").innerHTML = '<p class="muted">Select a school.</p>';
+    });
+
+    async function loadUsers(schoolId){
+      var list = document.getElementById("usr-list");
+      list.innerHTML = '<p class="muted">Loading...</p>';
+      var r = await sb.rpc("admin_list_users", { p_school_id: schoolId });
+      if (r.error) { list.innerHTML = '<p class="muted">Error: ' + esc(r.error.message) + '</p>'; return; }
+      var users = r.data || [];
+      if (!users.length) { list.innerHTML = '<p class="muted">No users for this school.</p>'; return; }
+      var html = '<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Phone</th><th></th></tr></thead><tbody>';
+      users.forEach(function(u){
+        html +=
+          '<tr>' +
+          '<td style="font-weight:600;">' + esc(u.full_name || "—") + '</td>' +
+          '<td class="mono" style="font-size:12px;">' + esc(u.email || "—") + '</td>' +
+          '<td><span class="tag" style="color:#4F46E5;background:#EEF0FF;">' + esc(u.role || "—") + '</span></td>' +
+          '<td>' + esc(u.phone || "—") + '</td>' +
+          '<td style="white-space:nowrap;">' +
+          '<button class="ghost" data-reset="' + u.id + '" style="font-size:12px;">Reset pw</button> ' +
+          '<button class="ghost" data-del="' + u.id + '" style="font-size:12px;color:#B42318;">Delete</button>' +
+          '</td></tr>';
+      });
+      html += '</tbody></table>';
+      list.innerHTML = html;
+
+      list.querySelectorAll("[data-reset]").forEach(function(b){
+        b.onclick = function(){ resetPassword(b.getAttribute("data-reset")); };
+      });
+      list.querySelectorAll("[data-del]").forEach(function(b){
+        b.onclick = async function(){
+          if (!await confirmDialog("Delete this user? This cannot be undone.")) return;
+          var r = await sb.rpc("admin_delete_user", { p_user_id: b.getAttribute("data-del") });
+          if (r.error) { toast("Error: " + r.error.message); return; }
+          toast("User deleted."); loadUsers(curSchool);
+        };
+      });
+    }
+
+    function resetPassword(userId){
+      var m = modal(
+        '<h3>Reset Password</h3>' +
+        '<label>New Password</label><input id="rp-pw" type="password" placeholder="Enter new password">' +
+        '<div class="btn-row"><button class="ghost" id="rp-cancel">Cancel</button><button class="btn-primary btn-sm" id="rp-save">Reset</button></div>'
+      );
+      m.q("#rp-cancel").onclick = function(){ m.close(); };
+      m.q("#rp-save").onclick = async function(){
+        var pw = m.q("#rp-pw").value;
+        if (!pw || pw.length < 6) { toast("Password must be at least 6 characters."); return; }
+        var r = await sb.rpc("admin_reset_password", { p_user_id: userId, p_new_password: pw });
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast("Password reset."); m.close();
+      };
+    }
+
+    document.getElementById("usr-add").onclick = function(){
+      if (!curSchool) { toast("Select a school first."); return; }
+      var m = modal(
+        '<h3>Add User</h3>' +
+        '<label>Role</label><select id="au-role"><option value="school_admin">School Admin</option><option value="parent">Parent</option></select>' +
+        '<div id="au-admin-fields">' +
+        '<label>Email</label><input id="au-email" type="email" placeholder="user@school.ac.ke">' +
+        '<label>Full Name</label><input id="au-name" placeholder="Full name">' +
+        '<label>Password</label><input id="au-pw" type="password" placeholder="Password">' +
+        '</div>' +
+        '<div id="au-parent-fields" style="display:none;">' +
+        '<label>Phone Number (required)</label><input id="au-phone" placeholder="+254712345678">' +
+        '<label>Full Name</label><input id="au-pname" placeholder="Full name">' +
+        '</div>' +
+        '<div class="btn-row"><button class="ghost" id="au-cancel">Cancel</button><button class="btn-primary btn-sm" id="au-save">Add User</button></div>'
+      );
+      m.q("#au-role").onchange = function(){
+        var isParent = m.q("#au-role").value === "parent";
+        m.q("#au-admin-fields").style.display = isParent ? "none" : "block";
+        m.q("#au-parent-fields").style.display = isParent ? "block" : "none";
+      };
+      m.q("#au-cancel").onclick = function(){ m.close(); };
+      m.q("#au-save").onclick = async function(){
+        var role = m.q("#au-role").value;
+        var email, password, phone, fullName;
+        if (role === "parent") {
+          phone = m.q("#au-phone").value.trim();
+          fullName = m.q("#au-pname").value.trim();
+          if (!phone) { toast("Phone number is required."); return; }
+          var cleanPhone = phone.replace(/[\+\s]/g, "");
+          email = cleanPhone + "@parent.samaji.app";
+          password = phone;
+          var r = await sb.rpc("admin_create_user", { p_email: email, p_password: password, p_role: "parent", p_school_id: curSchool, p_phone: phone, p_full_name: fullName || null });
+          if (r.error) { toast("Error: " + r.error.message); return; }
+        } else {
+          email = m.q("#au-email").value.trim();
+          fullName = m.q("#au-name").value.trim();
+          password = m.q("#au-pw").value;
+          phone = null;
+          if (!email || !password) { toast("Email and password are required."); return; }
+          var r = await sb.rpc("admin_create_user", { p_email: email, p_password: password, p_role: role, p_school_id: curSchool, p_phone: phone, p_full_name: fullName || null });
+          if (r.error) { toast("Error: " + r.error.message); return; }
+        }
+        toast("User created."); m.close(); loadUsers(curSchool);
+      };
+    };
+  }
+
+  // ====================================================
+  //  5. M-PESA CONFIG
+  // ====================================================
+  async function showMpesa(){
+    setActive("mpesa");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">M-Pesa Configuration</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Per-school M-Pesa credentials.</p></div>' +
+      '<div class="row" style="gap:10px;margin-bottom:20px;"><span class="muted">School</span><select id="mp-school"></select></div>' +
+      '<div id="mp-form"></div>';
+
+    schoolSelector("mp-school", function(val){ if (val) loadMpesaConfig(val); else document.getElementById("mp-form").innerHTML = '<p class="muted">Select a school.</p>'; });
+
+    async function loadMpesaConfig(schoolId){
+      var form = document.getElementById("mp-form");
+      form.innerHTML = '<p class="muted">Loading...</p>';
+      var r = await sb.from("mpesa_config").select("*").eq("school_id", schoolId).maybeSingle();
+      var cfg = (r.data) || {};
+      form.innerHTML =
+        '<div class="panel" style="max-width:560px;">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;">Shortcode</label><input id="mp-shortcode" value="' + esc(cfg.shortcode || "") + '" placeholder="174379">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Passkey</label><input id="mp-passkey" value="' + esc(cfg.passkey || "") + '" placeholder="Passkey">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Consumer Key</label><input id="mp-ckey" value="' + esc(cfg.consumer_key || "") + '">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Consumer Secret</label><input id="mp-csecret" value="' + esc(cfg.consumer_secret || "") + '">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Callback URL</label><input id="mp-callback" value="' + esc(cfg.callback_url || "") + '" placeholder="https://...">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Environment</label><select id="mp-env"><option value="sandbox"' + (cfg.environment === "sandbox" ? " selected" : "") + '>Sandbox</option><option value="production"' + (cfg.environment === "production" ? " selected" : "") + '>Production</option></select>' +
+        '<div style="margin-top:20px;"><button class="btn-primary btn-sm" id="mp-save">Save Configuration</button></div>' +
+        '</div>';
+
+      document.getElementById("mp-save").onclick = async function(){
+        var data = {
+          school_id: schoolId,
+          shortcode: document.getElementById("mp-shortcode").value.trim(),
+          passkey: document.getElementById("mp-passkey").value.trim(),
+          consumer_key: document.getElementById("mp-ckey").value.trim(),
+          consumer_secret: document.getElementById("mp-csecret").value.trim(),
+          callback_url: document.getElementById("mp-callback").value.trim(),
+          environment: document.getElementById("mp-env").value
+        };
+        var res;
+        if (cfg.id) {
+          res = await sb.from("mpesa_config").update(data).eq("id", cfg.id);
+        } else {
+          res = await sb.from("mpesa_config").insert(data);
+        }
+        if (res.error) { toast("Error: " + res.error.message); return; }
+        toast("M-Pesa config saved.");
+        loadMpesaConfig(schoolId);
+      };
+    }
+  }
+
+  // ====================================================
+  //  6. DATABASE
+  // ====================================================
+  async function showDatabase(){
+    setActive("database");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Database Management</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Backup, restore, and reset school data.</p></div>' +
+      '<div class="row" style="gap:10px;margin-bottom:20px;"><span class="muted">School</span><select id="db-school"></select></div>' +
+      '<div id="db-content"></div>';
+
+    var curSchool = null;
+    schoolSelector("db-school", function(val){
+      curSchool = val;
+      if (val) renderDbContent(val);
+      else document.getElementById("db-content").innerHTML = '<p class="muted">Select a school.</p>';
+    });
+
+    async function renderDbContent(schoolId){
+      var content = document.getElementById("db-content");
+      content.innerHTML =
+        '<div style="display:flex;gap:20px;flex-wrap:wrap;">' +
+        '<div class="panel" style="flex:1;min-width:320px;">' +
+        '<strong style="font-size:15px;">Backups</strong>' +
+        '<p class="muted" style="font-size:12.5px;margin:4px 0 14px;">Create and restore data snapshots.</p>' +
+        '<button class="btn-primary btn-sm" id="db-backup">Create Backup Now</button>' +
+        '<div id="db-backup-list" style="margin-top:16px;"></div>' +
+        '</div>' +
+        '<div class="panel" style="flex:1;min-width:320px;">' +
+        '<strong style="font-size:15px;">Reset Tables</strong>' +
+        '<p class="muted" style="font-size:12.5px;margin:4px 0 14px;">Delete data from selected tables for this school.</p>' +
+        '<div class="cb-grid" id="db-tables"></div>' +
+        '<button class="btn-primary btn-sm" style="background:#B42318;margin-top:12px;" id="db-reset">Reset Selected</button>' +
+        '</div></div>';
+
+      var BACKUP_TABLES = ["students","fee_payments","fee_structures","fee_structure_items","attendance","grades","exams","exam_results"];
+      var RESET_TABLES = ["students","fee_payments","fee_structures","fee_structure_items","attendance","grades","exams","exam_results","announcements","library_books","library_loans","transport_routes","transport_vehicles","transport_assignments"];
+
+      // Reset checkboxes
+      var tbGrid = document.getElementById("db-tables");
+      var cbHtml = "";
+      RESET_TABLES.forEach(function(t){
+        cbHtml += '<label><input type="checkbox" value="' + t + '"> ' + t + '</label>';
+      });
+      tbGrid.innerHTML = cbHtml;
+
+      // Load backups
+      async function loadBackups(){
+        var bl = document.getElementById("db-backup-list");
+        var r = await sb.from("school_backups").select("*").eq("school_id", schoolId).order("created_at", { ascending: false }).limit(20);
+        var backups = r.data || [];
+        if (!backups.length) { bl.innerHTML = '<p class="muted" style="font-size:12.5px;">No backups yet.</p>'; return; }
+        var html = '';
+        backups.forEach(function(b){
+          var dt = new Date(b.created_at);
+          var label = dt.toLocaleDateString() + " " + dt.toLocaleTimeString();
+          html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid #F4F5F7;">' +
+            '<div><div style="font-size:13px;font-weight:600;">' + label + '</div><div class="muted" style="font-size:11px;">' + (b.note || "Manual backup") + '</div></div>' +
+            '<button class="ghost" data-restore="' + b.id + '" style="font-size:12px;">Restore</button>' +
+            '</div>';
+        });
+        bl.innerHTML = html;
+        bl.querySelectorAll("[data-restore]").forEach(function(btn){
+          btn.onclick = async function(){
+            if (!await confirmDialog("Restore this backup? This will overwrite current data in the backed-up tables.")) return;
+            var br = await sb.from("school_backups").select("backup_data").eq("id", btn.getAttribute("data-restore")).single();
+            if (br.error) { toast("Error loading backup: " + br.error.message); return; }
+            var data = br.data.backup_data;
+            var tables = Object.keys(data);
+            for (var i = 0; i < tables.length; i++) {
+              var tbl = tables[i];
+              var rows = data[tbl];
+              // Delete existing
+              await sb.from(tbl).delete().eq("school_id", schoolId);
+              // Insert backed up rows
+              if (rows && rows.length) {
+                var ins = await sb.from(tbl).insert(rows);
+                if (ins.error) { toast("Error restoring " + tbl + ": " + ins.error.message); }
+              }
+            }
+            toast("Backup restored.");
+          };
+        });
+      }
+      loadBackups();
+
+      // Create backup
+      document.getElementById("db-backup").onclick = async function(){
+        toast("Creating backup...");
+        var backupData = {};
+        for (var i = 0; i < BACKUP_TABLES.length; i++) {
+          var tbl = BACKUP_TABLES[i];
+          var r = await sb.from(tbl).select("*").eq("school_id", schoolId);
+          backupData[tbl] = r.data || [];
+        }
+        var ins = await sb.from("school_backups").insert({
+          school_id: schoolId,
+          backup_data: backupData,
+          note: "Manual backup"
+        });
+        if (ins.error) { toast("Error: " + ins.error.message); return; }
+        toast("Backup created.");
+        loadBackups();
+      };
+
+      // Reset tables
+      document.getElementById("db-reset").onclick = async function(){
+        var checked = [];
+        document.getElementById("db-tables").querySelectorAll("input:checked").forEach(function(cb){
+          checked.push(cb.value);
+        });
+        if (!checked.length) { toast("Select at least one table."); return; }
+        if (!await confirmDialog("Delete ALL data from " + checked.join(", ") + " for this school? This cannot be undone.")) return;
+        for (var i = 0; i < checked.length; i++) {
+          var r = await sb.from(checked[i]).delete().eq("school_id", schoolId);
+          if (r.error) { toast("Error resetting " + checked[i] + ": " + r.error.message); }
+        }
+        toast("Tables reset.");
+      };
+    }
+  }
+
+  // ====================================================
+  //  7. SETTINGS
+  // ====================================================
+  function showSettings(){
+    setActive("settings");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Settings</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Admin console settings.</p></div>' +
+      '<div class="panel" style="max-width:400px;">' +
+      '<p style="font-size:14px;margin:0 0 16px;">Signed in as super admin.</p>' +
+      '<button class="btn-primary btn-sm" id="settings-signout" style="background:#B42318;">Sign out</button>' +
+      '</div>';
+    document.getElementById("settings-signout").onclick = function(){ doSignOut(); };
+  }
+
+  // ---- Mobile sidebar toggle ----
+  (function(){
+    var ham = $("hamburger"), ovr = $("sidebar-overlay");
+    var aside = document.querySelector(".layout aside");
+    function openSidebar(){ aside.classList.add("open"); ovr.classList.add("open"); }
+    function closeSidebar(){ aside.classList.remove("open"); ovr.classList.remove("open"); }
+    ham.onclick = function(){ aside.classList.contains("open") ? closeSidebar() : openSidebar(); };
+    ovr.onclick = closeSidebar;
+    aside.addEventListener("click", function(e){
+      if (e.target.classList.contains("navitem") || e.target.closest(".navitem")) { closeSidebar(); }
+    });
+  })();
+
+  // ---- Session / idle-timeout security ----
   var IDLE_MINUTES = 30;
   var IDLE_MS = IDLE_MINUTES * 60 * 1000;
   var ACT_KEY = "samaji_admin_last_active";
   var idleTimer = null;
-  function markActive(){ try{ localStorage.setItem(ACT_KEY, String(Date.now())); }catch(e){} }
-  function lastActive(){ var v = 0; try{ v = parseInt(localStorage.getItem(ACT_KEY)||"0",10); }catch(e){} return v || 0; }
+  function markActive(){ try { localStorage.setItem(ACT_KEY, String(Date.now())); } catch(e){} }
+  function lastActive(){ var v = 0; try { v = parseInt(localStorage.getItem(ACT_KEY) || "0", 10); } catch(e){} return v || 0; }
+
   async function doSignOut(reason){
     if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
-    try{ localStorage.removeItem(ACT_KEY); }catch(e){}
-    try{ await sb.auth.signOut(); }catch(e){}
+    try { localStorage.removeItem(ACT_KEY); } catch(e){}
+    try { await sb.auth.signOut(); } catch(e){}
     $("app").style.display = "none"; $("auth").style.display = "flex";
     $("submit").disabled = false; $("msg").className = "msg";
     if (reason) showMsg(reason, false);
   }
+
   function startIdleWatch(){
     markActive();
-    ["mousedown","keydown","scroll","touchstart","click","mousemove"].forEach(function(ev){ window.addEventListener(ev, markActive, { passive:true }); });
+    ["mousedown","keydown","scroll","touchstart","click","mousemove"].forEach(function(ev){
+      window.addEventListener(ev, markActive, { passive: true });
+    });
     if (idleTimer) clearInterval(idleTimer);
     idleTimer = setInterval(function(){
       if (Date.now() - lastActive() > IDLE_MS) { doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity."); }
     }, 15000);
   }
+
   function showLogin(){ $("boot").style.display = "none"; $("auth").style.display = "flex"; }
 
-  $("signout").onclick = function(){ doSignOut(); };
+  // ---- Boot ----
   (async function(){
     if (!sb) { showLogin(); return; }
     var s = await sb.auth.getSession();
     if (!s.data.session) { showLogin(); return; }
     var la = lastActive();
     if (la && (Date.now() - la > IDLE_MS)) {
-      try{ localStorage.removeItem(ACT_KEY); }catch(e){}
-      try{ await sb.auth.signOut(); }catch(e){}
+      try { localStorage.removeItem(ACT_KEY); } catch(e){}
+      try { await sb.auth.signOut(); } catch(e){}
       showLogin(); showMsg("Your session expired. Please sign in again.", false); return;
     }
     await enterApp();
   })();
+})();
 </script>
 </body>
 </html>
