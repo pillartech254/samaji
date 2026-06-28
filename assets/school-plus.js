@@ -170,6 +170,7 @@
     var tab="classes";
     el.innerHTML='<div class="mod-head"><div><h2>School Settings</h2><p>Configure classes, streams, boarding and fee structures. Set these once — they power registration and billing.</p></div></div>'
       +'<div class="tabs" id="set-tabs">'
+      +'<button data-t="profile">School Profile</button>'
       +'<button data-t="classes" class="on">Classes &amp; Streams</button>'
       +'<button data-t="subjects">Subjects</button>'
       +'<button data-t="teachers">Teachers</button>'
@@ -177,7 +178,59 @@
       +'<button data-t="fees">Fee Structures</button>'
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else fees(); }
+    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else fees(); }
+
+    // ----- school profile & logo -----
+    async function profileTab(){
+      var body=document.getElementById("set-body");
+      var sc=await sb.from("schools").select("*").eq("id",schoolId).single();
+      var info=sc.data||{};
+      var logoUrl=info.logo_url||"";
+      body.innerHTML='<div class="chartcard" style="max-width:640px;">'
+        +'<div class="ch-head"><h3>School Profile &amp; Logo</h3></div>'
+        +'<div style="display:flex;gap:24px;align-items:flex-start;margin-top:12px;">'
+        +'<div id="logo-preview" style="width:100px;height:100px;border-radius:12px;border:2px dashed #DDE1E6;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;background:#F8FAFB;">'
+        +(logoUrl?'<img src="'+esc(logoUrl)+'" style="width:100%;height:100%;object-fit:contain;">':'<span class="muted" style="font-size:11px;text-align:center;">No logo<br>uploaded</span>')
+        +'</div>'
+        +'<div style="flex:1;"><div class="field"><label>School name</label><input id="sp-name" value="'+esc(info.name||"")+'" style="width:100%;"></div>'
+        +'<div class="field"><label>Address / Location</label><input id="sp-addr" value="'+esc(info.address||"")+'" style="width:100%;"></div>'
+        +'<div class="grid2"><div class="field"><label>Phone</label><input id="sp-phone" value="'+esc(info.phone||"")+'"></div>'
+        +'<div class="field"><label>Email</label><input id="sp-email" value="'+esc(info.email||"")+'"></div></div>'
+        +'<div class="field"><label>Motto / Tagline</label><input id="sp-motto" value="'+esc(info.motto||"")+'" placeholder="e.g. Education for a Better Tomorrow" style="width:100%;"></div>'
+        +'<div style="display:flex;gap:10px;margin-top:12px;">'
+        +'<label class="btn-sm" style="cursor:pointer;"><input type="file" id="sp-logo-file" accept="image/*" style="display:none;"> ⬆ Upload logo</label>'
+        +(logoUrl?'<button class="btn-sm danger" id="sp-logo-rm">Remove logo</button>':'')
+        +'</div></div></div>'
+        +'<div class="modal-actions" style="margin-top:18px;"><button class="btn-primary" id="sp-save">Save profile</button></div>'
+        +'</div>';
+      document.getElementById("sp-logo-file").onchange=async function(e){
+        var file=e.target.files[0]; if(!file) return;
+        if(file.size>2*1024*1024){ toast("Logo must be under 2 MB."); return; }
+        var ext=file.name.split(".").pop().toLowerCase();
+        var path="logos/"+schoolId+"."+ext;
+        toast("Uploading logo…");
+        var ur=await sb.storage.from("school-assets").upload(path,file,{upsert:true,contentType:file.type});
+        if(ur.error){ toast("Upload error: "+ur.error.message); return; }
+        var pub=sb.storage.from("school-assets").getPublicUrl(path);
+        var url=pub.data?pub.data.publicUrl:("");
+        if(url){
+          await sb.from("schools").update({logo_url:url}).eq("id",schoolId);
+          toast("Logo uploaded"); profileTab();
+        }
+      };
+      var rmBtn=document.getElementById("sp-logo-rm");
+      if(rmBtn) rmBtn.onclick=async function(){
+        await sb.from("schools").update({logo_url:null}).eq("id",schoolId);
+        toast("Logo removed"); profileTab();
+      };
+      document.getElementById("sp-save").onclick=async function(){
+        var rec={name:document.getElementById("sp-name").value.trim(), address:document.getElementById("sp-addr").value.trim()||null, phone:document.getElementById("sp-phone").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
+        if(!rec.name){ toast("School name is required."); return; }
+        var r=await sb.from("schools").update(rec).eq("id",schoolId);
+        if(r.error){ toast("Error: "+r.error.message); return; }
+        toast("Profile saved");
+      };
+    }
 
     // ----- classes & streams -----
     async function classes(){
@@ -800,6 +853,7 @@
     async function init(){
       var sc=await sb.from("schools").select("*").eq("id",schoolId).single(); school=sc.data||{name:schoolId};
       var students=await cget(sb, schoolId, "students", "*");
+      var feeClasses=await loadClasses(sb, schoolId);
       var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
       var payments=await cget(sb, schoolId, "fee_payments", "*");
       // transport assignments — what each student owes for bus
@@ -813,7 +867,7 @@
       el.innerHTML='<div class="mod-head"><div><h2>Fees &amp; Invoicing</h2><p>Collect fees against each class\u2019s structure and issue professional receipts.</p></div>'
         +'<button class="btn-primary" id="collect">+ Collect payment</button></div>'
         +'<div class="statgrid" id="fee-stats" style="grid-template-columns:repeat(3,1fr);"></div>'
-        +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button></div>'
+        +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button><button data-t="feereport">Fee reports</button></div>'
         +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'
         +'<input id="fee-search" type="search" placeholder="Search by name, admission no. or class…" style="flex:1;max-width:340px;padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;">'
         +'<select id="fee-class" style="padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;"><option value="">All classes</option>'
@@ -822,9 +876,10 @@
         +'<div id="fee-body" style="margin-top:16px;"></div>';
       document.getElementById("collect").onclick=function(){ if(!students.length){toast("Enrol students first.");return;} collectForm(); };
       var tab="ledger", query="", classFilter="";
-      el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); tab==="ledger"?ledger():receipts(); }; });
-      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); tab==="ledger"?ledger():receipts(); };
-      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); tab==="ledger"?ledger():receipts(); };
+      el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); renderTab(); }; });
+      function renderTab(){ if(tab==="ledger") ledger(); else if(tab==="receipts") receipts(); else if(tab==="feereport") feeReport(); }
+      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); renderTab(); };
+      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); renderTab(); };
 
       function matches(name, adm, cls){
         if(classFilter && cls!==classFilter) return false;
@@ -917,7 +972,7 @@
         if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=Math.max(0,(busPaidByStudent[p.student_id]||0)-Number(p.transport_amount));
         toast("Payment revoked.");
         refreshStats();
-        tab==="ledger"?ledger():receipts();
+        renderTab();
       }
 
       function hasStructure(grade){ return structures.some(function(s){ return s.level===grade && (s.fee_items||[]).length>0; }); }
@@ -1072,6 +1127,113 @@
           }
         };
       }
+      function feeReport(){
+        var body=document.getElementById("fee-body");
+        var levels=Array.from(new Set(feeClasses.map(function(c){return c.level;}))).sort();
+        var levelOpts=levels.map(function(l){return '<option value="'+esc(l)+'">'+esc(l)+'</option>';}).join("");
+        body.innerHTML='<div class="chartcard"><div class="ch-head"><div><h3>Generate Fee Report</h3><div class="sub">Filter by class, stream, term — then print or identify students to send home.</div></div></div>'
+          +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;">'
+          +'<div class="field"><label>Class</label><select id="fr-class"><option value="">All classes</option>'+levelOpts+'</select></div>'
+          +'<div class="field"><label>Stream</label><select id="fr-stream"><option value="">All streams</option></select></div>'
+          +'<div class="field"><label>Term</label><select id="fr-term"><option value="">All terms</option><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+          +'<button class="btn-primary" id="fr-gen" style="height:38px;">Generate report</button>'
+          +'</div>'
+          +'<div style="margin-top:16px;padding:12px;background:#FEF9C3;border:1px solid #FDE68A;border-radius:10px;">'
+          +'<strong style="font-size:12.5px;color:#92400E;">⚠ Send-home list</strong>'
+          +'<div style="display:flex;gap:10px;align-items:center;margin-top:6px;">'
+          +'<span style="font-size:12.5px;color:#92400E;">Show students owing more than</span>'
+          +'<input id="fr-threshold" type="number" placeholder="0" value="" style="width:110px;padding:6px 10px;border:1px solid #FDE68A;border-radius:6px;font-size:13px;">'
+          +'<button class="btn-sm" id="fr-sendhome" style="background:#C2410C;color:#fff;border-color:#C2410C;">Generate send-home list</button>'
+          +'</div></div>'
+          +'<div id="fr-result" style="margin-top:18px;"></div></div>';
+        document.getElementById("fr-class").onchange=function(){
+          var lv=document.getElementById("fr-class").value;
+          var streamSel=document.getElementById("fr-stream");
+          var streams=feeClasses.filter(function(c){return c.level===lv&&c.stream;}).map(function(c){return c.stream;});
+          streamSel.innerHTML='<option value="">All streams</option>'+streams.map(function(s){return '<option>'+esc(s)+'</option>';}).join("");
+        };
+        function getFiltered(termV,classV,streamV){
+          var filtered=students.slice();
+          if(classV) filtered=filtered.filter(function(s){return s.grade===classV;});
+          if(streamV){
+            var matchIds={}; feeClasses.forEach(function(c){if(c.level===classV&&c.stream===streamV) matchIds[c.id]=true;});
+            filtered=filtered.filter(function(s){return matchIds[s.class_id];});
+          }
+          var termBilledFn=function(grade){
+            var t=0; structures.forEach(function(st){
+              if(st.level===grade && (!termV||st.term===termV))
+                t+=(st.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0);
+            }); return t;
+          };
+          var termPaidFn=function(sid){
+            var t=0; payments.forEach(function(p){
+              if(p.student_id===sid && (!termV||p.term===termV)) t+=tuitionOf(p);
+            }); return t;
+          };
+          return filtered.map(function(s){
+            var billed=termBilledFn(s.grade), paid=termPaidFn(s.id), bal=Math.max(0,billed-paid);
+            return {s:s,billed:billed,paid:paid,bal:bal};
+          });
+        }
+        function renderReport(rows,title,subtitle){
+          var totalBilled=0,totalPaid=0,totalBal=0,cleared=0;
+          rows.forEach(function(r){totalBilled+=r.billed;totalPaid+=r.paid;totalBal+=r.bal;if(r.bal<=0&&r.billed>0)cleared++;});
+          var logo=schoolLogo(school,48);
+          var html='<div id="fr-print-area">'
+            +'<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;border-bottom:2px solid #1A1D26;padding-bottom:12px;">'
+            +logo+'<div style="flex:1;"><div style="font-size:18px;font-weight:700;">'+esc(school.name||"School")+'</div>'
+            +'<div style="font-size:12px;color:#667085;">'+esc(school.address||"")+(school.phone?" · "+esc(school.phone):"")+(school.motto?' · <em>'+esc(school.motto)+'</em>':'')+'</div></div>'
+            +'<div style="text-align:right;"><div style="font-size:14px;font-weight:700;color:#1A1D26;">'+esc(title)+'</div>'
+            +'<div style="font-size:11px;color:#667085;">'+esc(subtitle)+'</div>'
+            +'<div style="font-size:10px;color:#98A2B3;">Generated '+new Date().toLocaleDateString()+'</div></div></div>'
+            +'<div style="display:flex;gap:16px;margin-bottom:14px;">'
+            +'<div style="flex:1;background:#EEF0FF;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#4F46E5;">Total billed</div><div style="font-size:16px;font-weight:700;">'+money(totalBilled)+'</div></div>'
+            +'<div style="flex:1;background:#ECFDF3;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#067647;">Collected</div><div style="font-size:16px;font-weight:700;">'+money(totalPaid)+'</div></div>'
+            +'<div style="flex:1;background:#FFF6ED;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#C2410C;">Outstanding</div><div style="font-size:16px;font-weight:700;">'+money(totalBal)+'</div></div>'
+            +'<div style="flex:1;background:#F1ECFE;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#6D28D9;">Cleared</div><div style="font-size:16px;font-weight:700;">'+cleared+' / '+rows.length+'</div></div>'
+            +'</div>'
+            +'<table class="data"><thead><tr><th>#</th><th>Adm No</th><th>Student name</th><th>Class</th><th>Billed</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>';
+          rows.forEach(function(r,i){
+            var st=r.bal<=0&&r.billed>0?'<span class="pill green">Cleared</span>':(r.paid>0?'<span class="pill amber">Partial</span>':'<span class="pill red">Unpaid</span>');
+            if(r.billed===0) st='<span class="pill gray">No structure</span>';
+            html+='<tr><td>'+(i+1)+'</td><td class="mono" style="font-size:11px;">'+esc(r.s.admission_no||"—")+'</td>'
+              +'<td style="font-weight:600;">'+esc(r.s.first_name+" "+r.s.last_name)+'</td>'
+              +'<td>'+esc(r.s.grade||"—")+'</td>'
+              +'<td>'+money(r.billed)+'</td>'
+              +'<td style="color:#067647;">'+money(r.paid)+'</td>'
+              +'<td style="color:#C2410C;font-weight:700;">'+money(r.bal)+'</td>'
+              +'<td>'+st+'</td></tr>';
+          });
+          html+='</tbody></table>'
+            +'<div style="margin-top:14px;font-size:10.5px;color:#98A2B3;border-top:1px solid #EEF0F2;padding-top:8px;">Computer-generated report · Samaji School Management · '+new Date().toLocaleDateString()+'</div></div>'
+            +'<div style="margin-top:12px;"><button class="btn-primary" id="fr-print">🖨 Print / Save as PDF</button></div>';
+          document.getElementById("fr-result").innerHTML=html;
+          document.getElementById("fr-print").onclick=function(){ window.print(); };
+        }
+        document.getElementById("fr-gen").onclick=function(){
+          var termV=document.getElementById("fr-term").value;
+          var classV=document.getElementById("fr-class").value;
+          var streamV=document.getElementById("fr-stream").value;
+          var rows=getFiltered(termV,classV,streamV).sort(function(a,b){return b.bal-a.bal;});
+          var title="Fee Payment & Balances Report";
+          var parts=[]; if(classV) parts.push(classV); if(streamV) parts.push(streamV); if(termV) parts.push(termV);
+          var subtitle=parts.length?parts.join(" · "):"All classes · All terms";
+          renderReport(rows,title,subtitle);
+        };
+        document.getElementById("fr-sendhome").onclick=function(){
+          var threshold=Number(document.getElementById("fr-threshold").value)||0;
+          if(threshold<=0){ toast("Enter a minimum balance amount for the send-home list."); return; }
+          var termV=document.getElementById("fr-term").value;
+          var classV=document.getElementById("fr-class").value;
+          var streamV=document.getElementById("fr-stream").value;
+          var rows=getFiltered(termV,classV,streamV).filter(function(r){return r.bal>=threshold;}).sort(function(a,b){return b.bal-a.bal;});
+          if(!rows.length){ toast("No students owe "+money(threshold)+" or more."); return; }
+          var title="SEND HOME LIST — Balance ≥ "+money(threshold);
+          var parts=[]; if(classV) parts.push(classV); if(streamV) parts.push(streamV); if(termV) parts.push(termV);
+          var subtitle=(parts.length?parts.join(" · "):"All classes")+" · "+rows.length+" student"+(rows.length===1?"":"s");
+          renderReport(rows,title,subtitle);
+        };
+      }
       ledger();
     }
 
@@ -1086,7 +1248,7 @@
           var ov=document.createElement("div"); ov.className="overlay";
           ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
             +'<div id="print-area"><div class="rcpt">'
-            +'<div class="rc-top"><div class="rc-logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg> Samaji</div>'
+            +'<div class="rc-top"><div class="rc-logo">'+(school&&school.logo_url?'<img src="'+esc(school.logo_url)+'" style="height:32px;object-fit:contain;">':('<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg>'))+'</div>'
             +'<div class="rc-school">'+esc(school.name||"School")+'</div><div class="rc-sub">Official Fee Receipt</div>'
             +'<div class="rc-stamp">'+status+'</div></div>'
             +'<div class="rc-body"><div class="rc-meta">'
@@ -1132,7 +1294,7 @@
       var paid=payments.reduce(function(a,p){return a+Number(p.amount);},0), bal=Math.max(0,billed-paid);
 
       var body='<div class="st-head">'
-        +'<div class="st-school"><div class="st-logo">'+esc((school.name||"S").charAt(0))+'</div><div><div class="st-name">'+esc(school.name||"School")+'</div><div class="st-addr">Official Fee Statement</div></div></div>'
+        +'<div class="st-school">'+schoolLogo(school)+'<div><div class="st-name">'+esc(school.name||"School")+'</div><div class="st-addr">Official Fee Statement</div></div></div>'
         +'<div class="st-doc">FEE STATEMENT</div></div>'
         +'<table class="st-meta"><tr>'
         +'<td><span class="k">Student</span><span class="v">'+esc(stu.first_name+" "+stu.last_name)+'</span></td>'
@@ -1348,7 +1510,7 @@
         return '<tr><td>'+esc(d.label)+'</td><td class="num">'+money(d.value)+'</td><td class="num">'+pct+'%</td></tr>';
       }).join("") : '<tr><td colspan="3" style="text-align:center;color:#888;">No payments recorded.</td></tr>';
       var body='<div class="st-head">'
-        +'<div class="st-school"><div class="st-logo">'+esc((schoolInfo.name||"S").charAt(0))+'</div><div><div class="st-name">'+esc(schoolInfo.name||"School")+'</div><div class="st-addr">'+esc(schoolInfo.address||"")+(schoolInfo.phone?' · '+esc(schoolInfo.phone):"")+'</div></div></div>'
+        +'<div class="st-school">'+schoolLogo(schoolInfo)+'<div><div class="st-name">'+esc(schoolInfo.name||"School")+'</div><div class="st-addr">'+esc(schoolInfo.address||"")+(schoolInfo.phone?' · '+esc(schoolInfo.phone):"")+'</div></div></div>'
         +'<div class="st-doc">FEE COLLECTION REPORT</div></div>'
         +'<table class="st-meta"><tr>'
         +'<td><span class="k">Term</span><span class="v">'+esc(r.term)+'</span></td>'
@@ -1439,6 +1601,11 @@
     ov.querySelector("#dd-close").onclick=function(){ ov.remove(); };
   }
   function icArrow(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+  function schoolLogo(info,size){
+    size=size||40;
+    if(info&&info.logo_url) return '<img src="'+esc(info.logo_url)+'" style="width:'+size+'px;height:'+size+'px;object-fit:contain;border-radius:6px;">';
+    return '<div class="st-logo" style="width:'+size+'px;height:'+size+'px;font-size:'+Math.round(size*0.45)+'px;">'+esc((info&&info.name||"S").charAt(0))+'</div>';
+  }
 
   // icons
   function icDoc(){ return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3v4h4" stroke="currentColor" stroke-width="1.8"/></svg>'; }
