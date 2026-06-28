@@ -282,9 +282,13 @@ table.data tbody tr:hover td{background:#FAFBFC;}
 
 @media print{
   body *{visibility:hidden;}
-  #print-area, #print-area *{visibility:visible;}
+  #print-area, #print-area *,
+  #fr-print-area, #fr-print-area *{visibility:visible;}
   #print-area{position:absolute;inset:0;margin:0;padding:24px;display:block;}
+  #fr-print-area{position:absolute;inset:0;margin:0;padding:24px;display:block;}
   #print-area .rcpt{box-shadow:none;border:1px solid #ddd;margin:0 auto;animation:none;}
-  #print-area .statement{box-shadow:none;border:none;margin:0 auto;padding:0;}
+  #print-area .statement, #fr-print-area{box-shadow:none;border:none;margin:0 auto;padding:0;}
+  #fr-print-area .pill{border:1px solid #ccc;}
+  #fr-print-area table{font-size:11px;}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;}}
