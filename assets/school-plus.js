@@ -221,10 +221,16 @@
         toast("Logo removed"); profileTab();
       };
       document.getElementById("sp-save").onclick=async function(){
-        var rec={name:document.getElementById("sp-name").value.trim(), address:document.getElementById("sp-addr").value.trim()||null, phone:document.getElementById("sp-phone").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
-        if(!rec.name){ toast("School name is required."); return; }
-        var r=await sb.from("schools").update(rec).eq("id",schoolId);
-        if(r.error){ toast("Error: "+r.error.message); return; }
+        var name=document.getElementById("sp-name").value.trim();
+        if(!name){ toast("School name is required."); return; }
+        var rec={name:name, phone:document.getElementById("sp-phone").value.trim()||null};
+        var extras={address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
+        var all={}; Object.keys(rec).forEach(function(k){all[k]=rec[k];}); Object.keys(extras).forEach(function(k){all[k]=extras[k];});
+        var r=await sb.from("schools").update(all).eq("id",schoolId);
+        if(r.error){
+          var r2=await sb.from("schools").update(rec).eq("id",schoolId);
+          if(r2.error){ toast("Error: "+r2.error.message); return; }
+        }
         toast("Profile saved");
       };
     }
@@ -1176,33 +1182,39 @@
           var totalBilled=0,totalPaid=0,totalBal=0,cleared=0;
           rows.forEach(function(r){totalBilled+=r.billed;totalPaid+=r.paid;totalBal+=r.bal;if(r.bal<=0&&r.billed>0)cleared++;});
           var logo=schoolLogo(school,48);
-          var html='<div id="fr-print-area">'
-            +'<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;border-bottom:2px solid #1A1D26;padding-bottom:12px;">'
-            +logo+'<div style="flex:1;"><div style="font-size:18px;font-weight:700;">'+esc(school.name||"School")+'</div>'
-            +'<div style="font-size:12px;color:#667085;">'+esc(school.address||"")+(school.phone?" · "+esc(school.phone):"")+(school.motto?' · <em>'+esc(school.motto)+'</em>':'')+'</div></div>'
-            +'<div style="text-align:right;"><div style="font-size:14px;font-weight:700;color:#1A1D26;">'+esc(title)+'</div>'
-            +'<div style="font-size:11px;color:#667085;">'+esc(subtitle)+'</div>'
-            +'<div style="font-size:10px;color:#98A2B3;">Generated '+new Date().toLocaleDateString()+'</div></div></div>'
-            +'<div style="display:flex;gap:16px;margin-bottom:14px;">'
-            +'<div style="flex:1;background:#EEF0FF;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#4F46E5;">Total billed</div><div style="font-size:16px;font-weight:700;">'+money(totalBilled)+'</div></div>'
-            +'<div style="flex:1;background:#ECFDF3;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#067647;">Collected</div><div style="font-size:16px;font-weight:700;">'+money(totalPaid)+'</div></div>'
-            +'<div style="flex:1;background:#FFF6ED;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#C2410C;">Outstanding</div><div style="font-size:16px;font-weight:700;">'+money(totalBal)+'</div></div>'
-            +'<div style="flex:1;background:#F1ECFE;border-radius:8px;padding:10px 14px;"><div style="font-size:10.5px;text-transform:uppercase;color:#6D28D9;">Cleared</div><div style="font-size:16px;font-weight:700;">'+cleared+' / '+rows.length+'</div></div>'
-            +'</div>'
-            +'<table class="data"><thead><tr><th>#</th><th>Adm No</th><th>Student name</th><th>Class</th><th>Billed</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody>';
+          var details=[school.address,school.phone,school.email,school.motto].filter(Boolean).join(" · ");
+          var html='<div id="fr-print-area" style="font-family:system-ui,-apple-system,sans-serif;max-width:190mm;">'
+            +'<table style="width:100%;border-collapse:collapse;margin-bottom:8px;border-bottom:2px solid #1A1D26;padding-bottom:8px;"><tr>'
+            +'<td style="width:52px;vertical-align:top;padding-bottom:10px;">'+logo+'</td>'
+            +'<td style="vertical-align:top;padding:0 12px 10px;"><div style="font-size:16px;font-weight:700;">'+esc(school.name||"School")+'</div>'
+            +(details?'<div style="font-size:10px;color:#667085;">'+esc(details)+'</div>':'')+'</td>'
+            +'<td style="text-align:right;vertical-align:top;padding-bottom:10px;"><div style="font-size:13px;font-weight:700;color:#1A1D26;">'+esc(title)+'</div>'
+            +'<div style="font-size:10px;color:#667085;">'+esc(subtitle)+'</div>'
+            +'<div style="font-size:9px;color:#98A2B3;">Generated '+new Date().toLocaleDateString()+'</div></td></tr></table>'
+            +'<table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><tr>'
+            +'<td style="background:#EEF0FF;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#4F46E5;letter-spacing:.03em;">Total billed</div><div style="font-size:14px;font-weight:700;">'+money(totalBilled)+'</div></td>'
+            +'<td style="width:4px;"></td>'
+            +'<td style="background:#ECFDF3;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#067647;letter-spacing:.03em;">Collected</div><div style="font-size:14px;font-weight:700;">'+money(totalPaid)+'</div></td>'
+            +'<td style="width:4px;"></td>'
+            +'<td style="background:#FFF6ED;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#C2410C;letter-spacing:.03em;">Outstanding</div><div style="font-size:14px;font-weight:700;">'+money(totalBal)+'</div></td>'
+            +'<td style="width:4px;"></td>'
+            +'<td style="background:#F1ECFE;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#6D28D9;letter-spacing:.03em;">Cleared</div><div style="font-size:14px;font-weight:700;">'+cleared+' / '+rows.length+'</div></td>'
+            +'</tr></table>'
+            +'<table class="data" style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">#</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Adm No</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Student name</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Class</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Billed</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Paid</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Balance</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Status</th></tr></thead><tbody>';
           rows.forEach(function(r,i){
-            var st=r.bal<=0&&r.billed>0?'<span class="pill green">Cleared</span>':(r.paid>0?'<span class="pill amber">Partial</span>':'<span class="pill red">Unpaid</span>');
-            if(r.billed===0) st='<span class="pill gray">No structure</span>';
-            html+='<tr><td>'+(i+1)+'</td><td class="mono" style="font-size:11px;">'+esc(r.s.admission_no||"—")+'</td>'
-              +'<td style="font-weight:600;">'+esc(r.s.first_name+" "+r.s.last_name)+'</td>'
-              +'<td>'+esc(r.s.grade||"—")+'</td>'
-              +'<td>'+money(r.billed)+'</td>'
-              +'<td style="color:#067647;">'+money(r.paid)+'</td>'
-              +'<td style="color:#C2410C;font-weight:700;">'+money(r.bal)+'</td>'
-              +'<td>'+st+'</td></tr>';
+            var st=r.bal<=0&&r.billed>0?'Cleared':(r.paid>0?'Partial':'Unpaid');
+            var stCol=r.bal<=0&&r.billed>0?'#067647':(r.paid>0?'#D97706':'#C2410C');
+            if(r.billed===0){ st='N/A'; stCol='#98A2B3'; }
+            html+='<tr style="border-bottom:1px solid #EEF0F2;"><td style="padding:5px 4px;">'+(i+1)+'</td><td style="padding:5px 4px;font-size:10px;font-family:monospace;">'+esc(r.s.admission_no||"—")+'</td>'
+              +'<td style="padding:5px 4px;font-weight:600;">'+esc(r.s.first_name+" "+r.s.last_name)+'</td>'
+              +'<td style="padding:5px 4px;">'+esc(r.s.grade||"—")+'</td>'
+              +'<td style="padding:5px 4px;text-align:right;">'+money(r.billed)+'</td>'
+              +'<td style="padding:5px 4px;text-align:right;color:#067647;">'+money(r.paid)+'</td>'
+              +'<td style="padding:5px 4px;text-align:right;color:#C2410C;font-weight:700;">'+money(r.bal)+'</td>'
+              +'<td style="padding:5px 4px;color:'+stCol+';font-weight:600;">'+st+'</td></tr>';
           });
           html+='</tbody></table>'
-            +'<div style="margin-top:14px;font-size:10.5px;color:#98A2B3;border-top:1px solid #EEF0F2;padding-top:8px;">Computer-generated report · Samaji School Management · '+new Date().toLocaleDateString()+'</div></div>'
+            +'<div style="margin-top:10px;font-size:9px;color:#98A2B3;border-top:1px solid #EEF0F2;padding-top:6px;">Computer-generated report · Samaji School Management · '+new Date().toLocaleDateString()+'</div></div>'
             +'<div style="margin-top:12px;"><button class="btn-primary" id="fr-print">🖨 Print / Save as PDF</button></div>';
           document.getElementById("fr-result").innerHTML=html;
           document.getElementById("fr-print").onclick=function(){ window.print(); };
