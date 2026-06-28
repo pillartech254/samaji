@@ -311,13 +311,13 @@ create policy p_feestr_parent on fee_structures for select to authenticated
     )
   );
 
-drop policy if exists p_feeitems_parent on fee_structure_items;
-create policy p_feeitems_parent on fee_structure_items for select to authenticated
+drop policy if exists p_feeitems_parent on fee_items;
+create policy p_feeitems_parent on fee_items for select to authenticated
   using (
     exists (
       select 1 from fee_structures fs
       join parent_accounts pa on pa.school_id = fs.school_id
-      where fs.id = fee_structure_items.structure_id and pa.id = auth.uid()
+      where fs.id = fee_items.structure_id and pa.id = auth.uid()
     )
   );
 

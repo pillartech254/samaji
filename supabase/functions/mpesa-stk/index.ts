@@ -210,7 +210,7 @@ async function handleCallback(req: Request): Promise<Response> {
     if (studentIds.length > 0) {
       // Split amount equally among students (or full amount to single student)
       const perStudent = paidAmount / studentIds.length;
-      const year = new Date().getFullYear().toString();
+      const year = new Date().getFullYear();
 
       for (const studentId of studentIds) {
         // Determine which term to apply payment to
@@ -228,14 +228,14 @@ async function handleCallback(req: Request): Promise<Response> {
             // Check fee structure for this term
             const { data: structures } = await supabase
               .from("fee_structures")
-              .select("id, fee_structure_items(amount)")
+              .select("id, fee_items(amount)")
               .eq("school_id", tx.school_id)
-              .eq("grade", student.grade)
+              .eq("level", student.grade)
               .eq("term", term)
               .eq("year", year);
 
             const billed = (structures || []).reduce(function (sum: number, s: any) {
-              return sum + (s.fee_structure_items || []).reduce(function (a: number, i: any) {
+              return sum + (s.fee_items || []).reduce(function (a: number, i: any) {
                 return a + Number(i.amount);
               }, 0);
             }, 0);
@@ -270,8 +270,8 @@ async function handleCallback(req: Request): Promise<Response> {
           year: year,
           method: "M-Pesa",
           receipt_no: receiptPrefix,
-          transport_amount: 0,
-          mpesa_receipt: receiptNo,
+          reference: receiptNo,
+          note: "M-Pesa payment",
         });
       }
     }

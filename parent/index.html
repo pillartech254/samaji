@@ -541,7 +541,7 @@
         childFeeData[sid] = { billed: 0, paid: 0, balance: 0, items: [] };
 
         // Get fee structures for this grade + year
-        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("grade", grade).eq("year", currentYear).then(function(fsRes){
+        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(fsRes){
           var structures = fsRes.data || [];
           if (structures.length === 0) {
             loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
@@ -549,7 +549,7 @@
           }
           var structIds = [];
           for (var j = 0; j < structures.length; j++) { structIds.push(structures[j].id); }
-          sb.from("fee_structure_items").select("item_name, amount").in("structure_id", structIds).then(function(fiRes){
+          sb.from("fee_items").select("name, amount").in("structure_id", structIds).then(function(fiRes){
             var items = fiRes.data || [];
             var total = 0;
             for (var k = 0; k < items.length; k++) {
