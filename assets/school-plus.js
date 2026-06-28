@@ -882,7 +882,9 @@
         tab==="ledger"?ledger():receipts();
       }
 
+      function hasStructure(grade){ return structures.some(function(s){ return s.level===grade && (s.fee_items||[]).length>0; }); }
       function collectForm(preId){
+        if(preId){ var ps=students.find(function(x){return x.id===preId;}); if(ps && !hasStructure(ps.grade)){ window.SM_confirm("No fee structure has been set up for "+esc(ps.grade||"this class")+". Please create a fee structure in Settings → Fee Structures before collecting fees."); return; } }
         var opts=students.map(function(s){ return '<option value="'+s.id+'"'+(preId===s.id?" selected":"")+'>'+esc(s.first_name+" "+s.last_name)+(s.admission_no?" ("+esc(s.admission_no)+")":"")+'</option>'; }).join("");
         var idemKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
         var transportFare=0;
@@ -970,7 +972,11 @@
           }
           refreshBal();
         }
-        if(!preId) m.q("#p-stu").onchange=function(){ m.q("#p-amt").value=""; loadTransport(); };
+        if(!preId) m.q("#p-stu").onchange=function(){
+          var s=students.find(function(x){return x.id===m.q("#p-stu").value;});
+          if(s && !hasStructure(s.grade)){ toast("No fee structure for "+s.grade+". Set one up in Settings → Fee Structures first."); m.q("#s").disabled=true; } else { m.q("#s").disabled=false; }
+          m.q("#p-amt").value=""; loadTransport();
+        };
         m.q("#p-bus").onchange=function(){ var was=m.q("#p-amt").value; m.q("#p-amt").value=""; refreshBal(); if(!m.q("#p-amt").value) m.q("#p-amt").value=was; };
         loadTransport();
         m.q("#c").onclick=m.close;
@@ -978,6 +984,8 @@
         submitBtn.onclick=async function(){
           if(submitting) return;
           var sid=preId||m.q("#p-stu").value, amt=Number(m.q("#p-amt").value)||0;
+          var sStu=students.find(function(x){return x.id===sid;});
+          if(sStu && !hasStructure(sStu.grade)){ toast("No fee structure for "+(sStu.grade||"this class")+". Create one in Settings first."); return; }
           if(amt<=0){ toast("Enter an amount."); return; }
           submitting=true; submitBtn.disabled=true; var origLabel=submitBtn.textContent; submitBtn.textContent="Recording…";
           try{
