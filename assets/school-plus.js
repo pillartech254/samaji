@@ -486,11 +486,19 @@
       document.getElementById("stu-count").textContent=rows.length+" of "+all.length+" students";
       var t=document.getElementById("stu-table");
       if(!rows.length){ t.innerHTML='<div class="empty">No students match. Click <strong>+ New student</strong> to enrol one.</div>'; return; }
+      var siblingMap={};
+      all.forEach(function(x){ if(x.guardian_phone){ if(!siblingMap[x.guardian_phone]) siblingMap[x.guardian_phone]=[]; siblingMap[x.guardian_phone].push(x); } });
       var html='<table class="data"><thead><tr><th>Adm. No</th><th>Name</th><th>Class</th><th>Gender</th><th>Boarding</th><th>Guardian</th><th>Status</th><th></th></tr></thead><tbody>';
       rows.forEach(function(s){
         var boarding=s.residence==="Boarder"?('<span class="pill" style="color:#6D28D9;background:#F1ECFE;">'+esc(dormOf[s.dormitory_id]||"Boarder")+'</span>'):'<span class="pill gray">Day</span>';
+        var siblings=s.guardian_phone?siblingMap[s.guardian_phone]:[];
+        var siblingHtml='';
+        if(siblings && siblings.length>1){
+          var others=siblings.filter(function(x){return x.id!==s.id;});
+          siblingHtml='<div style="font-size:10.5px;margin-top:2px;"><span style="color:#067647;font-weight:600;">⚇ Sibling'+(others.length>1?"s":"")+': </span>'+others.map(function(o){return '<span style="color:#4F46E5;">'+esc(o.first_name+" "+o.last_name)+'</span>';}).join(", ")+'</div>';
+        }
         html+='<tr><td class="mono" style="font-size:12px;">'+esc(s.admission_no||"—")+'</td>'
-          +'<td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
+          +'<td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+siblingHtml+'</td>'
           +'<td>'+esc(classOf[s.class_id]||s.grade||"—")+'</td><td>'+esc(s.gender||"—")+'</td><td>'+boarding+'</td>'
           +'<td>'+esc(s.guardian_name||"—")+'<div class="muted" style="font-size:11px;">'+esc(s.guardian_phone||"")+'</div></td>'
           +'<td><span class="pill '+(s.status==="active"?"green":"gray")+'">'+esc(s.status)+'</span></td>'
@@ -499,7 +507,18 @@
       t.innerHTML=html+'</tbody></table>';
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ form(all.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-view]").forEach(function(b){ b.onclick=function(){ view(all.find(function(x){return x.id===b.getAttribute("data-view");})); }; });
-      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this student and all related records?"))return; var r=await sb.from("students").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("students"); toast("Student deleted"); load(); }; });
+      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){
+        var sid=b.getAttribute("data-del");
+        var stu=all.find(function(x){return x.id===sid;});
+        var pr=await sb.from("fee_payments").select("amount,transport_amount").eq("student_id",sid);
+        var fp=await sb.from("fee_structures").select("level, fee_items(amount)").eq("school_id",schoolId).eq("level",stu?stu.grade:"");
+        var billed=(fp.data||[]).reduce(function(a,s){return a+(s.fee_items||[]).reduce(function(x,i){return x+Number(i.amount);},0);},0);
+        var paid=(pr.data||[]).reduce(function(a,p){return a+(Number(p.amount)-(Number(p.transport_amount)||0));},0);
+        if(billed>0 && paid<billed){ toast("Cannot delete — student has an outstanding balance of "+money(billed-paid)+". Clear fees first."); return; }
+        if(!await window.SM_confirm("Delete this student and all related records?"))return;
+        var r=await sb.from("students").delete().eq("id",sid);
+        if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("students"); toast("Student deleted"); load();
+      }; });
       t.querySelectorAll("[data-promo]").forEach(function(b){ b.onclick=function(){ var s=all.find(function(x){return x.id===b.getAttribute("data-promo");}); if(s) promoteStudent(s); }; });
     }
     function promoteStudent(s){
@@ -649,7 +668,7 @@
       function refreshCount(){
         var fromId=m.q("#pr-from").value;
         var n=all.filter(function(s){return s.class_id===fromId;}).length;
-        m.q("#pr-count").textContent=n+" student"+(n===1?"":"s")+" currently in "+classLabel(sorted.find(function(c){return c.id===fromId;}));
+        m.q("#pr-count").textContent=n+" of "+all.length+" student"+(n===1?"":"s")+" currently in "+classLabel(sorted.find(function(c){return c.id===fromId;}));
         m.q("#pr-to").value=nextClassId(fromId);
       }
       m.q("#pr-from").onchange=refreshCount; refreshCount();
@@ -865,15 +884,24 @@
 
       function collectForm(preId){
         var opts=students.map(function(s){ return '<option value="'+s.id+'"'+(preId===s.id?" selected":"")+'>'+esc(s.first_name+" "+s.last_name)+(s.admission_no?" ("+esc(s.admission_no)+")":"")+'</option>'; }).join("");
-        // a fresh key per form, sent with the insert; a duplicate insert
-        // (e.g. a fast double-click of "Record") collides on this key at
-        // the database level instead of creating a second payment.
         var idemKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
         var transportFare=0;
-        function balOf(id){ var s=students.find(function(x){return x.id===id;}); var billed=s?(totalByLevelTerm[s.grade]||0):0; var paid=paidByStudent[id]||0; return {billed:billed,paid:paid,bal:Math.max(0,billed-paid),s:s}; }
+        var curYear=new Date().getFullYear();
+        var terms=["Term 1","Term 2","Term 3"];
+        function termBilled(grade,term){ var t=0; structures.forEach(function(s){ if(s.level===grade && s.term===term) t+=(s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); }); return t; }
+        function termPaid(sid,term){ var t=0; payments.forEach(function(p){ if(p.student_id===sid && p.term===term) t+=tuitionOf(p); }); return t; }
+        function termInfo(sid){
+          var s=students.find(function(x){return x.id===sid;}); if(!s) return {terms:[],s:null};
+          var info=[]; terms.forEach(function(t){
+            var billed=termBilled(s.grade,t), paid=termPaid(sid,t), bal=Math.max(0,billed-paid);
+            info.push({term:t, billed:billed, paid:paid, bal:bal, cleared:billed>0&&paid>=billed});
+          });
+          return {terms:info, s:s};
+        }
         var m=modal('<h3>Collect payment</h3><div class="grid2">'
-          +'<div class="field full"><label>Student</label><select id="p-stu">'+opts+'</select></div>'
+          +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':opts)+'</select></div>'
           +'<div class="field full"><div id="p-bal" style="background:#F8FAFB;border:1px solid #EEF0F2;border-radius:10px;padding:11px 13px;font-size:12.5px;"></div></div>'
+          +'<div class="field full"><div id="p-term-info" style="font-size:12px;"></div></div>'
           +'<div class="field full" id="p-bus-wrap" style="display:none;">'
           +'<label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;">'
           +'<input type="checkbox" id="p-bus"> 🚌 <span id="p-bus-label">Include bus transport</span></label></div>'
@@ -882,16 +910,58 @@
           +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
           +'<div class="field"><label>Reference (M-Pesa/Cheque)</label><input id="p-ref" placeholder="e.g. SLJ7XK2P"></div>'
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
+          +'<div class="field full"><div id="p-spill" style="display:none;background:#FEF9C3;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"></div></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Record &amp; print receipt</button></div>');
-        function refreshBal(){
-          var b=balOf(m.q("#p-stu").value);
-          var extra=(m.q("#p-bus").checked?transportFare:0);
-          m.q("#p-bal").innerHTML='Billed <strong>'+money(b.billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(b.paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(b.bal)+'</strong>'+(b.billed===0?' <span class="muted">(no fee structure for '+esc(b.s?b.s.grade:"")+')</span>':'');
-          if(!m.q("#p-amt").value&&(b.bal+extra)>0) m.q("#p-amt").value=b.bal+extra;
+        function refreshTermInfo(){
+          var sid=preId||m.q("#p-stu").value;
+          var ti=termInfo(sid);
+          var termSel=m.q("#p-term");
+          var html=''; var autoTerm=null;
+          ti.terms.forEach(function(t,i){
+            var color=t.cleared?"#067647":(t.paid>0?"#D97706":"#6B7280");
+            var label=t.cleared?"✓ Cleared":(t.paid>0?"Partial "+money(t.paid)+"/"+money(t.billed):(t.billed>0?"Unpaid "+money(t.billed):"No structure"));
+            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(t.cleared?"#ECFDF3":"#F8FAFB")+';color:'+color+';font-weight:600;">'+esc(t.term)+': '+label+'</span>';
+            if(!autoTerm && !t.cleared && t.billed>0) autoTerm=t.term;
+          });
+          m.q("#p-term-info").innerHTML=html;
+          terms.forEach(function(t,i){
+            termSel.options[i].disabled=ti.terms[i].cleared;
+          });
+          if(autoTerm) termSel.value=autoTerm;
         }
+        function refreshBal(){
+          var sid=preId||m.q("#p-stu").value;
+          var s=students.find(function(x){return x.id===sid;});
+          var billed=s?(totalByLevelTerm[s.grade]||0):0;
+          var paid=paidByStudent[sid]||0;
+          var bal=Math.max(0,billed-paid);
+          var extra=(m.q("#p-bus").checked?transportFare:0);
+          m.q("#p-bal").innerHTML='Billed <strong>'+money(billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(bal)+'</strong>'+(billed===0?' <span class="muted">(no fee structure for '+esc(s?s.grade:"")+')</span>':'');
+          if(!m.q("#p-amt").value&&(bal+extra)>0) m.q("#p-amt").value=bal+extra;
+          refreshTermInfo();
+        }
+        function checkSpill(){
+          var sid=preId||m.q("#p-stu").value;
+          var selectedTerm=m.q("#p-term").value;
+          var amt=Number(m.q("#p-amt").value)||0;
+          var s=students.find(function(x){return x.id===sid;});
+          if(!s){ m.q("#p-spill").style.display="none"; return; }
+          var tb=termBilled(s.grade,selectedTerm), tp=termPaid(sid,selectedTerm);
+          var termBal=Math.max(0,tb-tp);
+          var spillEl=m.q("#p-spill");
+          if(amt>termBal && termBal>0){
+            var excess=amt-termBal;
+            var ti=terms.indexOf(selectedTerm);
+            var nextTerm=ti<2?terms[ti+1]:null;
+            spillEl.innerHTML=nextTerm?'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> will spill over to <strong>'+esc(nextTerm)+'</strong>.':'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> recorded as overpayment.';
+            spillEl.style.display="";
+          } else { spillEl.style.display="none"; }
+        }
+        m.q("#p-amt").oninput=checkSpill;
+        m.q("#p-term").onchange=checkSpill;
         async function loadTransport(){
           var wrap=m.q("#p-bus-wrap"); wrap.style.display="none"; transportFare=0;
-          var sid=m.q("#p-stu").value;
+          var sid=preId||m.q("#p-stu").value;
           var r=await sb.from("transport_assignments").select("*, transport_routes(name,fare)").eq("student_id",sid).maybeSingle();
           if(r.data && r.data.transport_routes){
             transportFare=Number(r.data.transport_routes.fare)||0;
@@ -900,33 +970,57 @@
           }
           refreshBal();
         }
-        m.q("#p-stu").onchange=function(){ m.q("#p-amt").value=""; loadTransport(); };
+        if(!preId) m.q("#p-stu").onchange=function(){ m.q("#p-amt").value=""; loadTransport(); };
         m.q("#p-bus").onchange=function(){ var was=m.q("#p-amt").value; m.q("#p-amt").value=""; refreshBal(); if(!m.q("#p-amt").value) m.q("#p-amt").value=was; };
         loadTransport();
         m.q("#c").onclick=m.close;
         var submitBtn=m.q("#s"), submitting=false;
         submitBtn.onclick=async function(){
-          if(submitting) return; // guard against double-click firing two inserts
-          var sid=m.q("#p-stu").value, amt=Number(m.q("#p-amt").value)||0;
+          if(submitting) return;
+          var sid=preId||m.q("#p-stu").value, amt=Number(m.q("#p-amt").value)||0;
           if(amt<=0){ toast("Enter an amount."); return; }
           submitting=true; submitBtn.disabled=true; var origLabel=submitBtn.textContent; submitBtn.textContent="Recording…";
           try{
+            var selectedTerm=m.q("#p-term").value;
+            var s=students.find(function(x){return x.id===sid;});
+            var tb=s?termBilled(s.grade,selectedTerm):0, tp=termPaid(sid,selectedTerm);
+            var termBal=Math.max(0,tb-tp);
+            var spillAmt=(amt>termBal&&termBal>0)?(amt-termBal):0;
+            var mainAmt=spillAmt>0?termBal:amt;
             var rn=await sb.rpc("next_receipt_no",{ p_school:schoolId });
             var receiptNo=rn.data||("RCT-"+Date.now());
             var who=(await sb.auth.getUser()).data.user; who=who?who.email:null;
             var includesBus=m.q("#p-bus").checked && transportFare>0;
-            var rec={ school_id:schoolId, student_id:sid, receipt_no:receiptNo, amount:amt, method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:m.q("#p-term").value, year:new Date().getFullYear(), note:m.q("#p-note").value.trim()||null, received_by:who, client_ref:idemKey, includes_transport:includesBus, transport_amount:includesBus?transportFare:0 };
+            var rec={ school_id:schoolId, student_id:sid, receipt_no:receiptNo, amount:mainAmt+(includesBus?transportFare:0), method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:selectedTerm, year:curYear, note:m.q("#p-note").value.trim()||null, received_by:who, client_ref:idemKey, includes_transport:includesBus, transport_amount:includesBus?transportFare:0 };
             var r=await sb.from("fee_payments").insert(rec).select().single();
             if(r.error){
               if(/duplicate|unique/i.test(r.error.message||"")){ toast("This payment was already recorded."); m.close(); init(); return; }
               toast("Error: "+r.error.message); submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
             }
             SamajiCache.invalidate("fee_payments");
-            paidByStudent[sid]=(paidByStudent[sid]||0)+(amt-(includesBus?transportFare:0));
+            paidByStudent[sid]=(paidByStudent[sid]||0)+tuitionOf(rec);
             if(includesBus) busPaidByStudent[sid]=(busPaidByStudent[sid]||0)+transportFare;
-            m.close(); toast("Payment recorded — receipt "+receiptNo);
-            showReceipt(r.data, students.find(function(s){return s.id===sid;}));
-            init(); // refresh stats + ledger
+            payments.push(r.data);
+            var spillMsg="";
+            if(spillAmt>0){
+              var ti=terms.indexOf(selectedTerm);
+              var nextTerm=ti<2?terms[ti+1]:null;
+              if(nextTerm){
+                var rn2=await sb.rpc("next_receipt_no",{ p_school:schoolId });
+                var receiptNo2=rn2.data||("RCT-"+(Date.now()+1));
+                var idemKey2=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+                var rec2={ school_id:schoolId, student_id:sid, receipt_no:receiptNo2, amount:spillAmt, method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:nextTerm, year:curYear, note:"Spillover from "+selectedTerm, received_by:who, client_ref:idemKey2, includes_transport:false, transport_amount:0 };
+                var r2=await sb.from("fee_payments").insert(rec2).select().single();
+                if(!r2.error){
+                  payments.push(r2.data);
+                  paidByStudent[sid]=(paidByStudent[sid]||0)+spillAmt;
+                  spillMsg=" + "+money(spillAmt)+" spilled to "+nextTerm+" ("+receiptNo2+")";
+                }
+              }
+            }
+            m.close(); toast("Payment recorded — "+receiptNo+spillMsg);
+            showReceipt(r.data, students.find(function(x){return x.id===sid;}));
+            init();
           }catch(e){
             toast("Error: "+(e&&e.message?e.message:"could not record payment")); submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel;
           }
