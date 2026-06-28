@@ -732,9 +732,9 @@
           phone = m.q("#au-phone").value.trim();
           fullName = m.q("#au-pname").value.trim();
           if (!phone) { toast("Phone number is required."); return; }
-          var cleanPhone = phone.replace(/[\+\s]/g, "");
+          var cleanPhone = phone.replace(/[^0-9]/g, "");
           email = cleanPhone + "@parent.samaji.app";
-          password = phone;
+          password = cleanPhone;
           var r = await sb.rpc("admin_create_user", { p_email: email, p_password: password, p_role: "parent", p_school_id: curSchool, p_phone: phone, p_full_name: fullName || null });
           if (r.error) { toast("Error: " + r.error.message); return; }
         } else {
