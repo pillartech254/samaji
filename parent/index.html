@@ -357,23 +357,41 @@
   $("submit").onclick = function(){
     if (!sb) { showMsg("Supabase keys not set.", false); return; }
     var phone = sanitizePhone($("phone").value);
-    var password = $("password").value;
-    if (!phone || !password) { showMsg("Enter your phone number and password.", false); return; }
+    var rawPw = $("password").value;
+    if (!phone || !rawPw) { showMsg("Enter your phone number and password.", false); return; }
     var email = phone + "@parent.samaji.app";
     $("submit").disabled = true;
     $("msg").className = "msg";
     $("msg").textContent = "";
-    sb.auth.signInWithPassword({ email: email, password: password }).then(function(res){
+
+    function tryLogin(pw) {
+      return sb.auth.signInWithPassword({ email: email, password: pw });
+    }
+
+    tryLogin(rawPw).then(function(res){
       if (res.error) {
-        var emsg = (typeof res.error.message === "string") ? res.error.message : "Invalid phone number or password.";
-        showMsg(emsg, false);
+        var sanitizedPw = sanitizePhone(rawPw);
+        if (sanitizedPw !== rawPw) {
+          tryLogin(sanitizedPw).then(function(res2){
+            if (res2.error) {
+              showMsg("Invalid phone number or password.", false);
+              $("submit").disabled = false;
+            } else {
+              enterApp();
+            }
+          }).catch(function(){
+            showMsg("Sign in failed. Please try again.", false);
+            $("submit").disabled = false;
+          });
+          return;
+        }
+        showMsg("Invalid phone number or password.", false);
         $("submit").disabled = false;
         return;
       }
       enterApp();
     }).catch(function(e){
-      var emsg = (e && typeof e.message === "string") ? e.message : "Sign in failed. Please try again.";
-      showMsg(emsg, false);
+      showMsg("Sign in failed. Please try again.", false);
       $("submit").disabled = false;
     });
   };
