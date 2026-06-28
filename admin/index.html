@@ -547,21 +547,44 @@
       var r = await sb.rpc("admin_list_users", { p_school_id: schoolId });
       if (r.error) { list.innerHTML = '<p class="muted">Error: ' + esc(r.error.message) + '</p>'; return; }
       var users = r.data || [];
+      if (typeof users === "string") { try { users = JSON.parse(users); } catch(e) { users = []; } }
+      if (!Array.isArray(users)) users = [];
       if (!users.length) { list.innerHTML = '<p class="muted">No users for this school.</p>'; return; }
-      var html = '<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Phone</th><th></th></tr></thead><tbody>';
+
+      var roleColors = {
+        super_admin: "color:#6D28D9;background:#F2ECFE;",
+        school_admin: "color:#4F46E5;background:#EEF0FF;",
+        teacher: "color:#067647;background:#E7F8EF;",
+        parent: "color:#C2410C;background:#FFF4ED;"
+      };
+      var roleLabel = {
+        super_admin: "Super Admin",
+        school_admin: "School Admin",
+        teacher: "Teacher",
+        parent: "Parent"
+      };
+
+      var html = '<table class="data"><thead><tr><th>Name</th><th>Email / Phone</th><th>Role</th><th></th></tr></thead><tbody>';
       users.forEach(function(u){
+        var uid = u.user_id || u.id || "";
+        var role = u.role || "—";
+        var rStyle = roleColors[role] || "color:#475467;background:#F1F2F6;";
+        var rLbl = roleLabel[role] || role;
+        var display = esc(u.full_name || "—");
+        var contact = u.phone ? esc(u.phone) : esc(u.email || "—");
+        if (u.phone && u.email) contact = esc(u.phone) + '<br><span class="mono" style="font-size:11px;color:#98A2B3;">' + esc(u.email) + '</span>';
         html +=
           '<tr>' +
-          '<td style="font-weight:600;">' + esc(u.full_name || "—") + '</td>' +
-          '<td class="mono" style="font-size:12px;">' + esc(u.email || "—") + '</td>' +
-          '<td><span class="tag" style="color:#4F46E5;background:#EEF0FF;">' + esc(u.role || "—") + '</span></td>' +
-          '<td>' + esc(u.phone || "—") + '</td>' +
+          '<td style="font-weight:600;">' + display + '</td>' +
+          '<td style="font-size:12.5px;">' + contact + '</td>' +
+          '<td><span class="tag" style="' + rStyle + '">' + esc(rLbl) + '</span></td>' +
           '<td style="white-space:nowrap;">' +
-          '<button class="ghost" data-reset="' + u.id + '" style="font-size:12px;">Reset pw</button> ' +
-          '<button class="ghost" data-del="' + u.id + '" style="font-size:12px;color:#B42318;">Delete</button>' +
+          '<button class="ghost" data-reset="' + uid + '" style="font-size:12px;">Reset pw</button> ' +
+          '<button class="ghost" data-del="' + uid + '" style="font-size:12px;color:#B42318;">Delete</button>' +
           '</td></tr>';
       });
       html += '</tbody></table>';
+      html += '<p class="muted" style="margin-top:8px;font-size:12px;">' + users.length + ' user(s)</p>';
       list.innerHTML = html;
 
       list.querySelectorAll("[data-reset]").forEach(function(b){

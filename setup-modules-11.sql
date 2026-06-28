@@ -191,31 +191,83 @@ end;
 $$;
 
 -- List users for a school (or all if null)
+-- Returns JSONB to avoid return-type mismatch issues
+drop function if exists admin_list_users(text);
 create or replace function admin_list_users(p_school_id text default null)
-returns table(user_id uuid, email text, role text, school_id text, phone text, full_name text, created_at timestamptz, must_change_pw boolean)
+returns jsonb
 language plpgsql security definer
 set search_path = public, auth
 as $$
+declare
+  result jsonb;
+  has_pa boolean;
 begin
   if not is_super_admin() then
     raise exception 'Not authorized';
   end if;
 
-  return query
-    select
-      u.id as user_id,
-      u.email,
-      p.role,
-      p.school_id,
-      pa.phone,
-      pa.full_name,
-      u.created_at,
-      coalesce(pa.must_change_password, false) as must_change_pw
-    from auth.users u
-    join public.profiles p on p.id = u.id
-    left join public.parent_accounts pa on pa.id = u.id
-    where (p_school_id is null or p.school_id = p_school_id)
-    order by u.created_at desc;
+  -- Check if parent_accounts table exists
+  select exists(
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'parent_accounts'
+  ) into has_pa;
+
+  if has_pa then
+    select coalesce(jsonb_agg(row_order), '[]'::jsonb) into result
+    from (
+      select jsonb_build_object(
+        'user_id', u.id,
+        'email', u.email,
+        'role', p.role,
+        'school_id', p.school_id,
+        'phone', coalesce(pa.phone, u.raw_user_meta_data->>'phone', ''),
+        'full_name', coalesce(pa.full_name, u.raw_user_meta_data->>'full_name', ''),
+        'created_at', u.created_at,
+        'must_change_pw', coalesce(pa.must_change_password, false)
+      ) as row_order
+      from auth.users u
+      join public.profiles p on p.id = u.id
+      left join public.parent_accounts pa on pa.id = u.id
+      where (p_school_id is null or p.school_id = p_school_id)
+      order by
+        case p.role
+          when 'super_admin' then 0
+          when 'school_admin' then 1
+          when 'teacher' then 2
+          when 'parent' then 3
+          else 4
+        end,
+        u.created_at desc
+    ) sub;
+  else
+    select coalesce(jsonb_agg(row_order), '[]'::jsonb) into result
+    from (
+      select jsonb_build_object(
+        'user_id', u.id,
+        'email', u.email,
+        'role', p.role,
+        'school_id', p.school_id,
+        'phone', coalesce(u.raw_user_meta_data->>'phone', ''),
+        'full_name', coalesce(u.raw_user_meta_data->>'full_name', ''),
+        'created_at', u.created_at,
+        'must_change_pw', false
+      ) as row_order
+      from auth.users u
+      join public.profiles p on p.id = u.id
+      where (p_school_id is null or p.school_id = p_school_id)
+      order by
+        case p.role
+          when 'super_admin' then 0
+          when 'school_admin' then 1
+          when 'teacher' then 2
+          when 'parent' then 3
+          else 4
+        end,
+        u.created_at desc
+    ) sub;
+  end if;
+
+  return result;
 end;
 $$;
 
