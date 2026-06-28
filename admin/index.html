@@ -544,13 +544,48 @@
     async function loadUsers(schoolId){
       var list = document.getElementById("usr-list");
       list.innerHTML = '<p class="muted">Loading...</p>';
-      var r = await sb.rpc("admin_list_users", { p_school_id: schoolId });
-      if (r.error) { list.innerHTML = '<p class="muted">Error: ' + esc(r.error.message) + '</p>'; return; }
-      var users = r.data || [];
-      if (typeof users === "string") { try { users = JSON.parse(users); } catch(e) { users = []; } }
-      if (!Array.isArray(users)) users = [];
-      if (!users.length) { list.innerHTML = '<p class="muted">No users for this school.</p>'; return; }
 
+      // 1. Load auth users from RPC
+      var r = await sb.rpc("admin_list_users", { p_school_id: schoolId });
+      var authUsers = [];
+      if (!r.error) {
+        authUsers = r.data || [];
+        if (typeof authUsers === "string") { try { authUsers = JSON.parse(authUsers); } catch(e) { authUsers = []; } }
+        if (!Array.isArray(authUsers)) authUsers = [];
+      }
+
+      // 2. Load guardians/parents from students table (auto-detected)
+      var sr = await sb.from("students").select("guardian_name, guardian_phone, first_name, last_name, grade").eq("school_id", schoolId);
+      var students = sr.data || [];
+
+      // Build unique guardian map by phone
+      var guardianMap = {};
+      var authPhones = {};
+      authUsers.forEach(function(u){ if (u.phone) authPhones[u.phone] = true; });
+
+      students.forEach(function(s){
+        var phone = (s.guardian_phone || "").trim();
+        if (!phone) return;
+        if (!guardianMap[phone]) {
+          guardianMap[phone] = {
+            name: s.guardian_name || "",
+            phone: phone,
+            children: [],
+            hasAccount: !!authPhones[phone]
+          };
+        }
+        guardianMap[phone].children.push((s.first_name || "") + " " + (s.last_name || "") + " (" + (s.grade || "—") + ")");
+      });
+
+      var guardians = [];
+      for (var ph in guardianMap) {
+        if (guardianMap.hasOwnProperty(ph) && !guardianMap[ph].hasAccount) {
+          guardians.push(guardianMap[ph]);
+        }
+      }
+      guardians.sort(function(a,b){ return (a.name || "").localeCompare(b.name || ""); });
+
+      // Combine: auth users first, then unregistered guardians
       var roleColors = {
         super_admin: "color:#6D28D9;background:#F2ECFE;",
         school_admin: "color:#4F46E5;background:#EEF0FF;",
@@ -564,28 +599,80 @@
         parent: "Parent"
       };
 
-      var html = '<table class="data"><thead><tr><th>Name</th><th>Email / Phone</th><th>Role</th><th></th></tr></thead><tbody>';
-      users.forEach(function(u){
-        var uid = u.user_id || u.id || "";
-        var role = u.role || "—";
-        var rStyle = roleColors[role] || "color:#475467;background:#F1F2F6;";
-        var rLbl = roleLabel[role] || role;
-        var display = esc(u.full_name || "—");
-        var contact = u.phone ? esc(u.phone) : esc(u.email || "—");
-        if (u.phone && u.email) contact = esc(u.phone) + '<br><span class="mono" style="font-size:11px;color:#98A2B3;">' + esc(u.email) + '</span>';
-        html +=
-          '<tr>' +
-          '<td style="font-weight:600;">' + display + '</td>' +
-          '<td style="font-size:12.5px;">' + contact + '</td>' +
-          '<td><span class="tag" style="' + rStyle + '">' + esc(rLbl) + '</span></td>' +
-          '<td style="white-space:nowrap;">' +
-          '<button class="ghost" data-reset="' + uid + '" style="font-size:12px;">Reset pw</button> ' +
-          '<button class="ghost" data-del="' + uid + '" style="font-size:12px;color:#B42318;">Delete</button>' +
-          '</td></tr>';
-      });
-      html += '</tbody></table>';
-      html += '<p class="muted" style="margin-top:8px;font-size:12px;">' + users.length + ' user(s)</p>';
+      var html = '';
+
+      // Auth users section
+      if (authUsers.length) {
+        html += '<div style="font-size:11px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.06em;padding:14px 0 6px;">Registered Accounts (' + authUsers.length + ')</div>';
+        html += '<table class="data"><thead><tr><th>Name</th><th>Email / Phone</th><th>Role</th><th></th></tr></thead><tbody>';
+        authUsers.forEach(function(u){
+          var uid = u.user_id || u.id || "";
+          var role = u.role || "—";
+          var rStyle = roleColors[role] || "color:#475467;background:#F1F2F6;";
+          var rLbl = roleLabel[role] || role;
+          var display = esc(u.full_name || "—");
+          var contact = u.phone ? esc(u.phone) : esc(u.email || "—");
+          if (u.phone && u.email) contact = esc(u.phone) + '<br><span class="mono" style="font-size:11px;color:#98A2B3;">' + esc(u.email) + '</span>';
+          html +=
+            '<tr>' +
+            '<td style="font-weight:600;">' + display + '</td>' +
+            '<td style="font-size:12.5px;">' + contact + '</td>' +
+            '<td><span class="tag" style="' + rStyle + '">' + esc(rLbl) + '</span></td>' +
+            '<td style="white-space:nowrap;">' +
+            '<button class="ghost" data-reset="' + uid + '" style="font-size:12px;">Reset pw</button> ' +
+            '<button class="ghost" data-del="' + uid + '" style="font-size:12px;color:#B42318;">Delete</button>' +
+            '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      // Guardians from students (no auth account yet)
+      if (guardians.length) {
+        html += '<div style="font-size:11px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.06em;padding:18px 0 6px;">Parents / Guardians from Student Records (' + guardians.length + ')</div>';
+        html += '<table class="data"><thead><tr><th>Guardian Name</th><th>Phone</th><th>Children</th><th></th></tr></thead><tbody>';
+        guardians.forEach(function(g){
+          var childList = g.children.map(function(c){ return esc(c); }).join(", ");
+          html +=
+            '<tr>' +
+            '<td style="font-weight:600;">' + esc(g.name || "—") + '</td>' +
+            '<td>' + esc(g.phone) + '</td>' +
+            '<td style="font-size:12px;color:#475467;">' + childList + '</td>' +
+            '<td><button class="btn-primary" data-create-parent="' + esc(g.phone) + '" data-pname="' + esc(g.name) + '" style="font-size:12px;padding:6px 12px;">Create Account</button></td>' +
+            '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      if (!authUsers.length && !guardians.length) {
+        html = '<p class="muted">No users or guardians found for this school.</p>';
+      }
+
+      var totalCount = authUsers.length + guardians.length;
+      html += '<p class="muted" style="margin-top:8px;font-size:12px;">' + totalCount + ' total (' + authUsers.length + ' with accounts, ' + guardians.length + ' guardians without accounts)</p>';
       list.innerHTML = html;
+
+      // Create parent account buttons
+      list.querySelectorAll("[data-create-parent]").forEach(function(b){
+        b.onclick = async function(){
+          var phone = b.getAttribute("data-create-parent");
+          var name = b.getAttribute("data-pname") || "";
+          var cleanPhone = phone.replace(/[^0-9]/g, "");
+          var email = cleanPhone + "@parent.samaji.app";
+          b.disabled = true;
+          b.textContent = "Creating...";
+          var r = await sb.rpc("admin_create_user", {
+            p_email: email,
+            p_password: cleanPhone,
+            p_role: "parent",
+            p_school_id: schoolId,
+            p_phone: phone,
+            p_full_name: name
+          });
+          if (r.error) { toast("Error: " + r.error.message); b.disabled = false; b.textContent = "Create Account"; return; }
+          toast("Parent account created for " + phone);
+          loadUsers(schoolId);
+        };
+      });
 
       list.querySelectorAll("[data-reset]").forEach(function(b){
         b.onclick = function(){ resetPassword(b.getAttribute("data-reset")); };
