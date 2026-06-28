@@ -386,7 +386,7 @@
     async function fees(){
       var body=document.getElementById("set-body");
       body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Define what each class is billed per term. The Fees module uses these to compute every student\u2019s balance.</span><button class="btn-primary" id="add-fs">+ New structure</button></div><div id="fs-list"></div>';
-      var r=await sb.from("fee_structures").select("*, fee_items(amount)").eq("school_id",schoolId).order("year",{ascending:false}).order("level");
+      var r=await sb.from("fee_structures").select("*, fee_items(name,amount,mandatory,sort)").eq("school_id",schoolId).order("year",{ascending:false}).order("level");
       var list=r.data||[], t=document.getElementById("fs-list");
       if(!list.length){ t.innerHTML='<div class="empty">No fee structures yet. Create one per class/term — e.g. Grade 6 · Term 1.</div>'; }
       else {
@@ -395,11 +395,49 @@
           var total=(f.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0);
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(f.level)+'</td><td>'+esc(f.term)+'</td><td>'+f.year+'</td><td>'+(f.fee_items||[]).length+'</td>'
             +'<td style="font-weight:700;">'+money(total)+'</td>'
-            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+f.id+'">Edit items</button> <button class="btn-sm danger" data-del="'+f.id+'">Delete</button></td></tr>';
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-dup="'+f.id+'">Duplicate</button> <button class="btn-sm" data-edit="'+f.id+'">Edit items</button> <button class="btn-sm danger" data-del="'+f.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ fsEditor(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
         t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this fee structure and its items?"))return; var r=await sb.from("fee_structures").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("fee_structures"); toast("Deleted"); fees(); }; });
+        t.querySelectorAll("[data-dup]").forEach(function(b){ b.onclick=function(){
+          var f=list.find(function(x){return x.id===b.getAttribute("data-dup");});
+          if(!f) return;
+          var allTerms=["Term 1","Term 2","Term 3"];
+          var existing={}; list.forEach(function(x){ if(x.level===f.level && x.year===f.year) existing[x.term]=true; });
+          var available=allTerms.filter(function(t){ return !existing[t]; });
+          if(!available.length){ toast("All three terms already have a structure for "+f.level+" "+f.year+"."); return; }
+          var checkboxes=available.map(function(t){ return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;"><input type="checkbox" value="'+esc(t)+'" checked> '+esc(t)+'</label>'; }).join("");
+          var items=(f.fee_items||[]);
+          var itemList=items.length?items.map(function(i){return esc(i.name||"Item")+" — "+money(i.amount);}).join("<br>"):'<span class="muted">No items</span>';
+          var dm=modal('<h3>Duplicate fee structure</h3>'
+            +'<p class="muted" style="font-size:12.5px;margin:0;">Copy <strong>'+esc(f.level)+' · '+esc(f.term)+' '+f.year+'</strong> ('+money((items).reduce(function(a,i){return a+Number(i.amount);},0))+') to other terms with the same items.</p>'
+            +'<div style="margin-top:12px;padding:10px 12px;background:#F8FAFB;border:1px solid #EEF0F2;border-radius:8px;font-size:12.5px;">'+itemList+'</div>'
+            +'<div style="margin-top:14px;"><strong style="font-size:12.5px;">Duplicate to:</strong><div id="dup-terms" style="margin-top:6px;">'+checkboxes+'</div></div>'
+            +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Duplicate</button></div>');
+          dm.q("#c").onclick=dm.close;
+          dm.q("#s").onclick=async function(){
+            var checks=dm.q("#dup-terms").querySelectorAll("input:checked");
+            var selected=[]; checks.forEach(function(c){ selected.push(c.value); });
+            if(!selected.length){ toast("Select at least one term."); return; }
+            var btn=dm.q("#s"); btn.disabled=true; btn.textContent="Duplicating…";
+            var created=0;
+            for(var i=0;i<selected.length;i++){
+              var term=selected[i];
+              var rec={school_id:schoolId, level:f.level, term:term, year:f.year, name:f.level+" — "+term};
+              var nr=await sb.from("fee_structures").insert(rec).select().single();
+              if(nr.error){ toast("Error for "+term+": "+nr.error.message); continue; }
+              if(items.length){
+                var newItems=items.map(function(it){ return {structure_id:nr.data.id, name:it.name, amount:Number(it.amount), mandatory:it.mandatory, sort:it.sort||0}; });
+                var ir=await sb.from("fee_items").insert(newItems);
+                if(ir.error) toast("Items error for "+term+": "+ir.error.message);
+              }
+              created++;
+            }
+            SamajiCache.invalidate("fee_structures");
+            dm.close(); toast("Duplicated to "+created+" term"+(created===1?"":"s")+"."); fees();
+          };
+        }; });
       }
       document.getElementById("add-fs").onclick=async function(){
         var classes=await loadClasses(sb, schoolId);
