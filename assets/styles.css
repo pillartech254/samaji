@@ -280,20 +280,17 @@ table.data tbody tr:hover td{background:#FAFBFC;}
 .statement .st-sign .line{width:180px;border-top:1px solid var(--ink-2);margin-bottom:6px;}
 .statement .st-foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--line-2);text-align:center;font-size:10.5px;color:var(--muted);}
 
-@page{size:A4;margin:12mm 10mm 10mm 10mm;}
+@page{size:A4 portrait;margin:10mm;}
 @media print{
-  html,body{width:210mm;margin:0;padding:0;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  body *{visibility:hidden;}
+  html,body{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  body *{visibility:hidden;position:static;}
   #print-area, #print-area *,
-  #fr-print-area, #fr-print-area *{visibility:visible;}
-  #print-area{position:absolute;left:0;top:0;width:100%;margin:0;padding:0;display:block;}
-  #fr-print-area{position:absolute;left:0;top:0;width:100%;margin:0;padding:0;display:block;}
+  #fr-print-area, #fr-print-area *{visibility:visible!important;}
+  #print-area,#fr-print-area{position:fixed!important;left:0!important;top:0!important;width:100%!important;max-width:none!important;margin:0!important;padding:10px!important;box-sizing:border-box!important;z-index:999999;}
   #print-area .rcpt{box-shadow:none;border:1px solid #ddd;margin:0 auto;animation:none;}
-  #print-area .statement, #fr-print-area{box-shadow:none;border:none;margin:0 auto;padding:0;}
-  #fr-print-area .pill{border:1px solid #ccc;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  #fr-print-area table.data{width:100%;border-collapse:collapse;font-size:10px;}
-  #fr-print-area table.data th,#fr-print-area table.data td{padding:5px 6px;border-bottom:1px solid #ddd;}
-  #fr-print-area table.data th{font-size:9px;text-transform:uppercase;letter-spacing:.03em;background:#f8f8f8;}
-  .overlay{display:none!important;}
+  #print-area .statement{box-shadow:none;border:none;margin:0 auto;padding:0;}
+  #fr-print-area table{width:100%!important;border-collapse:collapse;}
+  .overlay,.sidebar,.topbar,.tabs,.toolbar,.modal-actions,.btn-primary,.btn-sm,.chartcard{display:none!important;}
+  #fr-print-area .chartcard{display:block!important;}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;}}

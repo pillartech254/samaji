@@ -1183,7 +1183,7 @@
           rows.forEach(function(r){totalBilled+=r.billed;totalPaid+=r.paid;totalBal+=r.bal;if(r.bal<=0&&r.billed>0)cleared++;});
           var logo=schoolLogo(school,48);
           var details=[school.address,school.phone,school.email,school.motto].filter(Boolean).join(" · ");
-          var html='<div id="fr-print-area" style="font-family:system-ui,-apple-system,sans-serif;max-width:190mm;">'
+          var html='<div id="fr-print-area" style="font-family:system-ui,-apple-system,sans-serif;">'
             +'<table style="width:100%;border-collapse:collapse;margin-bottom:8px;border-bottom:2px solid #1A1D26;padding-bottom:8px;"><tr>'
             +'<td style="width:52px;vertical-align:top;padding-bottom:10px;">'+logo+'</td>'
             +'<td style="vertical-align:top;padding:0 12px 10px;"><div style="font-size:16px;font-weight:700;">'+esc(school.name||"School")+'</div>'
