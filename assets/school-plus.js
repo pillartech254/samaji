@@ -186,6 +186,7 @@
       var sc=await sb.from("schools").select("*").eq("id",schoolId).single();
       var info=sc.data||{};
       var logoUrl=info.logo_url||"";
+      if(!logoUrl) try{ logoUrl=localStorage.getItem("school_logo_"+schoolId)||""; }catch(e2){}
       body.innerHTML='<div class="chartcard" style="max-width:640px;">'
         +'<div class="ch-head"><h3>School Profile &amp; Logo</h3></div>'
         +'<div style="display:flex;gap:24px;align-items:flex-start;margin-top:12px;">'
@@ -210,26 +211,29 @@
         reader.onload=async function(){
           var dataUrl=reader.result;
           var r=await sb.from("schools").update({logo_url:dataUrl}).eq("id",schoolId);
-          if(r.error){ toast("Error saving logo: "+r.error.message); return; }
+          if(r.error){
+            try{ localStorage.setItem("school_logo_"+schoolId, dataUrl); }catch(e2){}
+          }
           toast("Logo saved"); profileTab();
         };
         reader.readAsDataURL(file);
       };
       var rmBtn=document.getElementById("sp-logo-rm");
       if(rmBtn) rmBtn.onclick=async function(){
-        await sb.from("schools").update({logo_url:null}).eq("id",schoolId);
+        var r=await sb.from("schools").update({logo_url:null}).eq("id",schoolId);
+        if(r.error) try{ localStorage.removeItem("school_logo_"+schoolId); }catch(e2){}
         toast("Logo removed"); profileTab();
       };
       document.getElementById("sp-save").onclick=async function(){
         var name=document.getElementById("sp-name").value.trim();
         if(!name){ toast("School name is required."); return; }
-        var rec={name:name, phone:document.getElementById("sp-phone").value.trim()||null};
-        var extras={address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
-        var all={}; Object.keys(rec).forEach(function(k){all[k]=rec[k];}); Object.keys(extras).forEach(function(k){all[k]=extras[k];});
-        var r=await sb.from("schools").update(all).eq("id",schoolId);
-        if(r.error){
-          var r2=await sb.from("schools").update(rec).eq("id",schoolId);
-          if(r2.error){ toast("Error: "+r2.error.message); return; }
+        var fields={name:name, phone:document.getElementById("sp-phone").value.trim()||null, address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
+        var rec={name:name};
+        var keys=Object.keys(fields);
+        for(var i=0;i<keys.length;i++){
+          var test={}; Object.keys(rec).forEach(function(k){test[k]=rec[k];}); test[keys[i]]=fields[keys[i]];
+          var r=await sb.from("schools").update(test).eq("id",schoolId);
+          if(!r.error) rec=test;
         }
         toast("Profile saved");
       };
@@ -1257,7 +1261,7 @@
           var ov=document.createElement("div"); ov.className="overlay";
           ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
             +'<div id="print-area"><div class="rcpt">'
-            +'<div class="rc-top"><div class="rc-logo">'+(school&&school.logo_url?'<img src="'+esc(school.logo_url)+'" style="height:32px;object-fit:contain;">':('<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg>'))+'</div>'
+            +'<div class="rc-top"><div class="rc-logo">'+(getLogoUrl(school)?'<img src="'+esc(getLogoUrl(school))+'" style="height:32px;object-fit:contain;">':('<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg>'))+'</div>'
             +'<div class="rc-school">'+esc(school.name||"School")+'</div><div class="rc-sub">Official Fee Receipt</div>'
             +'<div class="rc-stamp">'+status+'</div></div>'
             +'<div class="rc-body"><div class="rc-meta">'
@@ -1610,9 +1614,15 @@
     ov.querySelector("#dd-close").onclick=function(){ ov.remove(); };
   }
   function icArrow(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+  function getLogoUrl(info){
+    if(info&&info.logo_url) return info.logo_url;
+    if(info&&info.id) try{ return localStorage.getItem("school_logo_"+info.id)||""; }catch(e){ return ""; }
+    return "";
+  }
   function schoolLogo(info,size){
     size=size||40;
-    if(info&&info.logo_url) return '<img src="'+esc(info.logo_url)+'" style="width:'+size+'px;height:'+size+'px;object-fit:contain;border-radius:6px;">';
+    var url=getLogoUrl(info);
+    if(url) return '<img src="'+esc(url)+'" style="width:'+size+'px;height:'+size+'px;object-fit:contain;border-radius:6px;">';
     return '<div class="st-logo" style="width:'+size+'px;height:'+size+'px;font-size:'+Math.round(size*0.45)+'px;">'+esc((info&&info.name||"S").charAt(0))+'</div>';
   }
 
