@@ -301,7 +301,11 @@
   }
 
   function sanitizePhone(p) {
-    return (p || "").replace(/[^0-9]/g, "");
+    var digits = (p || "").replace(/[^0-9]/g, "");
+    if (digits.length === 10 && digits.charAt(0) === "0") {
+      digits = "254" + digits.substring(1);
+    }
+    return digits;
   }
 
   // ---- idle timeout (15 min for parents) ----

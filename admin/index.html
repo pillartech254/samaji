@@ -657,6 +657,7 @@
           var phone = b.getAttribute("data-create-parent");
           var name = b.getAttribute("data-pname") || "";
           var cleanPhone = phone.replace(/[^0-9]/g, "");
+          if (cleanPhone.length === 10 && cleanPhone.charAt(0) === "0") cleanPhone = "254" + cleanPhone.substring(1);
           var email = cleanPhone + "@parent.samaji.app";
           b.disabled = true;
           b.textContent = "Creating...";
@@ -733,6 +734,7 @@
           fullName = m.q("#au-pname").value.trim();
           if (!phone) { toast("Phone number is required."); return; }
           var cleanPhone = phone.replace(/[^0-9]/g, "");
+          if (cleanPhone.length === 10 && cleanPhone.charAt(0) === "0") cleanPhone = "254" + cleanPhone.substring(1);
           email = cleanPhone + "@parent.samaji.app";
           password = cleanPhone;
           var r = await sb.rpc("admin_create_user", { p_email: email, p_password: password, p_role: "parent", p_school_id: curSchool, p_phone: phone, p_full_name: fullName || null });
