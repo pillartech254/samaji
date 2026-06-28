@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samaji — Parent Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:#F4F6F8;color:#1A1D26;}
+
+  /* ===== BOOT SPLASH ===== */
+  #boot{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;}
+
+  /* ===== SPLIT LOGIN ===== */
+  #auth{display:flex;min-height:100vh;background:#fff;}
+  .login-brand{flex:1;position:relative;overflow:hidden;background:linear-gradient(160deg,#0E9384 0%,#0B6E63 55%,#0A4F49 100%);color:#fff;padding:56px 56px 40px;display:flex;flex-direction:column;}
+  .login-brand .glow{position:absolute;border-radius:50%;filter:blur(8px);opacity:.18;background:#fff;}
+  .login-brand .g1{width:380px;height:380px;top:-120px;right:-120px;}
+  .login-brand .g2{width:260px;height:260px;bottom:-90px;left:-80px;opacity:.12;}
+  .login-brand .blogo{display:flex;align-items:center;gap:12px;position:relative;z-index:2;}
+  .login-brand .blogo .mark{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.16);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px;border:1px solid rgba(255,255,255,.25);}
+  .login-brand h2{position:relative;z-index:2;margin:auto 0 0;font-size:32px;font-weight:700;letter-spacing:-.025em;line-height:1.2;max-width:16ch;text-wrap:balance;}
+  .login-brand .lead{position:relative;z-index:2;margin:16px 0 28px;font-size:15px;line-height:1.6;color:rgba(255,255,255,.82);max-width:42ch;}
+  .trust{position:relative;z-index:2;display:flex;flex-direction:column;gap:13px;}
+  .trust .item{display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.92);font-weight:500;}
+  .trust .ic{flex:none;width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;}
+  .login-brand .bfoot{position:relative;z-index:2;margin-top:40px;font-size:12px;color:rgba(255,255,255,.6);}
+  .login-form{flex:none;width:480px;max-width:100%;display:flex;align-items:center;justify-content:center;padding:48px 56px;}
+  .login-inner{width:100%;max-width:340px;}
+  .login-inner .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0E9384;}
+  .login-inner h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:8px 0 4px;color:#15171E;}
+  .login-inner .sub{font-size:13.5px;color:#667085;margin:0 0 26px;}
+  .login-inner label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:16px 0 6px;}
+  .login-inner input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;transition:border-color .12s, box-shadow .12s;}
+  .login-inner input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  .login-inner .signin{width:100%;font-size:14px;font-weight:600;color:#fff;background:#0E9384;border:none;border-radius:10px;padding:13px;cursor:pointer;font-family:inherit;margin-top:22px;transition:background .12s;}
+  .login-inner .signin:hover{background:#0B7A6E;}
+  .login-inner .signin:disabled{opacity:.6;cursor:default;}
+  .login-inner .hint{text-align:center;font-size:12.5px;color:#667085;margin-top:18px;line-height:1.5;}
+  .login-inner .secure{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;color:#98A2B3;margin-top:18px;}
+  .login-inner .pfoot{text-align:center;font-size:12px;color:#B0B5BE;margin-top:28px;padding-top:18px;border-top:1px solid #F0F1F4;}
+  .login-inner .pfoot strong{color:#667085;font-weight:600;}
+  @media (max-width:840px){
+    .login-brand{display:none;}
+    .login-form{flex:1;width:auto;padding:32px 24px;}
+  }
+
+  /* ===== MSG ===== */
+  .msg{text-align:center;font-size:13px;margin-top:12px;min-height:20px;}
+  .msg.err{color:#D92D20;}
+  .msg.ok{color:#0E9384;}
+
+  /* ===== APP LAYOUT ===== */
+  #app{display:none;min-height:100vh;background:#F4F6F8;}
+  .topbar{background:#fff;border-bottom:1px solid #EAECEF;padding:0 24px;display:flex;align-items:center;height:56px;position:sticky;top:0;z-index:50;}
+  .topbar .school-info{display:flex;align-items:center;gap:10px;min-width:0;flex:1;}
+  .topbar .school-logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex:none;}
+  .topbar .school-label{font-size:14px;font-weight:700;color:#15171E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .topbar .parent-name{font-size:12.5px;color:#667085;margin-left:auto;white-space:nowrap;padding:0 16px;}
+  .topbar .btn-signout{background:none;border:1px solid #DDE1E6;border-radius:8px;padding:6px 14px;font-size:12.5px;font-weight:600;color:#344054;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .topbar .btn-signout:hover{background:#F6F7F9;}
+  @media (max-width:600px){
+    .topbar{padding:0 12px;height:50px;}
+    .topbar .parent-name{display:none;}
+  }
+
+  /* ===== TABS ===== */
+  .tab-bar{display:flex;gap:0;background:#fff;border-bottom:1px solid #EAECEF;padding:0 24px;overflow-x:auto;}
+  .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:12px 18px;font-size:13.5px;font-weight:600;color:#667085;cursor:pointer;font-family:inherit;white-space:nowrap;transition:color .12s;}
+  .tab-btn:hover{color:#0E9384;}
+  .tab-btn.active{color:#0E9384;border-bottom-color:#0E9384;}
+  @media (max-width:600px){
+    .tab-bar{padding:0 8px;}
+    .tab-btn{padding:11px 14px;font-size:13px;}
+  }
+
+  /* ===== CONTENT ===== */
+  .content{max-width:800px;margin:0 auto;padding:20px 24px 60px;}
+  @media (max-width:600px){.content{padding:16px 12px 40px;}}
+
+  /* ===== CARDS ===== */
+  .card{background:#fff;border:1px solid #E8EAED;border-radius:13px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:14px;}
+  .card h3{font-size:16px;font-weight:700;margin:0 0 4px;color:#15171E;}
+  .card .meta{font-size:12.5px;color:#667085;margin-bottom:12px;}
+  .card .meta span{margin-right:14px;}
+  .fee-row{display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px solid #F0F1F4;}
+  .fee-row:last-child{border-bottom:none;}
+  .fee-row .lbl{color:#667085;}
+  .fee-row .val{font-weight:600;color:#15171E;}
+  .balance-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;}
+  .bal-green{background:#E7F6F3;color:#0E9384;}
+  .bal-amber{background:#FFF3E0;color:#E65100;}
+  .bal-red{background:#FDECEA;color:#D92D20;}
+
+  .btn-mpesa{width:100%;margin-top:14px;padding:12px;background:#0E9384;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px;transition:background .12s;}
+  .btn-mpesa:hover{background:#0B7A6E;}
+  .btn-mpesa:disabled{opacity:.6;cursor:default;}
+
+  .btn-pay-all{width:100%;padding:14px;background:#0A4F49;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:18px;min-height:48px;transition:background .12s;}
+  .btn-pay-all:hover{background:#083E3A;}
+
+  /* ===== TABLE ===== */
+  .data-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .data-table th{text-align:left;font-size:11.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid #EAECEF;}
+  .data-table td{padding:10px 12px;border-bottom:1px solid #F0F1F4;color:#344054;}
+  @media (max-width:600px){
+    .data-table-wrap{display:none;}
+    .mobile-cards{display:block !important;}
+  }
+  @media (min-width:601px){
+    .mobile-cards{display:none !important;}
+  }
+
+  /* ===== ANNOUNCEMENT CARDS ===== */
+  .ann-card{background:#fff;border:1px solid #E8EAED;border-radius:13px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:14px;}
+  .ann-card h4{font-size:15px;font-weight:700;margin:0 0 6px;color:#15171E;}
+  .ann-card .ann-date{font-size:12px;color:#98A2B3;margin-bottom:10px;}
+  .ann-card .ann-body{font-size:13.5px;color:#344054;line-height:1.6;white-space:pre-wrap;}
+
+  /* ===== MODALS ===== */
+  .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;}
+  .modal-box{background:#fff;border-radius:16px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;padding:28px 24px;}
+  .modal-box h2{font-size:20px;font-weight:700;margin:0 0 6px;color:#15171E;}
+  .modal-box .modal-sub{font-size:13.5px;color:#667085;margin:0 0 20px;}
+  .modal-box label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:14px 0 6px;}
+  .modal-box input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;}
+  .modal-box input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  .modal-box .modal-btn{width:100%;padding:13px;background:#0E9384;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:18px;min-height:44px;transition:background .12s;}
+  .modal-box .modal-btn:hover{background:#0B7A6E;}
+  .modal-box .modal-btn:disabled{opacity:.6;cursor:default;}
+  .modal-msg{text-align:center;font-size:13px;margin-top:10px;min-height:18px;}
+  .modal-msg.err{color:#D92D20;}
+  .modal-msg.ok{color:#0E9384;}
+
+  /* ===== PASSWORD STRENGTH ===== */
+  .pw-rules{list-style:none;padding:0;margin:10px 0 0;font-size:12.5px;}
+  .pw-rules li{padding:3px 0;color:#98A2B3;display:flex;align-items:center;gap:6px;}
+  .pw-rules li.pass{color:#0E9384;}
+  .pw-rules li .dot{width:6px;height:6px;border-radius:50%;background:#DDE1E6;flex:none;}
+  .pw-rules li.pass .dot{background:#0E9384;}
+
+  /* ===== EMPTY STATE ===== */
+  .empty{text-align:center;padding:40px 20px;color:#98A2B3;font-size:14px;}
+
+  /* ===== TOAST ===== */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:300;font-size:13.5px;font-weight:600;padding:12px 24px;border-radius:10px;display:none;max-width:90vw;text-align:center;}
+  #toast.show{display:block;}
+  #toast.ok{background:#E7F6F3;color:#0E9384;border:1px solid #A8DDD5;}
+  #toast.err{background:#FDECEA;color:#D92D20;border:1px solid #F5C6C2;}
+
+  /* ===== LOADING ===== */
+  .spinner{display:inline-block;width:20px;height:20px;border:2px solid #DDE1E6;border-top-color:#0E9384;border-radius:50%;animation:spin .6s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loading-center{text-align:center;padding:40px 0;}
+</style>
+</head>
+<body>
+
+  <!-- BOOT SPLASH -->
+  <div id="boot" style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;">
+    <div style="display:flex;align-items:center;gap:11px;opacity:.7;">
+      <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div>
+      <strong style="font-size:16px;color:#0E1424;">Samaji</strong>
+    </div>
+  </div>
+
+  <!-- AUTH -->
+  <div id="auth" style="display:none;">
+    <div class="login-brand">
+      <span class="glow g1"></span><span class="glow g2"></span>
+      <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
+      <h2>Samaji Parent Portal</h2>
+      <p class="lead">Track your child's education, pay fees, and stay connected with their school.</p>
+      <div class="trust">
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" stroke="#fff" stroke-width="1.8"/><circle cx="10" cy="7" r="4" stroke="#fff" stroke-width="1.8"/></svg></span>Monitor your child's academic progress</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#fff" stroke-width="1.8"/><path d="M2 10h20" stroke="#fff" stroke-width="1.8"/></svg></span>Pay school fees securely via M-Pesa</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="#fff" stroke-width="1.8"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="#fff" stroke-width="1.8"/></svg></span>Receive school announcements instantly</div>
+      </div>
+      <div class="bfoot">&copy; <span id="year-b"></span> Pillartech Solutions. All rights reserved.</div>
+    </div>
+
+    <div class="login-form">
+      <div class="login-inner">
+        <div class="eyebrow">Parent Portal</div>
+        <h1>Welcome back</h1>
+        <p class="sub">Sign in with your phone number to continue.</p>
+        <label for="phone">Phone number</label>
+        <input id="phone" type="tel" placeholder="0712345678" autocomplete="tel">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Enter your password" autocomplete="current-password">
+        <button class="signin" id="submit">Sign in</button>
+        <div class="msg" id="msg"></div>
+        <p class="hint">First time? Your phone number is your default password.</p>
+        <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
+        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <div class="topbar">
+      <div class="school-info">
+        <div class="school-logo" id="school-logo">S</div>
+        <span class="school-label" id="school-name">School</span>
+      </div>
+      <span class="parent-name" id="parent-name"></span>
+      <button class="btn-signout" id="signout">Sign out</button>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-children">Children</button>
+      <button class="tab-btn" id="tab-payments">Payments</button>
+      <button class="tab-btn" id="tab-announcements">Announcements</button>
+    </div>
+    <div class="content" id="view"></div>
+  </div>
+
+  <!-- FORCE PASSWORD CHANGE MODAL -->
+  <div id="pw-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h2>Set a new password</h2>
+      <p class="modal-sub">For your security, please change your default password before continuing.</p>
+      <label for="pw-new">New password</label>
+      <input id="pw-new" type="password" placeholder="Enter new password">
+      <label for="pw-confirm">Confirm password</label>
+      <input id="pw-confirm" type="password" placeholder="Re-enter new password">
+      <ul class="pw-rules" id="pw-rules">
+        <li id="rule-len"><span class="dot"></span>Minimum 8 characters</li>
+        <li id="rule-upper"><span class="dot"></span>At least 1 uppercase letter</li>
+        <li id="rule-num"><span class="dot"></span>At least 1 number</li>
+        <li id="rule-special"><span class="dot"></span>At least 1 special character</li>
+      </ul>
+      <button class="modal-btn" id="pw-submit" disabled>Update password</button>
+      <div class="modal-msg" id="pw-msg"></div>
+    </div>
+  </div>
+
+  <!-- MPESA MODAL -->
+  <div id="mpesa-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box" id="mpesa-box"></div>
+  </div>
+
+  <div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../assets/config.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var $ = function(id){ return document.getElementById(id); };
+  var sb = window.getSB();
+  var SCHOOL = null;
+  var PARENT = null; // parent_accounts row
+  var USER = null;
+  var CHILDREN = [];
+  var CURRENT_TAB = "children";
+
+  // Year footers
+  var yr = new Date().getFullYear();
+  var yrEls = ["year", "year-b"];
+  for (var i = 0; i < yrEls.length; i++) {
+    var el = document.getElementById(yrEls[i]);
+    if (el) el.textContent = yr;
+  }
+
+  // ---- helpers ----
+  function showMsg(t, ok) {
+    var m = $("msg");
+    m.textContent = t;
+    m.className = "msg " + (ok ? "ok" : "err");
+  }
+
+  function showToast(msg, type) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.className = "show " + (type || "ok");
+    setTimeout(function(){ t.className = ""; }, 4000);
+  }
+
+  function fmtMoney(n) {
+    if (n == null) return "KES 0";
+    var num = Number(n);
+    return "KES " + num.toLocaleString("en-KE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  function fmtDate(d) {
+    if (!d) return "-";
+    var dt = new Date(d);
+    return dt.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function fmtDateTime(d) {
+    if (!d) return "-";
+    var dt = new Date(d);
+    return dt.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) + " " +
+           dt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function sanitizePhone(p) {
+    return (p || "").replace(/[^0-9]/g, "");
+  }
+
+  // ---- idle timeout (15 min for parents) ----
+  var IDLE_MINUTES = 15;
+  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
+  var ACT_KEY = "samaji_parent_last_active";
+  var idleTimer = null;
+
+  function markActive() { try { localStorage.setItem(ACT_KEY, String(Date.now())); } catch(e){} }
+  function lastActive() { var v = 0; try { v = parseInt(localStorage.getItem(ACT_KEY) || "0", 10); } catch(e){} return v || 0; }
+
+  function startIdleWatch() {
+    markActive();
+    var events = ["mousedown","keydown","scroll","touchstart","click","mousemove"];
+    for (var i = 0; i < events.length; i++) {
+      window.addEventListener(events[i], markActive, { passive: true });
+    }
+    if (idleTimer) clearInterval(idleTimer);
+    idleTimer = setInterval(function(){
+      if (Date.now() - lastActive() > IDLE_MS) {
+        doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity.");
+      }
+    }, 15000);
+  }
+
+  function doSignOut(reason) {
+    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+    try { localStorage.removeItem(ACT_KEY); } catch(e){}
+    if (sb) {
+      sb.auth.signOut().then(function(){}).catch(function(){});
+    }
+    $("app").style.display = "none";
+    $("pw-modal").style.display = "none";
+    $("mpesa-modal").style.display = "none";
+    showLogin();
+    if (reason) showMsg(reason, false);
+    $("phone").value = "";
+    $("password").value = "";
+    $("submit").disabled = false;
+  }
+
+  function showLogin() {
+    $("boot").style.display = "none";
+    $("auth").style.display = "flex";
+    $("app").style.display = "none";
+  }
+
+  // ---- LOGIN ----
+  $("submit").onclick = function(){
+    if (!sb) { showMsg("Supabase keys not set.", false); return; }
+    var phone = sanitizePhone($("phone").value);
+    var password = $("password").value;
+    if (!phone || !password) { showMsg("Enter your phone number and password.", false); return; }
+    var email = phone + "@parent.samaji.app";
+    $("submit").disabled = true;
+    $("msg").className = "msg";
+    $("msg").textContent = "";
+    sb.auth.signInWithPassword({ email: email, password: password }).then(function(res){
+      if (res.error) {
+        showMsg(res.error.message, false);
+        $("submit").disabled = false;
+        return;
+      }
+      enterApp();
+    }).catch(function(e){
+      showMsg("Sign in failed. Please try again.", false);
+      $("submit").disabled = false;
+    });
+  };
+
+  // Submit on Enter
+  $("password").addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.keyCode === 13) $("submit").click();
+  });
+  $("phone").addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.keyCode === 13) $("password").focus();
+  });
+
+  // ---- ENTER APP ----
+  function enterApp() {
+    sb.auth.getUser().then(function(u){
+      USER = u.data.user;
+      if (!USER) { showLogin(); return; }
+      // get parent account
+      sb.from("parent_accounts").select("*").eq("id", USER.id).single().then(function(pr){
+        PARENT = pr.data;
+        if (!PARENT) {
+          showMsg("No parent account found for this login.", false);
+          $("submit").disabled = false;
+          showLogin();
+          return;
+        }
+        SCHOOL = PARENT.school_id;
+
+        // Check must_change_password
+        if (PARENT.must_change_password) {
+          $("boot").style.display = "none";
+          $("auth").style.display = "none";
+          $("pw-modal").style.display = "flex";
+          return;
+        }
+
+        finishEnterApp();
+      }).catch(function(){
+        showMsg("Could not load parent account.", false);
+        $("submit").disabled = false;
+        showLogin();
+      });
+    }).catch(function(){
+      showLogin();
+    });
+  }
+
+  function finishEnterApp() {
+    $("boot").style.display = "none";
+    $("auth").style.display = "none";
+    $("pw-modal").style.display = "none";
+    $("app").style.display = "block";
+    startIdleWatch();
+
+    $("parent-name").textContent = PARENT.full_name || "";
+
+    // Load school info
+    sb.from("schools").select("id, name, subdomain").eq("id", SCHOOL).single().then(function(sc){
+      var school = sc.data;
+      if (school) {
+        $("school-name").textContent = school.name || SCHOOL;
+        $("school-logo").textContent = (school.name || "S").charAt(0).toUpperCase();
+      }
+    });
+
+    loadChildren();
+  }
+
+  // ---- FORCE PASSWORD CHANGE ----
+  function checkPwRules(pw) {
+    var rules = {
+      len: pw.length >= 8,
+      upper: /[A-Z]/.test(pw),
+      num: /[0-9]/.test(pw),
+      special: /[^A-Za-z0-9]/.test(pw)
+    };
+    $("rule-len").className = rules.len ? "pass" : "";
+    $("rule-upper").className = rules.upper ? "pass" : "";
+    $("rule-num").className = rules.num ? "pass" : "";
+    $("rule-special").className = rules.special ? "pass" : "";
+    return rules.len && rules.upper && rules.num && rules.special;
+  }
+
+  $("pw-new").addEventListener("input", function(){
+    var valid = checkPwRules($("pw-new").value);
+    var match = $("pw-new").value === $("pw-confirm").value && $("pw-confirm").value.length > 0;
+    $("pw-submit").disabled = !(valid && match);
+  });
+  $("pw-confirm").addEventListener("input", function(){
+    var valid = checkPwRules($("pw-new").value);
+    var match = $("pw-new").value === $("pw-confirm").value && $("pw-confirm").value.length > 0;
+    $("pw-submit").disabled = !(valid && match);
+  });
+
+  $("pw-submit").onclick = function(){
+    var pw = $("pw-new").value;
+    var confirm = $("pw-confirm").value;
+    if (pw !== confirm) {
+      $("pw-msg").textContent = "Passwords do not match.";
+      $("pw-msg").className = "modal-msg err";
+      return;
+    }
+    if (!checkPwRules(pw)) {
+      $("pw-msg").textContent = "Password does not meet the requirements.";
+      $("pw-msg").className = "modal-msg err";
+      return;
+    }
+    $("pw-submit").disabled = true;
+    $("pw-msg").textContent = "";
+    sb.rpc("parent_change_password", { p_new_password: pw }).then(function(res){
+      if (res.error) {
+        $("pw-msg").textContent = res.error.message || "Failed to change password.";
+        $("pw-msg").className = "modal-msg err";
+        $("pw-submit").disabled = false;
+        return;
+      }
+      $("pw-msg").textContent = "Password updated successfully!";
+      $("pw-msg").className = "modal-msg ok";
+      PARENT.must_change_password = false;
+      setTimeout(function(){ finishEnterApp(); }, 800);
+    }).catch(function(){
+      $("pw-msg").textContent = "An error occurred. Please try again.";
+      $("pw-msg").className = "modal-msg err";
+      $("pw-submit").disabled = false;
+    });
+  };
+
+  // ---- TABS ----
+  function setTab(name) {
+    CURRENT_TAB = name;
+    var btns = document.querySelectorAll(".tab-btn");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = btns[i].id === "tab-" + name ? "tab-btn active" : "tab-btn";
+    }
+  }
+
+  $("tab-children").onclick = function(){ setTab("children"); renderChildren(); };
+  $("tab-payments").onclick = function(){ setTab("payments"); renderPayments(); };
+  $("tab-announcements").onclick = function(){ setTab("announcements"); renderAnnouncements(); };
+
+  // ---- DATA LOADING ----
+  var childFeeData = {}; // keyed by student id: { billed, paid, balance }
+
+  function loadChildren() {
+    var view = $("view");
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+    var phone = sanitizePhone(PARENT.phone);
+    sb.from("students").select("*").eq("guardian_phone", phone).then(function(res){
+      CHILDREN = (res.data || []);
+      if (CHILDREN.length === 0) {
+        view.innerHTML = '<div class="empty">No students linked to your phone number.</div>';
+        return;
+      }
+      loadFeeDataForChildren(function(){
+        renderChildren();
+      });
+    }).catch(function(){
+      view.innerHTML = '<div class="empty">Could not load student data.</div>';
+    });
+  }
+
+  function loadFeeDataForChildren(cb) {
+    var pending = CHILDREN.length;
+    var currentYear = new Date().getFullYear();
+    childFeeData = {};
+
+    for (var i = 0; i < CHILDREN.length; i++) {
+      (function(child){
+        var sid = child.id;
+        var grade = child.grade || child.class_name || child.current_class || "";
+        childFeeData[sid] = { billed: 0, paid: 0, balance: 0, items: [] };
+
+        // Get fee structures for this grade + year
+        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("grade", grade).eq("year", currentYear).then(function(fsRes){
+          var structures = fsRes.data || [];
+          if (structures.length === 0) {
+            loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
+            return;
+          }
+          var structIds = [];
+          for (var j = 0; j < structures.length; j++) { structIds.push(structures[j].id); }
+          sb.from("fee_structure_items").select("item_name, amount").in("structure_id", structIds).then(function(fiRes){
+            var items = fiRes.data || [];
+            var total = 0;
+            for (var k = 0; k < items.length; k++) {
+              total += Number(items[k].amount) || 0;
+            }
+            childFeeData[sid].billed = total;
+            childFeeData[sid].items = items;
+            loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
+          }).catch(function(){ loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); }); });
+        }).catch(function(){ pending--; if (pending === 0) cb(); });
+      })(CHILDREN[i]);
+    }
+  }
+
+  function loadPaidForChild(studentId, cb) {
+    sb.from("fee_payments").select("amount, transport_amount").eq("school_id", SCHOOL).eq("student_id", studentId).then(function(fpRes){
+      var payments = fpRes.data || [];
+      var paid = 0;
+      for (var i = 0; i < payments.length; i++) {
+        var amt = Number(payments[i].amount) || 0;
+        var transport = Number(payments[i].transport_amount) || 0;
+        paid += (amt - transport);
+      }
+      childFeeData[studentId].paid = paid;
+      childFeeData[studentId].balance = childFeeData[studentId].billed - paid;
+      cb();
+    }).catch(function(){ cb(); });
+  }
+
+  // ---- RENDER: CHILDREN TAB ----
+  function renderChildren() {
+    var view = $("view");
+    var html = "";
+    var totalBalance = 0;
+    var childrenWithBalance = [];
+
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var c = CHILDREN[i];
+      var fd = childFeeData[c.id] || { billed: 0, paid: 0, balance: 0 };
+      totalBalance += fd.balance;
+      if (fd.balance > 0) childrenWithBalance.push(c);
+    }
+
+    // Pay all button
+    if (childrenWithBalance.length > 1 && totalBalance > 0) {
+      html += '<button class="btn-pay-all" onclick="window._payAll()">Pay for all children — ' + fmtMoney(totalBalance) + '</button>';
+    }
+
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var c = CHILDREN[i];
+      var fd = childFeeData[c.id] || { billed: 0, paid: 0, balance: 0 };
+      var grade = c.grade || c.class_name || c.current_class || "-";
+      var admNo = c.admission_number || c.adm_no || "-";
+      var status = c.status || "active";
+
+      var balClass = "bal-green";
+      if (fd.balance > 0 && fd.paid > 0) balClass = "bal-amber";
+      if (fd.balance > fd.billed * 0.5) balClass = "bal-red";
+      if (fd.billed === 0 && fd.balance <= 0) balClass = "bal-green";
+
+      html += '<div class="card">';
+      html += '<h3>' + escHtml(c.full_name || c.name || "Student") + '</h3>';
+      html += '<div class="meta">';
+      html += '<span>Grade: ' + escHtml(grade) + '</span>';
+      html += '<span>Adm: ' + escHtml(admNo) + '</span>';
+      html += '<span style="text-transform:capitalize;">' + escHtml(status) + '</span>';
+      html += '</div>';
+      html += '<div class="fee-row"><span class="lbl">Total billed</span><span class="val">' + fmtMoney(fd.billed) + '</span></div>';
+      html += '<div class="fee-row"><span class="lbl">Total paid</span><span class="val">' + fmtMoney(fd.paid) + '</span></div>';
+      html += '<div class="fee-row"><span class="lbl">Balance</span><span class="val"><span class="balance-badge ' + balClass + '">' + fmtMoney(fd.balance) + '</span></span></div>';
+      if (fd.balance > 0) {
+        html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\')">Pay via M-Pesa</button>';
+      }
+      html += '</div>';
+    }
+
+    if (CHILDREN.length === 0) {
+      html = '<div class="empty">No students linked to your phone number.</div>';
+    }
+
+    view.innerHTML = html;
+  }
+
+  function escHtml(s) {
+    var d = document.createElement("div");
+    d.appendChild(document.createTextNode(s || ""));
+    return d.innerHTML;
+  }
+
+  // ---- MPESA PAYMENT ----
+  window._payChild = function(studentId) {
+    var child = null;
+    for (var i = 0; i < CHILDREN.length; i++) {
+      if (CHILDREN[i].id === studentId) { child = CHILDREN[i]; break; }
+    }
+    if (!child) return;
+    var fd = childFeeData[studentId] || { balance: 0 };
+    openMpesaModal([child], fd.balance);
+  };
+
+  window._payAll = function() {
+    var total = 0;
+    var kids = [];
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var fd = childFeeData[CHILDREN[i].id] || { balance: 0 };
+      if (fd.balance > 0) {
+        total += fd.balance;
+        kids.push(CHILDREN[i]);
+      }
+    }
+    if (kids.length === 0) return;
+    openMpesaModal(kids, total);
+  };
+
+  function openMpesaModal(students, totalBalance) {
+    var box = $("mpesa-box");
+    var names = [];
+    var sids = [];
+    for (var i = 0; i < students.length; i++) {
+      names.push(students[i].full_name || students[i].name || "Student");
+      sids.push(students[i].id);
+    }
+
+    var html = '<h2>Pay fees via M-Pesa</h2>';
+    html += '<p class="modal-sub">Send an M-Pesa payment for ' + escHtml(names.join(", ")) + '</p>';
+    html += '<div class="fee-row"><span class="lbl">Total balance</span><span class="val">' + fmtMoney(totalBalance) + '</span></div>';
+    html += '<label for="mpesa-amount">Amount to pay (KES)</label>';
+    html += '<input id="mpesa-amount" type="number" value="' + Math.max(0, totalBalance) + '" min="1">';
+    html += '<label for="mpesa-phone">M-Pesa phone number</label>';
+    html += '<input id="mpesa-phone" type="tel" value="' + escHtml(PARENT.phone || "") + '">';
+    html += '<button class="modal-btn" id="mpesa-pay">Pay now</button>';
+    html += '<div class="modal-msg" id="mpesa-msg"></div>';
+    html += '<button style="width:100%;background:none;border:none;color:#667085;font-size:13px;cursor:pointer;padding:12px 0;font-family:inherit;" id="mpesa-cancel">Cancel</button>';
+
+    box.innerHTML = html;
+    $("mpesa-modal").style.display = "flex";
+
+    $("mpesa-cancel").onclick = function(){ $("mpesa-modal").style.display = "none"; };
+
+    $("mpesa-pay").onclick = function(){
+      var amount = parseInt($("mpesa-amount").value, 10);
+      var phone = sanitizePhone($("mpesa-phone").value);
+      if (!amount || amount < 1) {
+        $("mpesa-msg").textContent = "Enter a valid amount.";
+        $("mpesa-msg").className = "modal-msg err";
+        return;
+      }
+      if (!phone || phone.length < 9) {
+        $("mpesa-msg").textContent = "Enter a valid phone number.";
+        $("mpesa-msg").className = "modal-msg err";
+        return;
+      }
+      $("mpesa-pay").disabled = true;
+      $("mpesa-msg").textContent = "";
+
+      // Build student_ids as text array literal for Supabase
+      var studentIdArr = [];
+      for (var j = 0; j < sids.length; j++) { studentIdArr.push(sids[j]); }
+
+      sb.from("mpesa_transactions").insert({
+        school_id: SCHOOL,
+        parent_id: USER.id,
+        phone: phone,
+        amount: amount,
+        student_ids: studentIdArr,
+        status: "pending"
+      }).select().single().then(function(res){
+        if (res.error) {
+          $("mpesa-msg").textContent = res.error.message || "Failed to initiate payment.";
+          $("mpesa-msg").className = "modal-msg err";
+          $("mpesa-pay").disabled = false;
+          return;
+        }
+        var txId = res.data.id;
+        showMpesaPolling(txId);
+      }).catch(function(){
+        $("mpesa-msg").textContent = "Failed to initiate payment. Please try again.";
+        $("mpesa-msg").className = "modal-msg err";
+        $("mpesa-pay").disabled = false;
+      });
+    };
+  }
+
+  function showMpesaPolling(txId) {
+    var box = $("mpesa-box");
+    var html = '<div style="text-align:center;padding:20px 0;">';
+    html += '<div class="spinner" style="width:32px;height:32px;margin:0 auto 16px;border-width:3px;"></div>';
+    html += '<h2 style="font-size:17px;">STK Push sent to your phone</h2>';
+    html += '<p class="modal-sub">Enter your M-Pesa PIN to complete payment.</p>';
+    html += '<div class="modal-msg" id="mpesa-poll-msg">Waiting for confirmation...</div>';
+    html += '</div>';
+    html += '<button style="width:100%;background:none;border:1px solid #DDE1E6;border-radius:10px;color:#344054;font-size:13px;cursor:pointer;padding:12px;font-family:inherit;margin-top:10px;" id="mpesa-poll-cancel">Cancel</button>';
+    box.innerHTML = html;
+
+    var pollCount = 0;
+    var maxPolls = 24; // 2 minutes at 5s intervals
+    var pollTimer = setInterval(function(){
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(pollTimer);
+        $("mpesa-poll-msg").textContent = "Payment timed out. Please try again.";
+        $("mpesa-poll-msg").className = "modal-msg err";
+        return;
+      }
+      sb.from("mpesa_transactions").select("status, mpesa_receipt_no").eq("id", txId).single().then(function(res){
+        if (res.error) return;
+        var tx = res.data;
+        if (tx.status === "completed") {
+          clearInterval(pollTimer);
+          var successHtml = '<div style="text-align:center;padding:20px 0;">';
+          successHtml += '<div style="width:48px;height:48px;border-radius:50%;background:#E7F6F3;color:#0E9384;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:24px;">&#10003;</div>';
+          successHtml += '<h2 style="font-size:17px;">Payment successful!</h2>';
+          successHtml += '<p class="modal-sub">Receipt: ' + escHtml(tx.mpesa_receipt_no || "-") + '</p>';
+          successHtml += '<button class="modal-btn" id="mpesa-done">Done</button>';
+          successHtml += '</div>';
+          box.innerHTML = successHtml;
+          $("mpesa-done").onclick = function(){
+            $("mpesa-modal").style.display = "none";
+            loadChildren();
+          };
+        } else if (tx.status === "failed") {
+          clearInterval(pollTimer);
+          $("mpesa-poll-msg").textContent = "Payment failed. Please try again.";
+          $("mpesa-poll-msg").className = "modal-msg err";
+        }
+      });
+    }, 5000);
+
+    $("mpesa-poll-cancel").onclick = function(){
+      clearInterval(pollTimer);
+      $("mpesa-modal").style.display = "none";
+    };
+  }
+
+  // ---- RENDER: PAYMENTS TAB ----
+  function renderPayments() {
+    var view = $("view");
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+
+    var studentIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+
+    if (studentIds.length === 0) {
+      view.innerHTML = '<div class="empty">No payment history found.</div>';
+      return;
+    }
+
+    var studentMap = {};
+    for (var i = 0; i < CHILDREN.length; i++) {
+      studentMap[CHILDREN[i].id] = CHILDREN[i].full_name || CHILDREN[i].name || "Student";
+    }
+
+    var allPayments = [];
+    var allMpesa = [];
+    var done = 0;
+    var total = 2;
+
+    sb.from("fee_payments").select("*").eq("school_id", SCHOOL).in("student_id", studentIds).order("created_at", { ascending: false }).then(function(res){
+      allPayments = res.data || [];
+      done++;
+      if (done === total) showPaymentsView(allPayments, allMpesa, studentMap);
+    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentMap); });
+
+    sb.from("mpesa_transactions").select("*").eq("parent_id", USER.id).order("created_at", { ascending: false }).then(function(res){
+      allMpesa = res.data || [];
+      done++;
+      if (done === total) showPaymentsView(allPayments, allMpesa, studentMap);
+    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentMap); });
+  }
+
+  function showPaymentsView(payments, mpesa, studentMap) {
+    var view = $("view");
+    var html = "";
+
+    if (payments.length === 0 && mpesa.length === 0) {
+      view.innerHTML = '<div class="empty">No payment history found.</div>';
+      return;
+    }
+
+    // Fee payments table
+    if (payments.length > 0) {
+      html += '<h3 style="font-size:15px;font-weight:700;margin:0 0 12px;color:#15171E;">Fee Payments</h3>';
+
+      // Desktop table
+      html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      html += '<th>Date</th><th>Student</th><th>Amount</th><th>Term</th><th>Method</th><th>Receipt</th>';
+      html += '</tr></thead><tbody>';
+      for (var i = 0; i < payments.length; i++) {
+        var p = payments[i];
+        html += '<tr>';
+        html += '<td>' + fmtDate(p.created_at) + '</td>';
+        html += '<td>' + escHtml(studentMap[p.student_id] || "-") + '</td>';
+        html += '<td>' + fmtMoney(p.amount) + '</td>';
+        html += '<td>' + escHtml((p.term || "") + (p.year ? " " + p.year : "")) + '</td>';
+        html += '<td>' + escHtml(p.method || "-") + '</td>';
+        html += '<td>' + escHtml(p.receipt_no || "-") + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+
+      // Mobile cards
+      html += '<div class="mobile-cards">';
+      for (var i = 0; i < payments.length; i++) {
+        var p = payments[i];
+        html += '<div class="card">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
+        html += '<div><strong>' + fmtMoney(p.amount) + '</strong><br><span style="font-size:12px;color:#667085;">' + escHtml(studentMap[p.student_id] || "-") + '</span></div>';
+        html += '<span style="font-size:11.5px;color:#98A2B3;">' + fmtDate(p.created_at) + '</span>';
+        html += '</div>';
+        html += '<div style="margin-top:8px;font-size:12.5px;color:#667085;">';
+        html += escHtml((p.term || "") + (p.year ? " " + p.year : "")) + ' &middot; ' + escHtml(p.method || "-") + ' &middot; ' + escHtml(p.receipt_no || "-");
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+
+    // M-Pesa transactions
+    if (mpesa.length > 0) {
+      html += '<h3 style="font-size:15px;font-weight:700;margin:24px 0 12px;color:#15171E;">M-Pesa Transactions</h3>';
+      html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      html += '<th>Date</th><th>Amount</th><th>Phone</th><th>Status</th><th>Receipt</th>';
+      html += '</tr></thead><tbody>';
+      for (var i = 0; i < mpesa.length; i++) {
+        var m = mpesa[i];
+        var statusColor = m.status === "completed" ? "#0E9384" : (m.status === "failed" ? "#D92D20" : "#E65100");
+        html += '<tr>';
+        html += '<td>' + fmtDateTime(m.created_at) + '</td>';
+        html += '<td>' + fmtMoney(m.amount) + '</td>';
+        html += '<td>' + escHtml(m.phone || "-") + '</td>';
+        html += '<td style="color:' + statusColor + ';font-weight:600;text-transform:capitalize;">' + escHtml(m.status || "-") + '</td>';
+        html += '<td>' + escHtml(m.mpesa_receipt_no || "-") + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+
+      // Mobile cards for M-Pesa
+      html += '<div class="mobile-cards">';
+      for (var i = 0; i < mpesa.length; i++) {
+        var m = mpesa[i];
+        var statusColor = m.status === "completed" ? "#0E9384" : (m.status === "failed" ? "#D92D20" : "#E65100");
+        html += '<div class="card">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
+        html += '<div><strong>' + fmtMoney(m.amount) + '</strong><br><span style="font-size:12px;color:#667085;">' + escHtml(m.phone || "") + '</span></div>';
+        html += '<span class="balance-badge" style="background:' + (m.status === "completed" ? "#E7F6F3" : (m.status === "failed" ? "#FDECEA" : "#FFF3E0")) + ';color:' + statusColor + ';">' + escHtml(m.status || "-") + '</span>';
+        html += '</div>';
+        html += '<div style="margin-top:8px;font-size:12px;color:#98A2B3;">' + fmtDateTime(m.created_at);
+        if (m.mpesa_receipt_no) html += ' &middot; ' + escHtml(m.mpesa_receipt_no);
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+
+    view.innerHTML = html;
+  }
+
+  // ---- RENDER: ANNOUNCEMENTS TAB ----
+  function renderAnnouncements() {
+    var view = $("view");
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+
+    sb.from("announcements").select("*").eq("school_id", SCHOOL).in("audience", ["all", "parents"]).order("created_at", { ascending: false }).then(function(res){
+      var anns = res.data || [];
+      if (anns.length === 0) {
+        view.innerHTML = '<div class="empty">No announcements yet.</div>';
+        return;
+      }
+      var html = "";
+      for (var i = 0; i < anns.length; i++) {
+        var a = anns[i];
+        html += '<div class="ann-card">';
+        html += '<h4>' + escHtml(a.title || "") + '</h4>';
+        html += '<div class="ann-date">' + fmtDate(a.created_at) + '</div>';
+        html += '<div class="ann-body">' + escHtml(a.body || "") + '</div>';
+        html += '</div>';
+      }
+      view.innerHTML = html;
+    }).catch(function(){
+      view.innerHTML = '<div class="empty">Could not load announcements.</div>';
+    });
+  }
+
+  // ---- SIGN OUT ----
+  $("signout").onclick = function(){ doSignOut(); };
+
+  // ---- BOOT ----
+  (function(){
+    if (!sb) { showLogin(); return; }
+    sb.auth.getSession().then(function(s){
+      if (!s.data.session) { showLogin(); return; }
+      // Enforce idle expiry
+      var la = lastActive();
+      if (la && (Date.now() - la > IDLE_MS)) {
+        try { localStorage.removeItem(ACT_KEY); } catch(e){}
+        sb.auth.signOut().then(function(){}).catch(function(){});
+        showLogin();
+        showMsg("Your session expired. Please sign in again.", false);
+        return;
+      }
+      enterApp();
+    }).catch(function(){
+      showLogin();
+    });
+  })();
+
+})();
+</script>
+</body>
+</html>
