@@ -1221,7 +1221,19 @@
             +'<div style="margin-top:10px;font-size:9px;color:#98A2B3;border-top:1px solid #EEF0F2;padding-top:6px;">Computer-generated report · Samaji School Management · '+new Date().toLocaleDateString()+'</div></div>'
             +'<div style="margin-top:12px;"><button class="btn-primary" id="fr-print">🖨 Print / Save as PDF</button></div>';
           document.getElementById("fr-result").innerHTML=html;
-          document.getElementById("fr-print").onclick=function(){ window.print(); };
+          document.getElementById("fr-print").onclick=function(){
+            var content=document.getElementById("fr-print-area");
+            if(!content) return;
+            var w=window.open("","_blank","width=800,height=600");
+            w.document.write('<!DOCTYPE html><html><head><title>Fee Report</title><style>'
+              +'@page{size:A4 portrait;margin:10mm;}'
+              +'body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;font-size:12px;color:#1A1D26;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+              +'table{width:100%;border-collapse:collapse;}'
+              +'</style></head><body>'+content.innerHTML+'</body></html>');
+            w.document.close();
+            w.focus();
+            setTimeout(function(){ w.print(); }, 300);
+          };
         }
         document.getElementById("fr-gen").onclick=function(){
           var termV=document.getElementById("fr-term").value;

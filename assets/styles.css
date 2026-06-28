@@ -280,17 +280,11 @@ table.data tbody tr:hover td{background:#FAFBFC;}
 .statement .st-sign .line{width:180px;border-top:1px solid var(--ink-2);margin-bottom:6px;}
 .statement .st-foot{margin-top:28px;padding-top:12px;border-top:1px solid var(--line-2);text-align:center;font-size:10.5px;color:var(--muted);}
 
-@page{size:A4 portrait;margin:10mm;}
 @media print{
-  html,body{width:100%!important;max-width:none!important;margin:0!important;padding:0!important;font-size:11px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  body *{visibility:hidden;position:static;}
-  #print-area, #print-area *,
-  #fr-print-area, #fr-print-area *{visibility:visible!important;}
-  #print-area,#fr-print-area{position:fixed!important;left:0!important;top:0!important;width:100%!important;max-width:none!important;margin:0!important;padding:10px!important;box-sizing:border-box!important;z-index:999999;}
+  body *{visibility:hidden;}
+  #print-area, #print-area *{visibility:visible;}
+  #print-area{position:absolute;inset:0;margin:0;padding:24px;display:block;}
   #print-area .rcpt{box-shadow:none;border:1px solid #ddd;margin:0 auto;animation:none;}
   #print-area .statement{box-shadow:none;border:none;margin:0 auto;padding:0;}
-  #fr-print-area table{width:100%!important;border-collapse:collapse;}
-  .overlay,.sidebar,.topbar,.tabs,.toolbar,.modal-actions,.btn-primary,.btn-sm,.chartcard{display:none!important;}
-  #fr-print-area .chartcard{display:block!important;}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;}}
