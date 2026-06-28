@@ -203,20 +203,17 @@
         +'</div></div></div>'
         +'<div class="modal-actions" style="margin-top:18px;"><button class="btn-primary" id="sp-save">Save profile</button></div>'
         +'</div>';
-      document.getElementById("sp-logo-file").onchange=async function(e){
+      document.getElementById("sp-logo-file").onchange=function(e){
         var file=e.target.files[0]; if(!file) return;
-        if(file.size>2*1024*1024){ toast("Logo must be under 2 MB."); return; }
-        var ext=file.name.split(".").pop().toLowerCase();
-        var path="logos/"+schoolId+"."+ext;
-        toast("Uploading logo…");
-        var ur=await sb.storage.from("school-assets").upload(path,file,{upsert:true,contentType:file.type});
-        if(ur.error){ toast("Upload error: "+ur.error.message); return; }
-        var pub=sb.storage.from("school-assets").getPublicUrl(path);
-        var url=pub.data?pub.data.publicUrl:("");
-        if(url){
-          await sb.from("schools").update({logo_url:url}).eq("id",schoolId);
-          toast("Logo uploaded"); profileTab();
-        }
+        if(file.size>500*1024){ toast("Logo must be under 500 KB."); return; }
+        var reader=new FileReader();
+        reader.onload=async function(){
+          var dataUrl=reader.result;
+          var r=await sb.from("schools").update({logo_url:dataUrl}).eq("id",schoolId);
+          if(r.error){ toast("Error saving logo: "+r.error.message); return; }
+          toast("Logo saved"); profileTab();
+        };
+        reader.readAsDataURL(file);
       };
       var rmBtn=document.getElementById("sp-logo-rm");
       if(rmBtn) rmBtn.onclick=async function(){
