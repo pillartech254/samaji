@@ -273,6 +273,61 @@ begin
 end;
 $$;
 
+-- Reset a table's data for a specific school (bypasses RLS)
+create or replace function admin_reset_table(p_school_id text, p_table text)
+returns integer
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  allowed text[] := array[
+    'students','fee_payments','fee_structures','fee_items',
+    'attendance','grades','exams','exam_results',
+    'announcements','library_books','library_loans',
+    'transport_routes','transport_vehicles','transport_assignments',
+    'timetable_slots','staff','payroll_runs','payslips',
+    'subjects','teachers','class_subjects','class_subject_teachers'
+  ];
+  cnt integer;
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+  if not (p_table = any(allowed)) then
+    raise exception 'Table not allowed: %', p_table;
+  end if;
+  execute format('delete from %I where school_id = $1', p_table) using p_school_id;
+  get diagnostics cnt = row_count;
+  return cnt;
+end;
+$$;
+
+-- Backup: read all data from a table for a school (bypasses RLS)
+create or replace function admin_backup_table(p_school_id text, p_table text)
+returns jsonb
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  allowed text[] := array[
+    'students','fee_payments','fee_structures','fee_items',
+    'attendance','grades','exams','exam_results',
+    'announcements','library_books','library_loans',
+    'transport_routes','transport_vehicles','transport_assignments'
+  ];
+  result jsonb;
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+  if not (p_table = any(allowed)) then
+    raise exception 'Table not allowed: %', p_table;
+  end if;
+  execute format('select coalesce(jsonb_agg(row_to_json(t)), ''[]''::jsonb) from %I t where t.school_id = $1', p_table) into result using p_school_id;
+  return result;
+end;
+$$;
+
 -- Super admin: allow writing to schools table
 drop policy if exists p_schools_write on schools;
 create policy p_schools_write on schools for all to authenticated

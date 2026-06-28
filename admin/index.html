@@ -767,8 +767,8 @@
             for (var i = 0; i < tables.length; i++) {
               var tbl = tables[i];
               var rows = data[tbl];
-              // Delete existing
-              await sb.from(tbl).delete().eq("school_id", schoolId);
+              // Delete existing via RPC (bypasses RLS)
+              await sb.rpc("admin_reset_table", { p_school_id: schoolId, p_table: tbl });
               // Insert backed up rows
               if (rows && rows.length) {
                 var ins = await sb.from(tbl).insert(rows);
@@ -781,18 +781,22 @@
       }
       loadBackups();
 
-      // Create backup
+      // Create backup (uses RPC to bypass RLS)
       document.getElementById("db-backup").onclick = async function(){
         toast("Creating backup...");
         var backupData = {};
+        var failed = false;
         for (var i = 0; i < BACKUP_TABLES.length; i++) {
           var tbl = BACKUP_TABLES[i];
-          var r = await sb.from(tbl).select("*").eq("school_id", schoolId);
+          var r = await sb.rpc("admin_backup_table", { p_school_id: schoolId, p_table: tbl });
+          if (r.error) { toast("Error backing up " + tbl + ": " + r.error.message); failed = true; break; }
           backupData[tbl] = r.data || [];
         }
+        if (failed) return;
         var ins = await sb.from("school_backups").insert({
           school_id: schoolId,
           backup_data: backupData,
+          tables_included: BACKUP_TABLES,
           note: "Manual backup"
         });
         if (ins.error) { toast("Error: " + ins.error.message); return; }
@@ -800,7 +804,7 @@
         loadBackups();
       };
 
-      // Reset tables
+      // Reset tables (uses RPC to bypass RLS)
       document.getElementById("db-reset").onclick = async function(){
         var checked = [];
         document.getElementById("db-tables").querySelectorAll("input:checked").forEach(function(cb){
@@ -808,11 +812,13 @@
         });
         if (!checked.length) { toast("Select at least one table."); return; }
         if (!await confirmDialog("Delete ALL data from " + checked.join(", ") + " for this school? This cannot be undone.")) return;
+        var totalDeleted = 0;
         for (var i = 0; i < checked.length; i++) {
-          var r = await sb.from(checked[i]).delete().eq("school_id", schoolId);
-          if (r.error) { toast("Error resetting " + checked[i] + ": " + r.error.message); }
+          var r = await sb.rpc("admin_reset_table", { p_school_id: schoolId, p_table: checked[i] });
+          if (r.error) { toast("Error resetting " + checked[i] + ": " + r.error.message); return; }
+          totalDeleted += (r.data || 0);
         }
-        toast("Tables reset.");
+        toast("Reset complete. " + totalDeleted + " rows deleted.");
       };
     }
   }
