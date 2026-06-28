@@ -157,23 +157,34 @@
   var CUR_SCHOOL = null; // for licensing
   var CUR_LICENSE = null; // { schoolId, sub, pkgSet, addonSet }
 
-  // ---- Edge function for user management ----
-  var EDGE_URL = (window.SAMAJI_CONFIG ? window.SAMAJI_CONFIG.SUPABASE_URL : "") + "/functions/v1/admin-users";
-  async function adminUsersAPI(body) {
-    var session = (await sb.auth.getSession()).data.session;
-    if (!session) throw new Error("Not authenticated");
-    var resp = await fetch(EDGE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + session.access_token,
-        "apikey": window.SAMAJI_CONFIG ? window.SAMAJI_CONFIG.SUPABASE_ANON_KEY : ""
-      },
-      body: JSON.stringify(body)
+  // ---- User management via GoTrue signUp (separate client, no session conflict) ----
+  var signupSb = window.supabase.createClient(
+    window.SAMAJI_CONFIG.SUPABASE_URL,
+    window.SAMAJI_CONFIG.SUPABASE_ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
+  );
+
+  async function createUserAccount(email, password, role, schoolId, phone, fullName) {
+    var res = await signupSb.auth.signUp({
+      email: email,
+      password: password,
+      options: {
+        data: { full_name: fullName || "", phone: phone || "" }
+      }
     });
-    var data = await resp.json();
-    if (!resp.ok || data.error) throw new Error(data.error || "Request failed");
-    return data;
+    if (res.error) throw new Error(res.error.message);
+    var uid = res.data.user.id;
+
+    // Confirm email + set up profile via RPC
+    await sb.rpc("admin_setup_user", {
+      p_user_id: uid,
+      p_role: role || "parent",
+      p_school_id: schoolId || null,
+      p_phone: phone || null,
+      p_full_name: fullName || null
+    });
+
+    return uid;
   }
 
   // ---- Helpers ----
@@ -681,15 +692,7 @@
           b.disabled = true;
           b.textContent = "Creating...";
           try {
-            await adminUsersAPI({
-              action: "create_user",
-              email: email,
-              password: cleanPhone,
-              role: "parent",
-              school_id: schoolId,
-              phone: phone,
-              full_name: name
-            });
+            await createUserAccount(email, cleanPhone, "parent", schoolId, phone, name);
             toast("Parent account created for " + phone);
           } catch(e) { toast("Error: " + e.message); b.disabled = false; b.textContent = "Create Account"; return; }
           loadUsers(schoolId);
@@ -702,10 +705,9 @@
       list.querySelectorAll("[data-del]").forEach(function(b){
         b.onclick = async function(){
           if (!await confirmDialog("Delete this user? This cannot be undone.")) return;
-          try {
-            await adminUsersAPI({ action: "delete_user", user_id: b.getAttribute("data-del") });
-            toast("User deleted."); loadUsers(curSchool);
-          } catch(e) { toast("Error: " + e.message); }
+          var r = await sb.rpc("admin_delete_user", { p_user_id: b.getAttribute("data-del") });
+          if (r.error) { toast("Error: " + r.error.message); return; }
+          toast("User deleted."); loadUsers(curSchool);
         };
       });
     }
@@ -720,10 +722,9 @@
       m.q("#rp-save").onclick = async function(){
         var pw = m.q("#rp-pw").value;
         if (!pw || pw.length < 6) { toast("Password must be at least 6 characters."); return; }
-        try {
-          await adminUsersAPI({ action: "reset_password", user_id: userId, new_password: pw });
-          toast("Password reset."); m.close();
-        } catch(e) { toast("Error: " + e.message); }
+        var r = await sb.rpc("admin_reset_password", { p_user_id: userId, p_new_password: pw });
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast("Password reset."); m.close();
       };
     }
 
@@ -761,7 +762,7 @@
           email = cleanPhone + "@parent.samaji.app";
           password = cleanPhone;
           try {
-            await adminUsersAPI({ action: "create_user", email: email, password: password, role: "parent", school_id: curSchool, phone: phone, full_name: fullName || null });
+            await createUserAccount(email, password, "parent", curSchool, phone, fullName || null);
           } catch(e) { toast("Error: " + e.message); return; }
         } else {
           email = m.q("#au-email").value.trim();
@@ -770,7 +771,7 @@
           phone = null;
           if (!email || !password) { toast("Email and password are required."); return; }
           try {
-            await adminUsersAPI({ action: "create_user", email: email, password: password, role: role, school_id: curSchool, phone: phone, full_name: fullName || null });
+            await createUserAccount(email, password, role, curSchool, phone, fullName || null);
           } catch(e) { toast("Error: " + e.message); return; }
         }
         toast("User created."); m.close(); loadUsers(curSchool);

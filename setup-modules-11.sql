@@ -99,7 +99,43 @@ create policy p_backups_rw on school_backups for all to authenticated
 
 -- ---------- 6. ADMIN USER MANAGEMENT FUNCTIONS ---------------
 
--- Create a user account (parent or school_admin)
+-- Setup user after GoTrue signUp (confirm email, set profile, parent_accounts)
+create or replace function admin_setup_user(
+  p_user_id uuid,
+  p_role text default 'parent',
+  p_school_id text default null,
+  p_phone text default null,
+  p_full_name text default null
+) returns void
+language plpgsql security definer
+set search_path = public, auth
+as $$
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+
+  -- Confirm email so user can sign in immediately
+  update auth.users
+  set email_confirmed_at = coalesce(email_confirmed_at, now()),
+      updated_at = now()
+  where id = p_user_id;
+
+  -- Upsert profile
+  insert into profiles (id, role, school_id)
+  values (p_user_id, p_role, p_school_id)
+  on conflict (id) do update set role = p_role, school_id = p_school_id;
+
+  -- Create parent_accounts record if parent
+  if p_role = 'parent' and p_phone is not null and p_school_id is not null then
+    insert into parent_accounts (id, school_id, phone, full_name, must_change_password)
+    values (p_user_id, p_school_id, p_phone, p_full_name, true)
+    on conflict (id) do update set phone = p_phone, full_name = p_full_name;
+  end if;
+end;
+$$;
+
+-- Create a user account (parent or school_admin) [LEGACY - kept for backwards compat]
 create or replace function admin_create_user(
   p_email text,
   p_password text,
