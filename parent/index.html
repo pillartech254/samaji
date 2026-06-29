@@ -77,18 +77,86 @@
   }
 
   /* ===== CONTENT ===== */
-  .content{max-width:800px;margin:0 auto;padding:20px 24px 60px;}
+  .content{max-width:900px;margin:0 auto;padding:20px 24px 60px;}
   @media (max-width:600px){.content{padding:16px 12px 40px;}}
 
-  /* ===== CARDS ===== */
+  /* ===== WELCOME BANNER ===== */
+  .welcome-banner{background:linear-gradient(135deg,#0E9384 0%,#0A6E63 100%);color:#fff;border-radius:14px;padding:24px 28px;margin-bottom:20px;position:relative;overflow:hidden;}
+  .welcome-banner .wb-glow{position:absolute;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.08);top:-60px;right:-40px;}
+  .welcome-banner h2{font-size:22px;font-weight:700;margin:0 0 4px;position:relative;z-index:1;}
+  .welcome-banner p{font-size:13.5px;margin:0;opacity:.85;position:relative;z-index:1;}
+  .welcome-stats{display:flex;gap:16px;margin-top:16px;position:relative;z-index:1;}
+  .ws-item{background:rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;flex:1;min-width:0;}
+  .ws-item .ws-val{font-size:20px;font-weight:700;line-height:1.2;}
+  .ws-item .ws-lbl{font-size:11px;opacity:.8;margin-top:2px;}
+  @media (max-width:600px){
+    .welcome-banner{padding:18px 16px;}
+    .welcome-banner h2{font-size:18px;}
+    .welcome-stats{gap:8px;}
+    .ws-item{padding:10px 12px;}
+    .ws-item .ws-val{font-size:16px;}
+  }
+
+  /* ===== STUDENT CARD (REDESIGNED) ===== */
+  .stu-card{background:#fff;border:1px solid #E8EAED;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.05);margin-bottom:18px;overflow:hidden;}
+  .stu-header{display:flex;align-items:center;gap:14px;padding:20px 22px;border-bottom:1px solid #F0F1F4;}
+  .stu-avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0E9384,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex:none;}
+  .stu-info{flex:1;min-width:0;}
+  .stu-info h3{font-size:17px;font-weight:700;margin:0;color:#15171E;line-height:1.3;}
+  .stu-info .stu-meta{font-size:12.5px;color:#667085;margin-top:2px;}
+  .stu-info .stu-meta span{margin-right:12px;}
+  .stu-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:capitalize;}
+  .stu-badge-active{background:#E7F6F3;color:#0E9384;}
+  .stu-badge-inactive{background:#FDECEA;color:#D92D20;}
+
+  .stu-body{padding:0;}
+  .stu-section{padding:16px 22px;border-bottom:1px solid #F0F1F4;}
+  .stu-section:last-child{border-bottom:none;}
+  .stu-section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#98A2B3;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .stu-section-title svg{flex:none;}
+
+  /* Detail grid */
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;}
+  .detail-item .di-label{font-size:11.5px;color:#98A2B3;font-weight:600;}
+  .detail-item .di-value{font-size:13.5px;color:#15171E;font-weight:500;}
+  @media (max-width:500px){.detail-grid{grid-template-columns:1fr;}}
+
+  /* Fee breakdown */
+  .fee-summary{display:flex;gap:12px;margin-bottom:14px;}
+  .fee-box{flex:1;background:#F9FAFB;border:1px solid #EAECEF;border-radius:10px;padding:12px 14px;text-align:center;}
+  .fee-box .fb-val{font-size:17px;font-weight:700;color:#15171E;line-height:1.2;}
+  .fee-box .fb-lbl{font-size:11px;color:#667085;margin-top:2px;}
+  .fee-box.fb-balance{border-color:transparent;}
+  .fee-box.fb-green{background:#E7F6F3;} .fee-box.fb-green .fb-val{color:#0E9384;}
+  .fee-box.fb-amber{background:#FFF3E0;} .fee-box.fb-amber .fb-val{color:#E65100;}
+  .fee-box.fb-red{background:#FDECEA;} .fee-box.fb-red .fb-val{color:#D92D20;}
+  @media (max-width:500px){
+    .fee-summary{flex-direction:column;gap:8px;}
+  }
+
+  .fee-item-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #F5F6F7;}
+  .fee-item-row:last-child{border-bottom:none;}
+  .fee-item-row .fi-name{color:#667085;}
+  .fee-item-row .fi-amt{font-weight:600;color:#15171E;}
+
+  /* Attendance mini */
+  .att-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+  .att-dot{width:10px;height:10px;border-radius:50%;flex:none;}
+  .att-dot-present{background:#0E9384;}
+  .att-dot-absent{background:#D92D20;}
+  .att-dot-late{background:#E65100;}
+  .att-bar{flex:1;height:8px;border-radius:4px;background:#EAECEF;overflow:hidden;}
+  .att-fill{height:100%;border-radius:4px;}
+  .att-label{font-size:12px;color:#667085;min-width:40px;text-align:right;}
+  .att-summary{display:flex;gap:16px;font-size:12.5px;color:#667085;margin-top:8px;}
+  .att-summary strong{color:#15171E;}
+
+  /* Cards (generic) */
   .card{background:#fff;border:1px solid #E8EAED;border-radius:13px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:14px;}
   .card h3{font-size:16px;font-weight:700;margin:0 0 4px;color:#15171E;}
   .card .meta{font-size:12.5px;color:#667085;margin-bottom:12px;}
   .card .meta span{margin-right:14px;}
-  .fee-row{display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px solid #F0F1F4;}
-  .fee-row:last-child{border-bottom:none;}
-  .fee-row .lbl{color:#667085;}
-  .fee-row .val{font-weight:600;color:#15171E;}
+
   .balance-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;}
   .bal-green{background:#E7F6F3;color:#0E9384;}
   .bal-amber{background:#FFF3E0;color:#E65100;}
@@ -118,6 +186,8 @@
   .ann-card h4{font-size:15px;font-weight:700;margin:0 0 6px;color:#15171E;}
   .ann-card .ann-date{font-size:12px;color:#98A2B3;margin-bottom:10px;}
   .ann-card .ann-body{font-size:13.5px;color:#344054;line-height:1.6;white-space:pre-wrap;}
+  .ann-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-left:8px;}
+  .ann-badge-new{background:#E7F6F3;color:#0E9384;}
 
   /* ===== MODALS ===== */
   .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;}
@@ -154,6 +224,10 @@
   .spinner{display:inline-block;width:20px;height:20px;border:2px solid #DDE1E6;border-top-color:#0E9384;border-radius:50%;animation:spin .6s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
   .loading-center{text-align:center;padding:40px 0;}
+
+  /* ===== COLLAPSIBLE ===== */
+  .collapse-toggle{background:none;border:none;font-size:12px;font-weight:600;color:#0E9384;cursor:pointer;padding:6px 0;font-family:inherit;}
+  .collapse-toggle:hover{text-decoration:underline;}
 </style>
 </head>
 <body>
@@ -210,7 +284,7 @@
       <button class="btn-signout" id="signout">Sign out</button>
     </div>
     <div class="tab-bar">
-      <button class="tab-btn active" id="tab-children">Children</button>
+      <button class="tab-btn active" id="tab-children">Dashboard</button>
       <button class="tab-btn" id="tab-payments">Payments</button>
       <button class="tab-btn" id="tab-announcements">Announcements</button>
     </div>
@@ -254,12 +328,17 @@
   var $ = function(id){ return document.getElementById(id); };
   var sb = window.getSB();
   var SCHOOL = null;
-  var PARENT = null; // parent_accounts row
+  var PARENT = null;
   var USER = null;
   var CHILDREN = [];
   var CURRENT_TAB = "children";
 
-  // Year footers
+  // Lookup maps loaded after children
+  var classMap = {};    // class_id -> { level, stream, curriculum }
+  var dormMap = {};     // dormitory_id -> { name, gender }
+  var teacherMap = {};  // class_id -> [ { name, subject } ]
+  var attendanceMap = {}; // student_id -> { present, absent, late, total }
+
   var yr = new Date().getFullYear();
   var yrEls = ["year", "year-b"];
   for (var i = 0; i < yrEls.length; i++) {
@@ -306,6 +385,19 @@
       digits = "254" + digits.substring(1);
     }
     return digits;
+  }
+
+  function studentName(s) {
+    var first = s.first_name || "";
+    var last = s.last_name || "";
+    var name = (first + " " + last).replace(/^\s+|\s+$/g, "");
+    return name || "Student";
+  }
+
+  function studentInitials(s) {
+    var first = (s.first_name || "").charAt(0).toUpperCase();
+    var last = (s.last_name || "").charAt(0).toUpperCase();
+    return (first + last) || "S";
   }
 
   // ---- idle timeout (15 min for parents) ----
@@ -390,14 +482,13 @@
           enterApp();
         }
       }).catch(function(e){
-        showMsg("Network error: " + (e.message || String(e)), false);
+        showMsg("Network error. Please try again.", false);
         $("submit").disabled = false;
       });
     }
     attempt(0);
   };
 
-  // Submit on Enter
   $("password").addEventListener("keydown", function(e){
     if (e.key === "Enter" || e.keyCode === 13) $("submit").click();
   });
@@ -410,7 +501,6 @@
     sb.auth.getUser().then(function(u){
       USER = u.data.user;
       if (!USER) { showLogin(); return; }
-      // get parent account
       sb.from("parent_accounts").select("*").eq("id", USER.id).single().then(function(pr){
         PARENT = pr.data;
         if (!PARENT) {
@@ -421,7 +511,6 @@
         }
         SCHOOL = PARENT.school_id;
 
-        // Check must_change_password
         if (PARENT.must_change_password) {
           $("boot").style.display = "none";
           $("auth").style.display = "none";
@@ -449,7 +538,6 @@
 
     $("parent-name").textContent = PARENT.full_name || "";
 
-    // Load school info
     sb.from("schools").select("id, name, subdomain").eq("id", SCHOOL).single().then(function(sc){
       var school = sc.data;
       if (school) {
@@ -534,7 +622,7 @@
   $("tab-announcements").onclick = function(){ setTab("announcements"); renderAnnouncements(); };
 
   // ---- DATA LOADING ----
-  var childFeeData = {}; // keyed by student id: { billed, paid, balance }
+  var childFeeData = {};
 
   function loadChildren() {
     var view = $("view");
@@ -549,12 +637,91 @@
         view.innerHTML = '<div class="empty">No students linked to your phone number.</div>';
         return;
       }
-      loadFeeDataForChildren(function(){
-        renderChildren();
+      loadSupportingData(function(){
+        loadFeeDataForChildren(function(){
+          loadAttendanceData(function(){
+            renderChildren();
+          });
+        });
       });
     }).catch(function(){
       view.innerHTML = '<div class="empty">Could not load student data.</div>';
     });
+  }
+
+  function loadSupportingData(cb) {
+    var done = 0;
+    var total = 3;
+
+    function check() { done++; if (done >= total) cb(); }
+
+    // Load classes
+    sb.from("school_classes").select("id, level, stream, curriculum").eq("school_id", SCHOOL).then(function(res){
+      var rows = res.data || [];
+      classMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        classMap[rows[i].id] = rows[i];
+      }
+      check();
+    }).catch(function(){ check(); });
+
+    // Load dormitories
+    sb.from("dormitories").select("id, name, gender").eq("school_id", SCHOOL).then(function(res){
+      var rows = res.data || [];
+      dormMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        dormMap[rows[i].id] = rows[i];
+      }
+      check();
+    }).catch(function(){ check(); });
+
+    // Load class-subject-teachers for the student classes
+    var classIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) {
+      if (CHILDREN[i].class_id && classIds.indexOf(CHILDREN[i].class_id) === -1) {
+        classIds.push(CHILDREN[i].class_id);
+      }
+    }
+    if (classIds.length === 0) { check(); return; }
+
+    sb.from("class_subject_teachers").select("class_id, teacher_id, teachers(name), subjects(name)").in("class_id", classIds).then(function(res){
+      var rows = res.data || [];
+      teacherMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!teacherMap[r.class_id]) teacherMap[r.class_id] = [];
+        teacherMap[r.class_id].push({
+          teacher: r.teachers ? r.teachers.name : "Unknown",
+          subject: r.subjects ? r.subjects.name : ""
+        });
+      }
+      check();
+    }).catch(function(){ check(); });
+  }
+
+  function loadAttendanceData(cb) {
+    var studentIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+    if (studentIds.length === 0) { cb(); return; }
+
+    var currentYear = new Date().getFullYear();
+    var yearStart = currentYear + "-01-01";
+
+    sb.from("attendance").select("student_id, status").in("student_id", studentIds).gte("on_date", yearStart).then(function(res){
+      var rows = res.data || [];
+      attendanceMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!attendanceMap[r.student_id]) {
+          attendanceMap[r.student_id] = { present: 0, absent: 0, late: 0, total: 0 };
+        }
+        attendanceMap[r.student_id].total++;
+        if (r.status === "present") attendanceMap[r.student_id].present++;
+        else if (r.status === "absent") attendanceMap[r.student_id].absent++;
+        else if (r.status === "late") attendanceMap[r.student_id].late++;
+      }
+      cb();
+    }).catch(function(){ cb(); });
   }
 
   function loadFeeDataForChildren(cb) {
@@ -565,10 +732,9 @@
     for (var i = 0; i < CHILDREN.length; i++) {
       (function(child){
         var sid = child.id;
-        var grade = child.grade || child.class_name || child.current_class || "";
-        childFeeData[sid] = { billed: 0, paid: 0, balance: 0, items: [] };
+        var grade = child.grade || "";
+        childFeeData[sid] = { billed: 0, paid: 0, balance: 0, items: [], transportPaid: 0 };
 
-        // Get fee structures for this grade + year
         sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(fsRes){
           var structures = fsRes.data || [];
           if (structures.length === 0) {
@@ -595,63 +761,60 @@
   function loadPaidForChild(studentId, cb) {
     sb.from("fee_payments").select("amount, transport_amount").eq("school_id", SCHOOL).eq("student_id", studentId).then(function(fpRes){
       var payments = fpRes.data || [];
-      var paid = 0;
+      var tuitionPaid = 0;
+      var transportPaid = 0;
       for (var i = 0; i < payments.length; i++) {
         var amt = Number(payments[i].amount) || 0;
         var transport = Number(payments[i].transport_amount) || 0;
-        paid += (amt - transport);
+        tuitionPaid += (amt - transport);
+        transportPaid += transport;
       }
-      childFeeData[studentId].paid = paid;
-      childFeeData[studentId].balance = childFeeData[studentId].billed - paid;
+      childFeeData[studentId].paid = tuitionPaid;
+      childFeeData[studentId].transportPaid = transportPaid;
+      childFeeData[studentId].balance = childFeeData[studentId].billed - tuitionPaid;
       cb();
     }).catch(function(){ cb(); });
   }
 
-  // ---- RENDER: CHILDREN TAB ----
+  // ---- RENDER: CHILDREN / DASHBOARD TAB ----
   function renderChildren() {
     var view = $("view");
     var html = "";
-    var totalBalance = 0;
-    var childrenWithBalance = [];
 
+    // Welcome banner
+    var totalBilled = 0;
+    var totalPaid = 0;
+    var totalBalance = 0;
     for (var i = 0; i < CHILDREN.length; i++) {
-      var c = CHILDREN[i];
-      var fd = childFeeData[c.id] || { billed: 0, paid: 0, balance: 0 };
+      var fd = childFeeData[CHILDREN[i].id] || { billed: 0, paid: 0, balance: 0 };
+      totalBilled += fd.billed;
+      totalPaid += fd.paid;
       totalBalance += fd.balance;
-      if (fd.balance > 0) childrenWithBalance.push(c);
     }
+
+    html += '<div class="welcome-banner">';
+    html += '<div class="wb-glow"></div>';
+    html += '<h2>Welcome, ' + escHtml(PARENT.full_name || "Parent") + '</h2>';
+    html += '<p>You have ' + CHILDREN.length + ' student' + (CHILDREN.length > 1 ? "s" : "") + ' enrolled</p>';
+    html += '<div class="welcome-stats">';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBilled) + '</div><div class="ws-lbl">Total Fees</div></div>';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalPaid) + '</div><div class="ws-lbl">Total Paid</div></div>';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBalance) + '</div><div class="ws-lbl">Balance</div></div>';
+    html += '</div></div>';
 
     // Pay all button
+    var childrenWithBalance = [];
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var fd2 = childFeeData[CHILDREN[i].id] || { balance: 0 };
+      if (fd2.balance > 0) childrenWithBalance.push(CHILDREN[i]);
+    }
     if (childrenWithBalance.length > 1 && totalBalance > 0) {
-      html += '<button class="btn-pay-all" onclick="window._payAll()">Pay for all children — ' + fmtMoney(totalBalance) + '</button>';
+      html += '<button class="btn-pay-all" onclick="window._payAll()">Pay for all children &mdash; ' + fmtMoney(totalBalance) + '</button>';
     }
 
+    // Student cards
     for (var i = 0; i < CHILDREN.length; i++) {
-      var c = CHILDREN[i];
-      var fd = childFeeData[c.id] || { billed: 0, paid: 0, balance: 0 };
-      var grade = c.grade || c.class_name || c.current_class || "-";
-      var admNo = c.admission_number || c.adm_no || "-";
-      var status = c.status || "active";
-
-      var balClass = "bal-green";
-      if (fd.balance > 0 && fd.paid > 0) balClass = "bal-amber";
-      if (fd.balance > fd.billed * 0.5) balClass = "bal-red";
-      if (fd.billed === 0 && fd.balance <= 0) balClass = "bal-green";
-
-      html += '<div class="card">';
-      html += '<h3>' + escHtml(c.full_name || c.name || "Student") + '</h3>';
-      html += '<div class="meta">';
-      html += '<span>Grade: ' + escHtml(grade) + '</span>';
-      html += '<span>Adm: ' + escHtml(admNo) + '</span>';
-      html += '<span style="text-transform:capitalize;">' + escHtml(status) + '</span>';
-      html += '</div>';
-      html += '<div class="fee-row"><span class="lbl">Total billed</span><span class="val">' + fmtMoney(fd.billed) + '</span></div>';
-      html += '<div class="fee-row"><span class="lbl">Total paid</span><span class="val">' + fmtMoney(fd.paid) + '</span></div>';
-      html += '<div class="fee-row"><span class="lbl">Balance</span><span class="val"><span class="balance-badge ' + balClass + '">' + fmtMoney(fd.balance) + '</span></span></div>';
-      if (fd.balance > 0) {
-        html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\')">Pay via M-Pesa</button>';
-      }
-      html += '</div>';
+      html += renderStudentCard(CHILDREN[i]);
     }
 
     if (CHILDREN.length === 0) {
@@ -659,6 +822,139 @@
     }
 
     view.innerHTML = html;
+  }
+
+  function renderStudentCard(c) {
+    var fd = childFeeData[c.id] || { billed: 0, paid: 0, balance: 0, items: [], transportPaid: 0 };
+    var name = studentName(c);
+    var initials = studentInitials(c);
+    var grade = c.grade || "";
+    var admNo = c.admission_no || "-";
+    var status = c.status || "active";
+    var statusClass = status === "active" ? "stu-badge-active" : "stu-badge-inactive";
+
+    // Class info
+    var classInfo = null;
+    if (c.class_id && classMap[c.class_id]) {
+      classInfo = classMap[c.class_id];
+    }
+
+    // Dormitory info
+    var dormInfo = null;
+    if (c.dormitory_id && dormMap[c.dormitory_id]) {
+      dormInfo = dormMap[c.dormitory_id];
+    }
+
+    // Balance color
+    var balColorClass = "fb-green";
+    if (fd.balance > 0 && fd.paid > 0) balColorClass = "fb-amber";
+    if (fd.balance > fd.billed * 0.5) balColorClass = "fb-red";
+    if (fd.billed === 0 && fd.balance <= 0) balColorClass = "fb-green";
+
+    var html = '<div class="stu-card">';
+
+    // Header
+    html += '<div class="stu-header">';
+    html += '<div class="stu-avatar">' + escHtml(initials) + '</div>';
+    html += '<div class="stu-info">';
+    html += '<h3>' + escHtml(name) + '</h3>';
+    html += '<div class="stu-meta">';
+    html += '<span>Adm: ' + escHtml(admNo) + '</span>';
+    if (grade) html += '<span>' + escHtml(grade) + '</span>';
+    if (classInfo && classInfo.stream) html += '<span>' + escHtml(classInfo.stream) + ' stream</span>';
+    html += '</div></div>';
+    html += '<span class="stu-badge ' + statusClass + '">' + escHtml(status) + '</span>';
+    html += '</div>';
+
+    html += '<div class="stu-body">';
+
+    // Student details section
+    html += '<div class="stu-section">';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" stroke="#98A2B3" stroke-width="2"/><circle cx="10" cy="7" r="4" stroke="#98A2B3" stroke-width="2"/></svg>Student Details</div>';
+    html += '<div class="detail-grid">';
+    html += '<div class="detail-item"><div class="di-label">Full Name</div><div class="di-value">' + escHtml(name) + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Admission No.</div><div class="di-value">' + escHtml(admNo) + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Grade / Class</div><div class="di-value">' + escHtml(grade || "-") + (classInfo && classInfo.stream ? " (" + escHtml(classInfo.stream) + ")" : "") + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Gender</div><div class="di-value">' + escHtml(c.gender || "-") + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Residence</div><div class="di-value">' + escHtml(c.residence || "Day") + '</div></div>';
+    if (dormInfo) {
+      html += '<div class="detail-item"><div class="di-label">Dormitory</div><div class="di-value">' + escHtml(dormInfo.name) + '</div></div>';
+    }
+    if (c.date_of_birth) {
+      html += '<div class="detail-item"><div class="di-label">Date of Birth</div><div class="di-value">' + fmtDate(c.date_of_birth) + '</div></div>';
+    }
+    if (classInfo && classInfo.curriculum) {
+      html += '<div class="detail-item"><div class="di-label">Curriculum</div><div class="di-value">' + escHtml(classInfo.curriculum) + '</div></div>';
+    }
+    html += '</div></div>';
+
+    // Teachers section
+    if (c.class_id && teacherMap[c.class_id] && teacherMap[c.class_id].length > 0) {
+      html += '<div class="stu-section">';
+      html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" stroke="#98A2B3" stroke-width="2"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" stroke="#98A2B3" stroke-width="2"/></svg>Class Teachers</div>';
+      html += '<div class="detail-grid">';
+      var teachers = teacherMap[c.class_id];
+      for (var t = 0; t < teachers.length; t++) {
+        html += '<div class="detail-item"><div class="di-label">' + escHtml(teachers[t].subject || "Teacher") + '</div><div class="di-value">' + escHtml(teachers[t].teacher) + '</div></div>';
+      }
+      html += '</div></div>';
+    }
+
+    // Fee summary section
+    html += '<div class="stu-section">';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M2 10h20" stroke="#98A2B3" stroke-width="2"/></svg>Fee Summary (' + yr + ')</div>';
+    html += '<div class="fee-summary">';
+    html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.billed) + '</div><div class="fb-lbl">Total Billed</div></div>';
+    html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.paid) + '</div><div class="fb-lbl">Tuition Paid</div></div>';
+    html += '<div class="fee-box fb-balance ' + balColorClass + '"><div class="fb-val">' + fmtMoney(fd.balance) + '</div><div class="fb-lbl">Balance</div></div>';
+    html += '</div>';
+
+    if (fd.transportPaid > 0) {
+      html += '<div class="fee-item-row"><span class="fi-name">Transport paid (separate)</span><span class="fi-amt">' + fmtMoney(fd.transportPaid) + '</span></div>';
+    }
+
+    // Fee breakdown
+    if (fd.items && fd.items.length > 0) {
+      html += '<button class="collapse-toggle" onclick="var el=this.nextElementSibling;el.style.display=el.style.display===\'none\'?\'block\':\'none\';this.textContent=el.style.display===\'none\'?\'Show fee breakdown\':\'Hide fee breakdown\';">Show fee breakdown</button>';
+      html += '<div style="display:none;">';
+      for (var k = 0; k < fd.items.length; k++) {
+        html += '<div class="fee-item-row"><span class="fi-name">' + escHtml(fd.items[k].name) + '</span><span class="fi-amt">' + fmtMoney(fd.items[k].amount) + '</span></div>';
+      }
+      html += '</div>';
+    }
+
+    if (fd.balance > 0) {
+      html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\')">Pay via M-Pesa &mdash; ' + fmtMoney(fd.balance) + '</button>';
+    }
+    html += '</div>';
+
+    // Attendance section
+    var att = attendanceMap[c.id];
+    html += '<div class="stu-section">';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="#98A2B3" stroke-width="2"/></svg>Attendance (' + yr + ')</div>';
+    if (att && att.total > 0) {
+      var pctPresent = Math.round((att.present / att.total) * 100);
+      var pctAbsent = Math.round((att.absent / att.total) * 100);
+      var pctLate = Math.round((att.late / att.total) * 100);
+
+      html += '<div class="att-row"><div class="att-dot att-dot-present"></div><div class="att-bar"><div class="att-fill" style="width:' + pctPresent + '%;background:#0E9384;"></div></div><div class="att-label">' + pctPresent + '%</div></div>';
+      html += '<div class="att-row"><div class="att-dot att-dot-absent"></div><div class="att-bar"><div class="att-fill" style="width:' + pctAbsent + '%;background:#D92D20;"></div></div><div class="att-label">' + pctAbsent + '%</div></div>';
+      html += '<div class="att-row"><div class="att-dot att-dot-late"></div><div class="att-bar"><div class="att-fill" style="width:' + pctLate + '%;background:#E65100;"></div></div><div class="att-label">' + pctLate + '%</div></div>';
+      html += '<div class="att-summary">';
+      html += '<span><strong>' + att.present + '</strong> Present</span>';
+      html += '<span><strong>' + att.absent + '</strong> Absent</span>';
+      html += '<span><strong>' + att.late + '</strong> Late</span>';
+      html += '<span>(' + att.total + ' days recorded)</span>';
+      html += '</div>';
+    } else {
+      html += '<div style="font-size:13px;color:#98A2B3;">No attendance records yet this year.</div>';
+    }
+    html += '</div>';
+
+    html += '</div>'; // stu-body
+    html += '</div>'; // stu-card
+
+    return html;
   }
 
   function escHtml(s) {
@@ -697,13 +993,13 @@
     var names = [];
     var sids = [];
     for (var i = 0; i < students.length; i++) {
-      names.push(students[i].full_name || students[i].name || "Student");
+      names.push(studentName(students[i]));
       sids.push(students[i].id);
     }
 
     var html = '<h2>Pay fees via M-Pesa</h2>';
     html += '<p class="modal-sub">Send an M-Pesa payment for ' + escHtml(names.join(", ")) + '</p>';
-    html += '<div class="fee-row"><span class="lbl">Total balance</span><span class="val">' + fmtMoney(totalBalance) + '</span></div>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px solid #F0F1F4;"><span style="color:#667085;">Total balance</span><span style="font-weight:600;">' + fmtMoney(totalBalance) + '</span></div>';
     html += '<label for="mpesa-amount">Amount to pay (KES)</label>';
     html += '<input id="mpesa-amount" type="number" value="' + Math.max(0, totalBalance) + '" min="1">';
     html += '<label for="mpesa-phone">M-Pesa phone number</label>';
@@ -733,7 +1029,6 @@
       $("mpesa-pay").disabled = true;
       $("mpesa-msg").textContent = "";
 
-      // Build student_ids as text array literal for Supabase
       var studentIdArr = [];
       for (var j = 0; j < sids.length; j++) { studentIdArr.push(sids[j]); }
 
@@ -773,7 +1068,7 @@
     box.innerHTML = html;
 
     var pollCount = 0;
-    var maxPolls = 24; // 2 minutes at 5s intervals
+    var maxPolls = 24;
     var pollTimer = setInterval(function(){
       pollCount++;
       if (pollCount > maxPolls) {
@@ -825,9 +1120,9 @@
       return;
     }
 
-    var studentMap = {};
+    var studentNameMap = {};
     for (var i = 0; i < CHILDREN.length; i++) {
-      studentMap[CHILDREN[i].id] = CHILDREN[i].full_name || CHILDREN[i].name || "Student";
+      studentNameMap[CHILDREN[i].id] = studentName(CHILDREN[i]);
     }
 
     var allPayments = [];
@@ -838,19 +1133,37 @@
     sb.from("fee_payments").select("*").eq("school_id", SCHOOL).in("student_id", studentIds).order("created_at", { ascending: false }).then(function(res){
       allPayments = res.data || [];
       done++;
-      if (done === total) showPaymentsView(allPayments, allMpesa, studentMap);
-    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentMap); });
+      if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap);
+    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap); });
 
     sb.from("mpesa_transactions").select("*").eq("parent_id", USER.id).order("created_at", { ascending: false }).then(function(res){
       allMpesa = res.data || [];
       done++;
-      if (done === total) showPaymentsView(allPayments, allMpesa, studentMap);
-    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentMap); });
+      if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap);
+    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap); });
   }
 
-  function showPaymentsView(payments, mpesa, studentMap) {
+  function showPaymentsView(payments, mpesa, studentNameMap) {
     var view = $("view");
     var html = "";
+
+    // Summary cards at top
+    var totalPaid = 0;
+    var totalTransport = 0;
+    for (var i = 0; i < payments.length; i++) {
+      totalPaid += Number(payments[i].amount) || 0;
+      totalTransport += Number(payments[i].transport_amount) || 0;
+    }
+
+    if (payments.length > 0 || mpesa.length > 0) {
+      html += '<div style="display:flex;gap:12px;margin-bottom:20px;">';
+      html += '<div class="fee-box" style="flex:1;"><div class="fb-val">' + payments.length + '</div><div class="fb-lbl">Payments</div></div>';
+      html += '<div class="fee-box" style="flex:1;"><div class="fb-val">' + fmtMoney(totalPaid) + '</div><div class="fb-lbl">Total Amount</div></div>';
+      if (totalTransport > 0) {
+        html += '<div class="fee-box" style="flex:1;"><div class="fb-val">' + fmtMoney(totalTransport) + '</div><div class="fb-lbl">Transport</div></div>';
+      }
+      html += '</div>';
+    }
 
     if (payments.length === 0 && mpesa.length === 0) {
       view.innerHTML = '<div class="empty">No payment history found.</div>';
@@ -861,19 +1174,20 @@
     if (payments.length > 0) {
       html += '<h3 style="font-size:15px;font-weight:700;margin:0 0 12px;color:#15171E;">Fee Payments</h3>';
 
-      // Desktop table
       html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
-      html += '<th>Date</th><th>Student</th><th>Amount</th><th>Term</th><th>Method</th><th>Receipt</th>';
+      html += '<th>Date</th><th>Student</th><th>Amount</th><th>Transport</th><th>Term</th><th>Method</th><th>Receipt</th>';
       html += '</tr></thead><tbody>';
       for (var i = 0; i < payments.length; i++) {
         var p = payments[i];
+        var tuition = (Number(p.amount) || 0) - (Number(p.transport_amount) || 0);
         html += '<tr>';
         html += '<td>' + fmtDate(p.created_at) + '</td>';
-        html += '<td>' + escHtml(studentMap[p.student_id] || "-") + '</td>';
-        html += '<td>' + fmtMoney(p.amount) + '</td>';
+        html += '<td style="font-weight:500;">' + escHtml(studentNameMap[p.student_id] || "-") + '</td>';
+        html += '<td>' + fmtMoney(tuition) + '</td>';
+        html += '<td>' + fmtMoney(p.transport_amount || 0) + '</td>';
         html += '<td>' + escHtml((p.term || "") + (p.year ? " " + p.year : "")) + '</td>';
         html += '<td>' + escHtml(p.method || "-") + '</td>';
-        html += '<td>' + escHtml(p.receipt_no || "-") + '</td>';
+        html += '<td style="font-family:\'IBM Plex Mono\',monospace;font-size:12px;">' + escHtml(p.receipt_no || "-") + '</td>';
         html += '</tr>';
       }
       html += '</tbody></table></div>';
@@ -884,11 +1198,12 @@
         var p = payments[i];
         html += '<div class="card">';
         html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
-        html += '<div><strong>' + fmtMoney(p.amount) + '</strong><br><span style="font-size:12px;color:#667085;">' + escHtml(studentMap[p.student_id] || "-") + '</span></div>';
+        html += '<div><strong style="font-size:15px;">' + fmtMoney(p.amount) + '</strong><br><span style="font-size:12.5px;color:#15171E;font-weight:500;">' + escHtml(studentNameMap[p.student_id] || "-") + '</span></div>';
         html += '<span style="font-size:11.5px;color:#98A2B3;">' + fmtDate(p.created_at) + '</span>';
         html += '</div>';
         html += '<div style="margin-top:8px;font-size:12.5px;color:#667085;">';
-        html += escHtml((p.term || "") + (p.year ? " " + p.year : "")) + ' &middot; ' + escHtml(p.method || "-") + ' &middot; ' + escHtml(p.receipt_no || "-");
+        html += escHtml((p.term || "") + (p.year ? " " + p.year : "")) + ' &middot; ' + escHtml(p.method || "-");
+        if (p.receipt_no) html += ' &middot; <span style="font-family:\'IBM Plex Mono\',monospace;">' + escHtml(p.receipt_no) + '</span>';
         html += '</div></div>';
       }
       html += '</div>';
@@ -908,12 +1223,11 @@
         html += '<td>' + fmtMoney(m.amount) + '</td>';
         html += '<td>' + escHtml(m.phone || "-") + '</td>';
         html += '<td style="color:' + statusColor + ';font-weight:600;text-transform:capitalize;">' + escHtml(m.status || "-") + '</td>';
-        html += '<td>' + escHtml(m.mpesa_receipt_no || "-") + '</td>';
+        html += '<td style="font-family:\'IBM Plex Mono\',monospace;font-size:12px;">' + escHtml(m.mpesa_receipt_no || "-") + '</td>';
         html += '</tr>';
       }
       html += '</tbody></table></div>';
 
-      // Mobile cards for M-Pesa
       html += '<div class="mobile-cards">';
       for (var i = 0; i < mpesa.length; i++) {
         var m = mpesa[i];
@@ -945,10 +1259,14 @@
         return;
       }
       var html = "";
+      var now = Date.now();
       for (var i = 0; i < anns.length; i++) {
         var a = anns[i];
+        var isNew = a.created_at && (now - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000;
         html += '<div class="ann-card">';
-        html += '<h4>' + escHtml(a.title || "") + '</h4>';
+        html += '<h4>' + escHtml(a.title || "");
+        if (isNew) html += '<span class="ann-badge ann-badge-new">New</span>';
+        html += '</h4>';
         html += '<div class="ann-date">' + fmtDate(a.created_at) + '</div>';
         html += '<div class="ann-body">' + escHtml(a.body || "") + '</div>';
         html += '</div>';
@@ -967,7 +1285,6 @@
     if (!sb) { showLogin(); return; }
     sb.auth.getSession().then(function(s){
       if (!s.data.session) { showLogin(); return; }
-      // Enforce idle expiry
       var la = lastActive();
       if (la && (Date.now() - la > IDLE_MS)) {
         try { localStorage.removeItem(ACT_KEY); } catch(e){}
