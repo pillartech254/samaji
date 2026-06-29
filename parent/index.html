@@ -380,11 +380,8 @@
       }
       tryLogin(attempts[i]).then(function(res){
         if (res.error) {
-          console.log("Login attempt " + (i+1) + " failed:", "email=" + email, "pw_length=" + attempts[i].length, "error=", JSON.stringify(res.error));
           if (i === attempts.length - 1) {
-            // Show full debug info on last attempt
-            var debugInfo = "Email: " + email + " | Status: " + (res.error.status || "?") + " | " + (res.error.message || JSON.stringify(res.error));
-            showMsg(debugInfo, false);
+            showMsg("Invalid phone number or password.", false);
             $("submit").disabled = false;
           } else {
             attempt(i + 1);
@@ -393,7 +390,6 @@
           enterApp();
         }
       }).catch(function(e){
-        console.log("Login exception:", e);
         showMsg("Network error: " + (e.message || String(e)), false);
         $("submit").disabled = false;
       });
@@ -543,9 +539,12 @@
   function loadChildren() {
     var view = $("view");
     view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
-    var phone = sanitizePhone(PARENT.phone);
-    sb.from("students").select("*").eq("guardian_phone", phone).then(function(res){
-      CHILDREN = (res.data || []);
+    var phoneClean = sanitizePhone(PARENT.phone);
+    sb.from("students").select("*").eq("school_id", SCHOOL).then(function(res){
+      var all = res.data || [];
+      CHILDREN = all.filter(function(s){
+        return sanitizePhone(s.guardian_phone || "") === phoneClean;
+      });
       if (CHILDREN.length === 0) {
         view.innerHTML = '<div class="empty">No students linked to your phone number.</div>';
         return;
