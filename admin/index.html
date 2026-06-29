@@ -157,34 +157,18 @@
   var CUR_SCHOOL = null; // for licensing
   var CUR_LICENSE = null; // { schoolId, sub, pkgSet, addonSet }
 
-  // ---- User management via GoTrue signUp (separate client, no session conflict) ----
-  var signupSb = window.supabase.createClient(
-    window.SAMAJI_CONFIG.SUPABASE_URL,
-    window.SAMAJI_CONFIG.SUPABASE_ANON_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
-  );
-
+  // ---- User creation via RPC ----
   async function createUserAccount(email, password, role, schoolId, phone, fullName) {
-    var res = await signupSb.auth.signUp({
-      email: email,
-      password: password,
-      options: {
-        data: { full_name: fullName || "", phone: phone || "" }
-      }
-    });
-    if (res.error) throw new Error(res.error.message);
-    var uid = res.data.user.id;
-
-    // Confirm email + set up profile via RPC
-    await sb.rpc("admin_setup_user", {
-      p_user_id: uid,
+    var r = await sb.rpc("admin_create_user", {
+      p_email: email,
+      p_password: password,
       p_role: role || "parent",
       p_school_id: schoolId || null,
       p_phone: phone || null,
       p_full_name: fullName || null
     });
-
-    return uid;
+    if (r.error) throw new Error(r.error.message);
+    return r.data;
   }
 
   // ---- Helpers ----

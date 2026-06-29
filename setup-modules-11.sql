@@ -135,7 +135,7 @@ begin
 end;
 $$;
 
--- Create a user account (parent or school_admin) [LEGACY - kept for backwards compat]
+-- Create a user account (parent or school_admin)
 create or replace function admin_create_user(
   p_email text,
   p_password text,
@@ -157,25 +157,28 @@ begin
   insert into auth.users (
     instance_id, id, aud, role, email,
     encrypted_password, email_confirmed_at,
+    confirmation_token, recovery_token,
+    is_sso_user, is_super_admin,
     created_at, updated_at,
     raw_app_meta_data, raw_user_meta_data
   ) values (
     '00000000-0000-0000-0000-000000000000',
     new_id, 'authenticated', 'authenticated', p_email,
-    crypt(p_password, gen_salt('bf')),
-    now(), now(), now(),
+    extensions.crypt(p_password, extensions.gen_salt('bf', 10)),
+    now(), '', '', false, false,
+    now(), now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
     jsonb_build_object('full_name', coalesce(p_full_name, ''), 'phone', coalesce(p_phone, ''))
   );
 
   insert into auth.identities (
     id, user_id, identity_data, provider, provider_id,
-    created_at, updated_at
+    last_sign_in_at, created_at, updated_at
   ) values (
     gen_random_uuid(), new_id,
     jsonb_build_object('sub', new_id::text, 'email', p_email),
     'email', new_id::text,
-    now(), now()
+    now(), now(), now()
   );
 
   insert into profiles (id, role, school_id)
@@ -206,7 +209,7 @@ begin
   end if;
 
   update auth.users
-  set encrypted_password = crypt(p_new_password, gen_salt('bf')),
+  set encrypted_password = extensions.crypt(p_new_password, extensions.gen_salt('bf', 10)),
       updated_at = now()
   where id = p_user_id;
 end;
@@ -328,7 +331,7 @@ begin
   end if;
 
   update auth.users
-  set encrypted_password = crypt(p_new_password, gen_salt('bf')),
+  set encrypted_password = extensions.crypt(p_new_password, extensions.gen_salt('bf', 10)),
       updated_at = now()
   where id = auth.uid();
 
