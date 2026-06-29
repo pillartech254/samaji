@@ -136,6 +136,7 @@ end;
 $$;
 
 -- Create a user account (parent or school_admin)
+-- Sets ALL auth.users string columns to '' to prevent GoTrue NULL→string scan errors
 create or replace function admin_create_user(
   p_email text,
   p_password text,
@@ -157,7 +158,10 @@ begin
   insert into auth.users (
     instance_id, id, aud, role, email,
     encrypted_password, email_confirmed_at,
-    confirmation_token, recovery_token,
+    confirmation_token, recovery_token, reauthentication_token,
+    email_change, email_change_token_new, email_change_token_current,
+    email_change_confirm_status,
+    phone, phone_change, phone_change_token,
     is_sso_user, is_super_admin,
     created_at, updated_at,
     raw_app_meta_data, raw_user_meta_data
@@ -165,7 +169,12 @@ begin
     '00000000-0000-0000-0000-000000000000',
     new_id, 'authenticated', 'authenticated', p_email,
     extensions.crypt(p_password, extensions.gen_salt('bf', 10)),
-    now(), '', '', false, false,
+    now(),
+    '', '', '',
+    '', '', '',
+    0,
+    '', '', '',
+    false, false,
     now(), now(),
     '{"provider":"email","providers":["email"]}'::jsonb,
     jsonb_build_object('full_name', coalesce(p_full_name, ''), 'phone', coalesce(p_phone, ''))
