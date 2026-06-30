@@ -1045,7 +1045,32 @@
           return;
         }
         var txId = res.data.id;
-        showMpesaPolling(txId);
+        // Trigger the STK push via the edge function
+        var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/mpesa-stk";
+        var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+        fetch(stkUrl, {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
+          body: JSON.stringify({
+            transaction_id: txId,
+            school_id: SCHOOL,
+            phone: phone,
+            amount: amount,
+            account_ref: "Samaji"
+          })
+        }).then(function(r){ return r.json(); }).then(function(data){
+          if (data.error && !data.success) {
+            $("mpesa-msg").textContent = data.error;
+            $("mpesa-msg").className = "modal-msg err";
+            $("mpesa-pay").disabled = false;
+            return;
+          }
+          showMpesaPolling(txId);
+        }).catch(function(){
+          $("mpesa-msg").textContent = "Failed to send STK push. Please try again.";
+          $("mpesa-msg").className = "modal-msg err";
+          $("mpesa-pay").disabled = false;
+        });
       }).catch(function(){
         $("mpesa-msg").textContent = "Failed to initiate payment. Please try again.";
         $("mpesa-msg").className = "modal-msg err";
