@@ -1146,11 +1146,17 @@
     }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap); });
   }
 
-  function showPaymentsView(payments, mpesa, studentNameMap) {
+  var payPage = 1;
+  var mpesaPage = 1;
+  var _payCache = {};
+  function showPaymentsView(payments, mpesa, studentNameMap, pg) {
+    if (pg && pg.pay) payPage = pg.pay;
+    if (pg && pg.mpesa) mpesaPage = pg.mpesa;
+    if (!pg) { payPage = 1; mpesaPage = 1; }
+    _payCache = {payments: payments, mpesa: mpesa, studentNameMap: studentNameMap};
     var view = $("view");
     var html = "";
 
-    // Summary cards at top
     var totalPaid = 0;
     var totalTransport = 0;
     for (var i = 0; i < payments.length; i++) {
@@ -1173,15 +1179,15 @@
       return;
     }
 
-    // Fee payments table
     if (payments.length > 0) {
+      var pgPay = window.paginate(payments, payPage);
       html += '<h3 style="font-size:15px;font-weight:700;margin:0 0 12px;color:#15171E;">Fee Payments</h3>';
 
       html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
       html += '<th>Date</th><th>Student</th><th>Amount</th><th>Transport</th><th>Term</th><th>Method</th><th>Receipt</th>';
       html += '</tr></thead><tbody>';
-      for (var i = 0; i < payments.length; i++) {
-        var p = payments[i];
+      for (var i = 0; i < pgPay.rows.length; i++) {
+        var p = pgPay.rows[i];
         var tuition = (Number(p.amount) || 0) - (Number(p.transport_amount) || 0);
         html += '<tr>';
         html += '<td>' + fmtDate(p.created_at) + '</td>';
@@ -1194,11 +1200,11 @@
         html += '</tr>';
       }
       html += '</tbody></table></div>';
+      html += '<div id="pay-pg">' + pgPay.html + '</div>';
 
-      // Mobile cards
       html += '<div class="mobile-cards">';
-      for (var i = 0; i < payments.length; i++) {
-        var p = payments[i];
+      for (var i = 0; i < pgPay.rows.length; i++) {
+        var p = pgPay.rows[i];
         html += '<div class="card">';
         html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
         html += '<div><strong style="font-size:15px;">' + fmtMoney(p.amount) + '</strong><br><span style="font-size:12.5px;color:#15171E;font-weight:500;">' + escHtml(studentNameMap[p.student_id] || "-") + '</span></div>';
@@ -1212,14 +1218,14 @@
       html += '</div>';
     }
 
-    // M-Pesa transactions
     if (mpesa.length > 0) {
+      var pgMpesa = window.paginate(mpesa, mpesaPage);
       html += '<h3 style="font-size:15px;font-weight:700;margin:24px 0 12px;color:#15171E;">M-Pesa Transactions</h3>';
       html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
       html += '<th>Date</th><th>Amount</th><th>Phone</th><th>Status</th><th>Receipt</th>';
       html += '</tr></thead><tbody>';
-      for (var i = 0; i < mpesa.length; i++) {
-        var m = mpesa[i];
+      for (var i = 0; i < pgMpesa.rows.length; i++) {
+        var m = pgMpesa.rows[i];
         var statusColor = m.status === "completed" ? "#0E9384" : (m.status === "failed" ? "#D92D20" : "#E65100");
         html += '<tr>';
         html += '<td>' + fmtDateTime(m.created_at) + '</td>';
@@ -1230,10 +1236,11 @@
         html += '</tr>';
       }
       html += '</tbody></table></div>';
+      html += '<div id="mpesa-pg">' + pgMpesa.html + '</div>';
 
       html += '<div class="mobile-cards">';
-      for (var i = 0; i < mpesa.length; i++) {
-        var m = mpesa[i];
+      for (var i = 0; i < pgMpesa.rows.length; i++) {
+        var m = pgMpesa.rows[i];
         var statusColor = m.status === "completed" ? "#0E9384" : (m.status === "failed" ? "#D92D20" : "#E65100");
         html += '<div class="card">';
         html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
@@ -1248,36 +1255,58 @@
     }
 
     view.innerHTML = html;
+
+    if (payments.length > 0) {
+      pgPay.onAttach(document.getElementById("pay-pg"), function(p) {
+        showPaymentsView(_payCache.payments, _payCache.mpesa, _payCache.studentNameMap, {pay: p, mpesa: mpesaPage});
+      });
+    }
+    if (mpesa.length > 0) {
+      pgMpesa.onAttach(document.getElementById("mpesa-pg"), function(p) {
+        showPaymentsView(_payCache.payments, _payCache.mpesa, _payCache.studentNameMap, {pay: payPage, mpesa: p});
+      });
+    }
   }
 
   // ---- RENDER: ANNOUNCEMENTS TAB ----
-  function renderAnnouncements() {
+  var annPage = 1;
+  var _annCache = [];
+  function renderAnnouncements(pg) {
     var view = $("view");
+    if (pg) { annPage = pg; renderAnnPage(); return; }
+    annPage = 1;
     view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
 
     sb.from("announcements").select("*").eq("school_id", SCHOOL).in("audience", ["all", "parents"]).order("created_at", { ascending: false }).then(function(res){
-      var anns = res.data || [];
-      if (anns.length === 0) {
+      _annCache = res.data || [];
+      if (_annCache.length === 0) {
         view.innerHTML = '<div class="empty">No announcements yet.</div>';
         return;
       }
-      var html = "";
-      var now = Date.now();
-      for (var i = 0; i < anns.length; i++) {
-        var a = anns[i];
-        var isNew = a.created_at && (now - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000;
-        html += '<div class="ann-card">';
-        html += '<h4>' + escHtml(a.title || "");
-        if (isNew) html += '<span class="ann-badge ann-badge-new">New</span>';
-        html += '</h4>';
-        html += '<div class="ann-date">' + fmtDate(a.created_at) + '</div>';
-        html += '<div class="ann-body">' + escHtml(a.body || "") + '</div>';
-        html += '</div>';
-      }
-      view.innerHTML = html;
+      renderAnnPage();
     }).catch(function(){
       view.innerHTML = '<div class="empty">Could not load announcements.</div>';
     });
+  }
+  function renderAnnPage() {
+    var view = $("view");
+    var pgData = window.paginate(_annCache, annPage, 10);
+    var html = "";
+    var now = Date.now();
+    for (var i = 0; i < pgData.rows.length; i++) {
+      var a = pgData.rows[i];
+      var isNew = a.created_at && (now - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000;
+      html += '<div class="ann-card">';
+      html += '<h4>' + escHtml(a.title || "");
+      if (isNew) html += '<span class="ann-badge ann-badge-new">New</span>';
+      html += '</h4>';
+      html += '<div class="ann-date">' + fmtDate(a.created_at) + '</div>';
+      html += '<div class="ann-body">' + escHtml(a.body || "") + '</div>';
+      html += '</div>';
+    }
+    html += pgData.html;
+    view.innerHTML = html;
+    pgData.onAttach(view, function(p) { renderAnnouncements(p); });
   }
 
   // ---- SIGN OUT ----

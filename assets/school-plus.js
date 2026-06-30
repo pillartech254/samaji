@@ -577,7 +577,9 @@
       all=all2.slice().sort(function(a,b){ return new Date(a.created_at||0)-new Date(b.created_at||0); });
       draw();
     }
-    function draw(){
+    var stuPage=1;
+    function draw(pg){
+      if(typeof pg==="number") stuPage=pg; else stuPage=1;
       var q=(document.getElementById("stu-search").value||"").toLowerCase();
       var cfv=document.getElementById("stu-class-filter").value;
       var rows=all.filter(function(s){ return (!q||(s.first_name+" "+s.last_name+" "+(s.admission_no||"")).toLowerCase().indexOf(q)>=0) && (!cfv||s.class_id===cfv); });
@@ -586,8 +588,10 @@
       if(!rows.length){ t.innerHTML='<div class="empty">No students match. Click <strong>+ New student</strong> to enrol one.</div>'; return; }
       var siblingMap={};
       all.forEach(function(x){ if(x.guardian_phone){ if(!siblingMap[x.guardian_phone]) siblingMap[x.guardian_phone]=[]; siblingMap[x.guardian_phone].push(x); } });
+      var pgData=window.paginate(rows,stuPage);
+      var pageRows=pgData.rows;
       var html='<table class="data"><thead><tr><th>Adm. No</th><th>Name</th><th>Class</th><th>Gender</th><th>Boarding</th><th>Guardian</th><th>Status</th><th></th></tr></thead><tbody>';
-      rows.forEach(function(s){
+      pageRows.forEach(function(s){
         var boarding=s.residence==="Boarder"?('<span class="pill" style="color:#6D28D9;background:#F1ECFE;">'+esc(dormOf[s.dormitory_id]||"Boarder")+'</span>'):'<span class="pill gray">Day</span>';
         var siblings=s.guardian_phone?siblingMap[s.guardian_phone]:[];
         var siblingHtml='';
@@ -602,7 +606,8 @@
           +'<td><span class="pill '+(s.status==="active"?"green":"gray")+'">'+esc(s.status)+'</span></td>'
           +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-view="'+s.id+'">View</button> <button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm" data-promo="'+s.id+'">Promote</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
       });
-      t.innerHTML=html+'</tbody></table>';
+      t.innerHTML=html+'</tbody></table>'+pgData.html;
+      pgData.onAttach(t,function(p){ draw(p); });
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ form(all.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-view]").forEach(function(b){ b.onclick=function(){ view(all.find(function(x){return x.id===b.getAttribute("data-view");})); }; });
       t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){
@@ -919,13 +924,17 @@
       }
       refreshStats();
 
-      function ledger(){
-        var body=document.getElementById("fee-body");
-        if(!students.length){ body.innerHTML='<div class="empty">No students yet.</div>'; return; }
-        var filtered=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
-        if(!filtered.length){ body.innerHTML='<div class="empty">No students match “'+esc(query)+'”.</div>'; return; }
-        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
-        filtered.forEach(function(s){
+      var ledgerPage=1;
+      function ledger(pg){
+        if(typeof pg===”number”) ledgerPage=pg; else ledgerPage=1;
+        var body=document.getElementById(“fee-body”);
+        if(!students.length){ body.innerHTML='<div class=”empty”>No students yet.</div>'; return; }
+        var filtered=students.filter(function(s){ return matches(s.first_name+” “+s.last_name, s.admission_no, s.grade); });
+        if(!filtered.length){ body.innerHTML='<div class=”empty”>No students match “'+esc(query)+'”.</div>'; return; }
+        var pgData=window.paginate(filtered,ledgerPage);
+        var pageRows=pgData.rows;
+        var html='<table class=”data”><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+        pageRows.forEach(function(s){
           var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0, tBal=Math.max(0,billed-paid);
           var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0, bBal=Math.max(0,bf-bp);
           var totalBal=tBal+bBal, totalOwed=billed+bf, totalPaid=paid+bp;
@@ -941,27 +950,33 @@
             +'<td><span class="pill '+st+'">'+lbl+'</span></td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-stmt="'+s.id+'">Statement</button> <button class="btn-primary" style="padding:6px 12px;font-size:12px;" data-pay="'+s.id+'">Collect</button></td></tr>';
         });
-        body.innerHTML=html+'</tbody></table>';
+        body.innerHTML=html+'</tbody></table>'+pgData.html;
+        pgData.onAttach(body,function(p){ ledger(p); });
         body.querySelectorAll("[data-pay]").forEach(function(b){ b.onclick=function(){ collectForm(b.getAttribute("data-pay")); }; });
         body.querySelectorAll("[data-stmt]").forEach(function(b){ b.onclick=function(){ showStatement(b.getAttribute("data-stmt")); }; });
       }
-      async function receipts(){
+      var rcptPage=1;
+      async function receipts(pg){
+        if(typeof pg==="number") rcptPage=pg; else rcptPage=1;
         var body=document.getElementById("fee-body");
         var r=await sb.from("fee_payments").select("*").eq("school_id",schoolId).order("paid_at",{ascending:false});
         var rows=r.data||[]; var nameOf={}, admOf={}, gradeOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; admOf[s.id]=s.admission_no; gradeOf[s.id]=s.grade; });
         if(!rows.length){ body.innerHTML='<div class="empty">No receipts issued yet.</div>'; return; }
         rows=rows.filter(function(p){ return matches(nameOf[p.student_id], admOf[p.student_id], gradeOf[p.student_id]); });
         if(!rows.length){ body.innerHTML='<div class="empty">No receipts match “'+esc(query)+'”.</div>'; return; }
+        var pgData=window.paginate(rows,rcptPage);
+        var pageRows=pgData.rows;
         var html='<table class="data"><thead><tr><th>Receipt no</th><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th></th></tr></thead><tbody>';
-        rows.forEach(function(p){
+        pageRows.forEach(function(p){
           html+='<tr><td class="mono" style="font-size:12px;font-weight:600;">'+esc(p.receipt_no)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(nameOf[p.student_id]||"—")+'</td>'
             +'<td style="font-weight:700;color:#067647;">'+money(p.amount)+'</td><td><span class="pill gray">'+esc(p.method)+'</span></td>'
             +'<td class="muted" style="font-size:12px;">'+new Date(p.paid_at).toLocaleDateString()+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-r="'+p.id+'">View receipt</button> <button class="btn-sm" style="color:#C2410C;" data-revoke="'+p.id+'">Revoke</button></td></tr>';
         });
-        body.innerHTML=html+'</tbody></table>';
-        body.querySelectorAll("[data-r]").forEach(function(b){ b.onclick=function(){ var p=rows.find(function(x){return x.id===b.getAttribute("data-r");}); showReceipt(p, students.find(function(s){return s.id===p.student_id;})); }; });
-        body.querySelectorAll("[data-revoke]").forEach(function(b){ b.onclick=function(){ var p=rows.find(function(x){return x.id===b.getAttribute("data-revoke");}); revokePayment(p); }; });
+        body.innerHTML=html+'</tbody></table>'+pgData.html;
+        pgData.onAttach(body,function(p){ rcptPage=p; receipts(p); });
+        body.querySelectorAll("[data-r]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-r");}); showReceipt(p, students.find(function(s){return s.id===p.student_id;})); }; });
+        body.querySelectorAll("[data-revoke]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-revoke");}); revokePayment(p); }; });
       }
 
       // Reverses an accidental/disapproved payment: deletes the fee_payments

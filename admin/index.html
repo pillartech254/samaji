@@ -641,7 +641,10 @@
       renderUserList();
     }
 
-    function renderUserList(){
+    var usrAuthPage=1, usrGuardPage=1;
+    function renderUserList(pg){
+      if(typeof pg==="object" && pg){ if(pg.auth) usrAuthPage=pg.auth; if(pg.guard) usrGuardPage=pg.guard; }
+      else { usrAuthPage=1; usrGuardPage=1; }
       var list = document.getElementById("usr-list");
       var q = (document.getElementById("usr-search").value || "").toLowerCase();
 
@@ -662,9 +665,10 @@
       var html = '';
 
       if (filteredAuth.length) {
+        var pgAuth = window.paginate(filteredAuth, usrAuthPage);
         html += '<div style="font-size:11px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.06em;padding:14px 0 6px;">Registered Accounts (' + filteredAuth.length + ')</div>';
         html += '<table class="data"><thead><tr><th>Name</th><th>Email / Phone</th><th>Role</th><th></th></tr></thead><tbody>';
-        filteredAuth.forEach(function(u){
+        pgAuth.rows.forEach(function(u){
           var uid = u.user_id || u.id || "";
           var role = u.role || "—";
           var rStyle = roleColors[role] || "color:#475467;background:#F1F2F6;";
@@ -682,13 +686,14 @@
             '<button class="ghost" data-del="' + uid + '" style="font-size:12px;color:#B42318;">Delete</button>' +
             '</td></tr>';
         });
-        html += '</tbody></table>';
+        html += '</tbody></table>' + pgAuth.html;
       }
 
       if (filteredGuardians.length) {
+        var pgGuard = window.paginate(filteredGuardians, usrGuardPage);
         html += '<div style="font-size:11px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.06em;padding:18px 0 6px;">Parents / Guardians from Student Records (' + filteredGuardians.length + ')</div>';
         html += '<table class="data"><thead><tr><th>Guardian Name</th><th>Phone</th><th>Children</th><th></th></tr></thead><tbody>';
-        filteredGuardians.forEach(function(g){
+        pgGuard.rows.forEach(function(g){
           var childList = g.children.map(function(c){ return esc(c); }).join(", ");
           html +=
             '<tr>' +
@@ -698,7 +703,7 @@
             '<td><button class="btn-primary" data-create-parent="' + esc(g.phone) + '" data-pname="' + esc(g.name) + '" style="font-size:12px;padding:6px 12px;">Create Account</button></td>' +
             '</tr>';
         });
-        html += '</tbody></table>';
+        html += '</tbody></table>' + pgGuard.html;
       }
 
       if (!filteredAuth.length && !filteredGuardians.length) {
@@ -711,6 +716,9 @@
       if (q && totalCount < fullCount) countText = 'Showing ' + totalCount + ' of ' + fullCount + ' users';
       html += '<p class="muted" style="margin-top:8px;font-size:12px;">' + countText + '</p>';
       list.innerHTML = html;
+
+      if (filteredAuth.length) pgAuth.onAttach(list, function(p){ renderUserList({auth:p, guard:usrGuardPage}); });
+      if (filteredGuardians.length) pgGuard.onAttach(list, function(p){ renderUserList({auth:usrAuthPage, guard:p}); });
 
       // Wire up buttons
       list.querySelectorAll("[data-create-parent]").forEach(function(b){
