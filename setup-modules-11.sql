@@ -173,7 +173,7 @@ begin
     '', '', '',
     '', '', '',
     0,
-    '', '', '',
+    null, '', '',
     false, false,
     now(), now(),
     '{"provider":"email","providers":["email"]}'::jsonb,

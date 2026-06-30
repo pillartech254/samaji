@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Samaji — Admin Console</title>
+<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/styles.css">
 <style>
@@ -139,7 +142,7 @@
 
   <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="../assets/config.js"></script>
 <script src="../assets/app.js"></script>
 <script>
@@ -240,15 +243,15 @@
     var prof = await sb.from("profiles").select("role").eq("id", user.id).maybeSingle();
     var role = prof.data ? prof.data.role : "unknown";
 
-    // load reference data
-    var sres = await sb.from("schools").select("*").order("name");
-    SCHOOLS = sres.data || [];
-
-    var mres = await sb.from("modules").select("*").eq("active", true);
-    MODULES = (mres.data || []).sort(function(a, b){ var o = {core:0,standard:1,advanced:2}; return (o[a.tier] - o[b.tier]) || a.name.localeCompare(b.name); });
-
-    var pres = await sb.from("packages").select("*").eq("active", true);
-    PACKAGES = pres.data || [];
+    // load reference data in parallel
+    var refResults = await Promise.all([
+      sb.from("schools").select("*").order("name"),
+      sb.from("modules").select("*").eq("active", true),
+      sb.from("packages").select("*").eq("active", true)
+    ]);
+    SCHOOLS = refResults[0].data || [];
+    MODULES = (refResults[1].data || []).sort(function(a, b){ var o = {core:0,standard:1,advanced:2}; return (o[a.tier] - o[b.tier]) || a.name.localeCompare(b.name); });
+    PACKAGES = refResults[2].data || [];
 
     showDashboard();
   }
@@ -277,10 +280,15 @@
       '<div style="margin-top:28px;"><h3 style="font-size:15px;margin:0 0 12px;">Schools</h3>' +
       '<table class="data" id="dash-table"><thead><tr><th>School</th><th>Region</th><th>Students</th><th>Status</th></tr></thead><tbody id="dash-tbody"></tbody></table></div>';
 
-    // Fetch stats
-    var students = (await sb.from("students").select("school_id")).data || [];
-    var profiles = (await sb.from("profiles").select("id")).data || [];
-    var payments = (await sb.from("fee_payments").select("amount")).data || [];
+    // Fetch stats in parallel using count queries for speed
+    var stuP = sb.from("students").select("school_id");
+    var profP = sb.from("profiles").select("id", { count: "exact", head: true });
+    var payP = sb.from("fee_payments").select("amount");
+    var results = await Promise.all([stuP, profP, payP]);
+
+    var students = results[0].data || [];
+    var profileCount = results[1].count || 0;
+    var payments = results[2].data || [];
     var totalCollections = 0;
     payments.forEach(function(p){ totalCollections += Number(p.amount || 0); });
 
@@ -294,7 +302,7 @@
       '<div class="stat"><div class="ic" style="background:#EEF0FF;color:#4F46E5"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="lbl">Total Schools</div><div class="val">' + SCHOOLS.length + '</div></div>' +
       '<div class="stat"><div class="ic" style="background:#ECFDF3;color:#067647"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="lbl">Total Students</div><div class="val">' + students.length + '</div></div>' +
       '<div class="stat"><div class="ic" style="background:#FEF3F2;color:#B42318"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg></div><div class="lbl">Total Collections</div><div class="val">KES ' + totalCollections.toLocaleString() + '</div></div>' +
-      '<div class="stat"><div class="ic" style="background:#F1ECFE;color:#6D28D9"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 19a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="lbl">Active Users</div><div class="val">' + profiles.length + '</div></div>';
+      '<div class="stat"><div class="ic" style="background:#F1ECFE;color:#6D28D9"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 19a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div><div class="lbl">Active Users</div><div class="val">' + profileCount + '</div></div>';
     $("dash-stats").innerHTML = statsHtml;
 
     // School table
@@ -559,8 +567,13 @@
       var list = document.getElementById("usr-list");
       list.innerHTML = '<p class="muted">Loading...</p>';
 
-      // 1. Load auth users from RPC
-      var r = await sb.rpc("admin_list_users", { p_school_id: schoolId });
+      // Load auth users and students in parallel
+      var loadResults = await Promise.all([
+        sb.rpc("admin_list_users", { p_school_id: schoolId }),
+        sb.from("students").select("guardian_name, guardian_phone, first_name, last_name, grade").eq("school_id", schoolId)
+      ]);
+
+      var r = loadResults[0];
       var authUsers = [];
       if (!r.error) {
         authUsers = r.data || [];
@@ -568,27 +581,31 @@
         if (!Array.isArray(authUsers)) authUsers = [];
       }
 
-      // 2. Load guardians/parents from students table (auto-detected)
-      var sr = await sb.from("students").select("guardian_name, guardian_phone, first_name, last_name, grade").eq("school_id", schoolId);
-      var students = sr.data || [];
+      var students = loadResults[1].data || [];
 
-      // Build unique guardian map by phone
+      // Build unique guardian map by phone (normalize for comparison)
+      function normPhone(p) {
+        var d = (p || "").replace(/[^0-9]/g, "");
+        if (d.length === 10 && d.charAt(0) === "0") d = "254" + d.substring(1);
+        return d;
+      }
       var guardianMap = {};
       var authPhones = {};
-      authUsers.forEach(function(u){ if (u.phone) authPhones[u.phone] = true; });
+      authUsers.forEach(function(u){ if (u.phone) authPhones[normPhone(u.phone)] = true; });
 
       students.forEach(function(s){
         var phone = (s.guardian_phone || "").trim();
         if (!phone) return;
-        if (!guardianMap[phone]) {
-          guardianMap[phone] = {
+        var norm = normPhone(phone);
+        if (!guardianMap[norm]) {
+          guardianMap[norm] = {
             name: s.guardian_name || "",
             phone: phone,
             children: [],
-            hasAccount: !!authPhones[phone]
+            hasAccount: !!authPhones[norm]
           };
         }
-        guardianMap[phone].children.push((s.first_name || "") + " " + (s.last_name || "") + " (" + (s.grade || "—") + ")");
+        guardianMap[norm].children.push((s.first_name || "") + " " + (s.last_name || "") + " (" + (s.grade || "—") + ")");
       });
 
       var guardians = [];
