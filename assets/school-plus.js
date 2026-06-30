@@ -926,14 +926,14 @@
 
       var ledgerPage=1;
       function ledger(pg){
-        if(typeof pg===”number”) ledgerPage=pg; else ledgerPage=1;
-        var body=document.getElementById(“fee-body”);
-        if(!students.length){ body.innerHTML='<div class=”empty”>No students yet.</div>'; return; }
-        var filtered=students.filter(function(s){ return matches(s.first_name+” “+s.last_name, s.admission_no, s.grade); });
-        if(!filtered.length){ body.innerHTML='<div class=”empty”>No students match “'+esc(query)+'”.</div>'; return; }
+        if(typeof pg==="number") ledgerPage=pg; else ledgerPage=1;
+        var body=document.getElementById("fee-body");
+        if(!students.length){ body.innerHTML='<div class="empty">No students yet.</div>'; return; }
+        var filtered=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
+        if(!filtered.length){ body.innerHTML='<div class="empty">No students match "'+esc(query)+'".</div>'; return; }
         var pgData=window.paginate(filtered,ledgerPage);
         var pageRows=pgData.rows;
-        var html='<table class=”data”><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
         pageRows.forEach(function(s){
           var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0, tBal=Math.max(0,billed-paid);
           var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0, bBal=Math.max(0,bf-bp);
@@ -963,7 +963,7 @@
         var rows=r.data||[]; var nameOf={}, admOf={}, gradeOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; admOf[s.id]=s.admission_no; gradeOf[s.id]=s.grade; });
         if(!rows.length){ body.innerHTML='<div class="empty">No receipts issued yet.</div>'; return; }
         rows=rows.filter(function(p){ return matches(nameOf[p.student_id], admOf[p.student_id], gradeOf[p.student_id]); });
-        if(!rows.length){ body.innerHTML='<div class="empty">No receipts match “'+esc(query)+'”.</div>'; return; }
+        if(!rows.length){ body.innerHTML='<div class="empty">No receipts match "'+esc(query)+'".</div>'; return; }
         var pgData=window.paginate(rows,rcptPage);
         var pageRows=pgData.rows;
         var html='<table class="data"><thead><tr><th>Receipt no</th><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th></th></tr></thead><tbody>';
