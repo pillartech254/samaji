@@ -33,4 +33,74 @@
     "module.api":        { name: "API & Webhooks",   mono: "A", tint: "#F1ECFE", ink: "#6D28D9" }
   };
   window.metaFor = function (k) { return window.MODULE_META[k] || { name: k, mono: "•", tint: "#EEF1F5", ink: "#475467" }; };
+
+  // ---- Shared pagination utility ----
+  // Usage:
+  //   var pg = window.paginate(allRows, page, perPage);
+  //   // render pg.rows (the current page slice)
+  //   // append pg.html to get prev/next controls
+  //   // pg.onAttach(container, function(newPage){ ... }) wires click handlers
+  var PG_SIZES = [15, 25, 50, 100];
+  window.paginate = function (allRows, page, perPage) {
+    perPage = perPage || 15;
+    var total = allRows.length;
+    var totalPages = Math.max(1, Math.ceil(total / perPage));
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    var start = (page - 1) * perPage;
+    var rows = allRows.slice(start, start + perPage);
+
+    var html = "";
+    if (total > PG_SIZES[0]) {
+      html += '<div class="pg-bar" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;font-size:12.5px;color:#667085;">';
+      html += '<span>Showing ' + (total === 0 ? 0 : start + 1) + '–' + Math.min(start + perPage, total) + ' of ' + total + '</span>';
+      html += '<div style="display:flex;align-items:center;gap:6px;">';
+      html += '<button class="pg-btn" data-pg="' + (page - 1) + '"' + (page <= 1 ? ' disabled' : '') + ' style="padding:5px 10px;border:1px solid #DDE1E6;border-radius:7px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit;color:#344054;' + (page <= 1 ? 'opacity:.4;cursor:default;' : '') + '">&laquo; Prev</button>';
+
+      // Page numbers
+      var pages = [];
+      if (totalPages <= 7) {
+        for (var i = 1; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        if (page > 3) pages.push("...");
+        for (var i = Math.max(2, page - 1); i <= Math.min(totalPages - 1, page + 1); i++) pages.push(i);
+        if (page < totalPages - 2) pages.push("...");
+        pages.push(totalPages);
+      }
+      for (var i = 0; i < pages.length; i++) {
+        var p = pages[i];
+        if (p === "...") {
+          html += '<span style="padding:0 4px;color:#98A2B3;">…</span>';
+        } else {
+          var active = p === page;
+          html += '<button class="pg-btn" data-pg="' + p + '" style="padding:5px 10px;border:1px solid ' + (active ? '#0E9384' : '#DDE1E6') + ';border-radius:7px;background:' + (active ? '#0E9384' : '#fff') + ';color:' + (active ? '#fff' : '#344054') + ';cursor:pointer;font-size:12px;font-family:inherit;font-weight:' + (active ? '700' : '500') + ';">' + p + '</button>';
+        }
+      }
+
+      html += '<button class="pg-btn" data-pg="' + (page + 1) + '"' + (page >= totalPages ? ' disabled' : '') + ' style="padding:5px 10px;border:1px solid #DDE1E6;border-radius:7px;background:#fff;cursor:pointer;font-size:12px;font-family:inherit;color:#344054;' + (page >= totalPages ? 'opacity:.4;cursor:default;' : '') + '">Next &raquo;</button>';
+      html += '</div></div>';
+    }
+
+    return {
+      rows: rows,
+      html: html,
+      page: page,
+      totalPages: totalPages,
+      total: total,
+      onAttach: function (container, callback) {
+        if (!container) return;
+        var btns = container.querySelectorAll(".pg-btn");
+        for (var i = 0; i < btns.length; i++) {
+          (function (b) {
+            b.onclick = function () {
+              if (b.disabled) return;
+              var pg = parseInt(b.getAttribute("data-pg"), 10);
+              if (pg >= 1 && pg <= totalPages) callback(pg);
+            };
+          })(btns[i]);
+        }
+      }
+    };
+  };
 })();
