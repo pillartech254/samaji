@@ -373,14 +373,19 @@
       var list=r.data||[], t=document.getElementById("tch-table");
       if(!list.length){ t.innerHTML='<div class="empty">No teachers yet. Add your teaching staff here.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody>';
+        var prRes=await sb.from("profiles").select("id,teacher_id").eq("school_id",schoolId).eq("role","teacher");
+        var linkedTeachers={}; (prRes.data||[]).forEach(function(p){ if(p.teacher_id) linkedTeachers[p.teacher_id]=true; });
+        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Account</th><th></th></tr></thead><tbody>';
         list.forEach(function(s){
-          html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.email?esc(s.email):'<span class="muted">—</span>')+'</td><td>'+(s.phone?esc(s.phone):'<span class="muted">—</span>')+'</td>'
+          var hasAcct=linkedTeachers[s.id];
+          html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.email?esc(s.email):'<span class="muted">-</span>')+'</td><td>'+(s.phone?esc(s.phone):'<span class="muted">-</span>')+'</td>'
+            +'<td>'+(hasAcct?'<span class="pill green">Active</span>':'<button class="btn-sm" data-acct="'+s.id+'" style="color:#4F46E5;">Create Login</button>')+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ teacherForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
         t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this teacher? They will be unassigned from any classes/subjects."))return; var r=await sb.from("teachers").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); teachersTab(); }; });
+        t.querySelectorAll("[data-acct]").forEach(function(b){ b.onclick=function(){ createTeacherAccount(list.find(function(x){return x.id===b.getAttribute("data-acct");})); }; });
       }
       document.getElementById("add-teacher").onclick=function(){ teacherForm(null); };
     }
@@ -398,6 +403,26 @@
         var r=s.id? await sb.from("teachers").update(rec).eq("id",s.id) : await sb.from("teachers").insert(rec);
         if(r.error){ toast("Error: "+r.error.message); return; }
         m.close(); toast("Saved"); teachersTab();
+      };
+    }
+
+    function createTeacherAccount(teacher){
+      var defEmail=(teacher.email||teacher.name.toLowerCase().replace(/\s+/g,".")+"@teacher.samaji.app");
+      var defPw=teacher.phone?(teacher.phone.replace(/[^0-9]/g,"")):"changeme123";
+      var m=modal('<h3>Create Teacher Login</h3>'
+        +'<p class="muted" style="font-size:12.5px;margin:0 0 14px;">Create a portal login for <strong>'+esc(teacher.name)+'</strong> so they can access the Teacher Portal to mark attendance, enter exam scores, and view payroll.</p>'
+        +'<div class="field"><label>Email (login)</label><input id="ta-email" value="'+esc(defEmail)+'"></div>'
+        +'<div class="field"><label>Password</label><input id="ta-pw" value="'+esc(defPw)+'"></div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Create Account</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#s").onclick=async function(){
+        var email=m.q("#ta-email").value.trim();
+        var pw=m.q("#ta-pw").value;
+        if(!email||!pw){ toast("Email and password required."); return; }
+        m.q("#s").disabled=true; m.q("#s").textContent="Creating...";
+        var r=await sb.rpc("create_teacher_account",{p_email:email,p_password:pw,p_school_id:schoolId,p_teacher_id:teacher.id,p_full_name:teacher.name});
+        if(r.error){ toast("Error: "+r.error.message); m.q("#s").disabled=false; m.q("#s").textContent="Create Account"; return; }
+        m.close(); toast("Teacher account created! They can now log in at /teacher/"); teachersTab();
       };
     }
 

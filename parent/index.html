@@ -271,7 +271,7 @@
         <div class="msg" id="msg"></div>
         <p class="hint">First time? Your phone number is your default password.</p>
         <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
-        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span></div>
+        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span><br><span style="font-size:11px;">Support: <a href="https://wa.me/254738522942" style="color:#25D366;">WhatsApp</a> &middot; <a href="tel:+254738522942" style="color:#0E9384;">0738 522 942</a></span></div>
       </div>
     </div>
   </div>
@@ -342,12 +342,7 @@
   var teacherMap = {};  // class_id -> [ { name, subject } ]
   var attendanceMap = {}; // student_id -> { present, absent, late, total }
 
-  var yr = new Date().getFullYear();
-  var yrEls = ["year", "year-b"];
-  for (var i = 0; i < yrEls.length; i++) {
-    var el = document.getElementById(yrEls[i]);
-    if (el) el.textContent = yr;
-  }
+  // year set by app.js samajiYear()
 
   // ---- helpers ----
   function showMsg(t, ok) {

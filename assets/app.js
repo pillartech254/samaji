@@ -103,4 +103,24 @@
       }
     };
   };
+
+  // ---- Dynamic copyright year (fetched from server, fallback to local) ----
+  window.samajiYear = function(cb) {
+    var fallback = Math.max(2025, new Date().getFullYear());
+    try {
+      fetch("https://worldtimeapi.org/api/timezone/Africa/Nairobi")
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          var yr = d && d.datetime ? new Date(d.datetime).getFullYear() : fallback;
+          cb(yr);
+        })
+        .catch(function() { cb(fallback); });
+    } catch(e) { cb(fallback); }
+  };
+  window.samajiYear(function(yr) {
+    ["yr", "year", "year-b"].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = yr;
+    });
+  });
 })();

@@ -98,7 +98,7 @@
         <button class="signin" id="submit">Sign in securely</button>
         <div class="msg" id="msg"></div>
         <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
-        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span></div>
+        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span><br><span style="font-size:11px;">Support: <a href="https://wa.me/254738522942" style="color:#25D366;">WhatsApp</a> &middot; <a href="tel:+254738522942" style="color:#0E9384;">0738 522 942</a></span></div>
       </div>
     </div>
   </div>
@@ -138,7 +138,7 @@
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
   var SCHOOL=null, FLAGS={};
-  var _yr=new Date().getFullYear(); ["year","year-b"].forEach(function(id){ var e=document.getElementById(id); if(e) e.textContent=_yr; });
+  // year set by app.js samajiYear()
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
 
   $("submit").onclick = async function(){

@@ -336,19 +336,23 @@
 <footer>
   <div class="wrap inner">
     <div class="logo"><span class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></span>Samaji</div>
-    <div class="row" style="display:flex;gap:22px;">
+    <div class="row" style="display:flex;gap:22px;flex-wrap:wrap;">
       <a href="#features" class="muted">Features</a>
       <a href="#pricing" class="muted">Pricing</a>
       <a href="parent/" class="muted">Parent portal</a>
+      <a href="teacher/" class="muted">Teacher portal</a>
       <a href="admin/" class="muted">Provider console</a>
       <a href="school/" class="muted">School login</a>
     </div>
-    <div class="muted">© <span id="yr"></span> Pillartech Solutions. All rights reserved.</div>
+    <div class="muted" style="text-align:center;">
+      © <span id="yr"></span> Pillartech Solutions. All rights reserved.<br>
+      <span style="font-size:12px;">Technical Support: <a href="https://wa.me/254738522942" style="color:#25D366;text-decoration:none;">WhatsApp</a> · <a href="tel:+254738522942" style="color:#0E9384;text-decoration:none;">0738 522 942</a></span>
+    </div>
   </div>
 </footer>
 
 <script>
-  document.getElementById("yr").textContent=new Date().getFullYear();
+  (function(){var fb=Math.max(2025,new Date().getFullYear()),el=document.getElementById("yr");if(el)el.textContent=fb;try{fetch("https://worldtimeapi.org/api/timezone/Africa/Nairobi").then(function(r){return r.json()}).then(function(d){if(d&&d.datetime&&el)el.textContent=new Date(d.datetime).getFullYear()}).catch(function(){})}catch(e){}})();
   // reveal on scroll
   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.style.animationPlayState="running";io.unobserve(e.target);}});},{threshold:.12});
   document.querySelectorAll(".reveal").forEach(function(el){el.style.animationPlayState="paused";io.observe(el);});
