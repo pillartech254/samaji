@@ -34,6 +34,7 @@ a{color:inherit;}
 @keyframes modalIn{from{opacity:0;transform:translateY(14px) scale(.97);}to{opacity:1;transform:translateY(0) scale(1);}}
 @keyframes pageIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
 @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(16px) scale(.96);}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1);}}
+@keyframes toastInR{from{opacity:0;transform:translateY(16px) scale(.96);}to{opacity:1;transform:translateY(0) scale(1);}}
 @keyframes popIcon{0%{transform:scale(0) rotate(-20deg);}60%{transform:scale(1.15) rotate(4deg);}100%{transform:scale(1) rotate(0);}}
 @keyframes barGrow{from{transform:scaleY(0);}to{transform:scaleY(1);}}
 @keyframes dash{from{stroke-dashoffset:1200;}to{stroke-dashoffset:0;}}
@@ -213,12 +214,12 @@ table.data tbody tr:hover td{background:#FAFBFC;}
 #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#15171E;color:#fff;font-size:13px;font-weight:500;padding:12px 18px;border-radius:11px;box-shadow:var(--sh-2);opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;z-index:80;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 #sm-toasts{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:10px;z-index:120;pointer-events:none;}
-.sm-toast{display:flex;align-items:center;gap:11px;min-width:240px;max-width:360px;background:#fff;border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:12px;box-shadow:var(--sh-2);padding:12px 15px;font-size:13px;font-weight:500;color:var(--ink);animation:toastIn .35s cubic-bezier(.34,1.4,.5,1) both;pointer-events:auto;}
+.sm-toast{display:flex;align-items:center;gap:11px;min-width:240px;max-width:360px;background:#fff;border:1px solid var(--line);border-left:4px solid var(--teal);border-radius:12px;box-shadow:var(--sh-2);padding:12px 15px;font-size:13px;font-weight:500;color:var(--ink);animation:toastInR .35s cubic-bezier(.34,1.4,.5,1) both;pointer-events:auto;}
 .sm-toast.ok{border-left-color:var(--green);} .sm-toast.err{border-left-color:var(--red);} .sm-toast.info{border-left-color:var(--indigo);}
 .sm-toast .ti{flex:none;width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;}
 .sm-toast.ok .ti{background:var(--green-t);color:var(--green);} .sm-toast.err .ti{background:var(--red-t);color:var(--red);}
 .sm-toast.info .ti{background:var(--indigo-t);color:var(--indigo);} .sm-toast .ti{background:var(--teal-t);color:var(--teal);}
-.sm-toast.out{animation:toastIn .25s reverse both;}
+.sm-toast.out{animation:toastInR .25s reverse both;}
 
 /* ===== custom dialog (confirm/alert) ===== */
 .dlg{background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh-3);width:100%;max-width:400px;padding:26px 26px 22px;text-align:center;animation:modalIn .3s cubic-bezier(.34,1.4,.5,1) both;}
@@ -317,8 +318,10 @@ table.data tbody tr:hover td{background:#FAFBFC;}
   .ghost{padding:8px 12px;font-size:12px;}
   .btn-sm{padding:6px 10px;font-size:11.5px;}
   #toast{max-width:90vw;font-size:12px;}
-  #sm-toasts{right:10px;bottom:14px;}
-  .sm-toast{min-width:200px;max-width:85vw;font-size:12px;}
+  /* Anchored to the top (not bottom) on phones: a bottom toast can end up
+     hidden behind the on-screen keyboard right after saving a form field. */
+  #sm-toasts{top:14px;bottom:auto;right:10px;left:10px;align-items:center;}
+  .sm-toast{width:100%;min-width:0;max-width:420px;font-size:12px;}
   .dlg{max-width:92vw;padding:20px;}
 }
 @media (max-width:400px){
