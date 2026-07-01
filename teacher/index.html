@@ -99,6 +99,8 @@
   <!-- APP -->
   <div id="app">
     <div class="layout">
+      <button class="hamburger" id="hamburger" aria-label="Menu">☰</button>
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
       <aside>
         <div class="school"><div class="logo teal" id="school-logo">S</div>
           <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="teacher-name">Teacher</div><div style="font-size:11px;color:#98A2B3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="school-name">—</div></div>
@@ -215,6 +217,21 @@
   $("nav-grading").onclick     = function(){ showTab("grading"); };
   $("nav-reportbooks").onclick = function(){ showTab("reportbooks"); };
   $("nav-payroll").onclick     = function(){ showTab("payroll"); };
+
+  // Mobile sidebar toggle (same pattern as School Portal)
+  (function(){
+    var ham = $("hamburger"), ovr = $("sidebar-overlay");
+    var aside = document.querySelector(".layout aside");
+    function openSidebar(){ aside.classList.add("open"); ovr.classList.add("open"); }
+    function closeSidebar(){ aside.classList.remove("open"); ovr.classList.remove("open"); }
+    ham.onclick = function(){ aside.classList.contains("open") ? closeSidebar() : openSidebar(); };
+    ovr.onclick = closeSidebar;
+    aside.addEventListener("click", function(e){
+      if (e.target.classList.contains("navitem") || e.target.closest(".navitem") || e.target.id === "signout") {
+        closeSidebar();
+      }
+    });
+  })();
 
   // ---- session / idle-timeout security (same policy as School Portal) ----
   var IDLE_MINUTES = 30;
