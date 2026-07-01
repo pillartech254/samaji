@@ -98,8 +98,16 @@
       +'<div class="rc-sign"><div class="rc-signline"></div>Parent / Guardian</div>'
       +'</div>';
 
+    // opts.published===true  -> this came from a frozen report_cards snapshot (official).
+    // opts.published===false -> live preview computed from current marks, not yet issued.
+    var statusBanner = opts.published===false
+      ? '<div class="rc-banner rc-banner-draft">DRAFT — not yet officially published. Marks may still change.</div>'
+      : (opts.published===true
+        ? '<div class="rc-banner rc-banner-official">Official published report'+(opts.publishedAt?(' · '+esc(new Date(opts.publishedAt).toLocaleDateString())):'')+'</div>'
+        : '');
+
     return '<div class="rc-card">'
-      + head + bio
+      + statusBanner + head + bio
       + '<div class="rc-section-h">Learning Areas</div>' + assess
       + '<div class="rc-grid2">'
       +   '<div>'+ '<div class="rc-section-h">Attendance</div>' + attendance + '</div>'
@@ -116,7 +124,10 @@
 
   var RC_CSS = ''
     +'body{font-family:"IBM Plex Sans",system-ui,sans-serif;background:#fff;margin:0;padding:18px;color:#101626;}'
-    +'.rc-card{max-width:760px;margin:0 auto 26px;border:2px solid #101626;padding:20px 24px;page-break-after:always;}'
+    +'.rc-card{max-width:760px;margin:0 auto 26px;border:2px solid #101626;padding:20px 24px;page-break-after:always;position:relative;}'
+    +'.rc-banner{text-align:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:6px 10px;border-radius:6px;margin-bottom:10px;}'
+    +'.rc-banner-draft{background:#FFF6E8;color:#B54708;border:1px dashed #B54708;}'
+    +'.rc-banner-official{background:#ECFDF3;color:#067647;border:1px solid #067647;}'
     +'.rc-head{display:flex;align-items:center;gap:14px;border-bottom:2px solid #101626;padding-bottom:12px;margin-bottom:12px;}'
     +'.rc-emblem{flex:none;width:56px;height:56px;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F4F6F8;font-size:22px;}'
     +'.rc-emblem img{width:100%;height:100%;object-fit:contain;}'
