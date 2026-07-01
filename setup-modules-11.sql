@@ -1,175 +1,502 @@
 -- ============================================================
---  Samaji — MIGRATION 11 : Teacher portal login + Payroll v2
---  (loans/advances as deductions, allowance breakdown, P9 data)
---  Safe to run multiple times. Run AFTER setup-modules-10.sql.
+--  Samaji — MIGRATION 11 : Parent portal, M-Pesa integration,
+--  school backups, admin user management functions.
+--  Run AFTER all previous setup files.
 -- ============================================================
 
--- ---------- 1. LINK THE TEACHER DIRECTORY TO A LOGIN ---------
--- A teacher signs up on /teacher/ with the SAME email an admin
--- entered in Settings → Teachers. handle_new_user() (below) then
--- auto-attaches their new auth account to that directory row and
--- gives them the 'teacher' role instead of the demo 'super_admin'.
-alter table teachers add column if not exists auth_user_id uuid references auth.users(id);
-create unique index if not exists teachers_auth_user_uidx on teachers(auth_user_id) where auth_user_id is not null;
-
--- ---------- 2. LINK PAYROLL (staff) TO THE TEACHER DIRECTORY --
--- staff = payroll roster (covers non-teaching staff too — bursars,
--- head teachers, etc. — so payroll identity fields live here, not on
--- the lightweight teachers directory). teacher_id is set only when the
--- payroll row belongs to someone who also has a teacher-portal login.
--- The flat "allowances" figure is split into named lines so the
--- payslip can mimic a TSC payslip; kra_pin/role already existed.
-alter table staff add column if not exists teacher_id          uuid references teachers(id) on delete set null;
-alter table staff add column if not exists house_allowance     integer not null default 0;
-alter table staff add column if not exists transport_allowance integer not null default 0;
-alter table staff add column if not exists id_no               text;
-alter table staff add column if not exists payroll_no          text;  -- TSC/employee no.
-alter table staff add column if not exists station             text;
-create unique index if not exists staff_teacher_uidx on staff(teacher_id) where teacher_id is not null;
-
--- ---------- 3. LOANS & SALARY ADVANCES ------------------------
--- Recorded once; a fixed installment is deducted from every payroll
--- run until the balance reaches zero (then status flips to completed).
-create table if not exists staff_deductions (
-  id             uuid primary key default gen_random_uuid(),
-  school_id      text not null references schools(id) on delete cascade,
-  staff_id       uuid not null references staff(id) on delete cascade,
-  kind           text not null default 'advance' check (kind in ('advance','loan')),
-  description    text,
-  principal      integer not null default 0,
-  monthly_amount integer not null default 0,
-  balance        integer not null default 0,
-  status         text not null default 'active' check (status in ('active','completed','cancelled')),
-  created_at     timestamptz not null default now()
+-- ---------- 1. PARENT ACCOUNTS (links auth users to students via phone) --
+create table if not exists parent_accounts (
+  id         uuid primary key references auth.users(id) on delete cascade,
+  school_id  text not null references schools(id) on delete cascade,
+  phone      text not null,
+  full_name  text,
+  must_change_password boolean not null default true,
+  created_at timestamptz not null default now()
 );
-create index if not exists staff_deductions_staff_idx on staff_deductions(staff_id);
+create index if not exists parent_accounts_school_idx on parent_accounts(school_id);
+create index if not exists parent_accounts_phone_idx on parent_accounts(phone);
 
--- ---------- 4. PAYSLIP BREAKDOWN + HISTORY --------------------
--- house/transport allowance broken out (TSC-style line items) and the
--- exact loan/advance lines applied that run, frozen at generation time
--- so later edits to a loan don't rewrite history.
-alter table payslips add column if not exists house_allowance     integer not null default 0;
-alter table payslips add column if not exists transport_allowance integer not null default 0;
-alter table payslips add column if not exists deductions_other    integer not null default 0;
-alter table payslips add column if not exists deduction_lines     jsonb not null default '[]'::jsonb;
+-- ---------- 2. M-PESA CONFIG (per school) --------------------
+create table if not exists mpesa_config (
+  school_id       text primary key references schools(id) on delete cascade,
+  shortcode       text not null,
+  passkey         text not null,
+  consumer_key    text not null,
+  consumer_secret text not null,
+  callback_url    text,
+  environment     text not null default 'sandbox',
+  updated_at      timestamptz not null default now()
+);
 
-do $$
+-- ---------- 3. M-PESA TRANSACTIONS --------------------------
+create table if not exists mpesa_transactions (
+  id                   uuid primary key default gen_random_uuid(),
+  school_id            text not null references schools(id) on delete cascade,
+  parent_id            uuid references auth.users(id),
+  phone                text not null,
+  amount               numeric not null,
+  student_ids          text[],
+  checkout_request_id  text,
+  merchant_request_id  text,
+  mpesa_receipt_no     text,
+  result_code          integer,
+  result_desc          text,
+  status               text not null default 'pending',
+  created_at           timestamptz not null default now()
+);
+create index if not exists mpesa_tx_school_idx on mpesa_transactions(school_id);
+create index if not exists mpesa_tx_checkout_idx on mpesa_transactions(checkout_request_id);
+
+-- ---------- 4. SCHOOL BACKUPS --------------------------------
+create table if not exists school_backups (
+  id              uuid primary key default gen_random_uuid(),
+  school_id       text not null references schools(id) on delete cascade,
+  backup_data     jsonb not null,
+  tables_included text[] not null,
+  note            text,
+  created_by      uuid references auth.users(id),
+  created_at      timestamptz not null default now()
+);
+create index if not exists school_backups_school_idx on school_backups(school_id);
+
+-- ---------- 5. RLS ------------------------------------------
+alter table parent_accounts    enable row level security;
+alter table mpesa_config       enable row level security;
+alter table mpesa_transactions enable row level security;
+alter table school_backups     enable row level security;
+
+-- Parent accounts: super admin full access, parents see own row
+drop policy if exists p_pa_super on parent_accounts;
+create policy p_pa_super on parent_accounts for all to authenticated
+  using (is_super_admin()) with check (is_super_admin());
+
+drop policy if exists p_pa_self on parent_accounts;
+create policy p_pa_self on parent_accounts for select to authenticated
+  using (id = auth.uid());
+
+-- M-Pesa config: super admin only
+drop policy if exists p_mpesa_cfg on mpesa_config;
+create policy p_mpesa_cfg on mpesa_config for all to authenticated
+  using (is_super_admin()) with check (is_super_admin());
+
+-- M-Pesa transactions: super admin + school admin + own parent
+drop policy if exists p_mpesa_tx_super on mpesa_transactions;
+create policy p_mpesa_tx_super on mpesa_transactions for all to authenticated
+  using (is_super_admin()) with check (is_super_admin());
+
+drop policy if exists p_mpesa_tx_school on mpesa_transactions;
+create policy p_mpesa_tx_school on mpesa_transactions for select to authenticated
+  using (school_id = my_school());
+
+drop policy if exists p_mpesa_tx_parent on mpesa_transactions;
+create policy p_mpesa_tx_parent on mpesa_transactions for select to authenticated
+  using (parent_id = auth.uid());
+
+-- School backups: super admin only
+drop policy if exists p_backups_rw on school_backups;
+create policy p_backups_rw on school_backups for all to authenticated
+  using (is_super_admin()) with check (is_super_admin());
+
+-- ---------- 6. ADMIN USER MANAGEMENT FUNCTIONS ---------------
+
+-- Setup user after GoTrue signUp (confirm email, set profile, parent_accounts)
+create or replace function admin_setup_user(
+  p_user_id uuid,
+  p_role text default 'parent',
+  p_school_id text default null,
+  p_phone text default null,
+  p_full_name text default null
+) returns void
+language plpgsql security definer
+set search_path = public, auth
+as $$
 begin
-  if not exists (select 1 from pg_constraint where conname = 'payslips_run_staff_uniq') then
-    alter table payslips add constraint payslips_run_staff_uniq unique (run_id, staff_id);
+  if not is_super_admin() then
+    raise exception 'Not authorized';
   end if;
-end $$;
 
--- ---------- 5. AUTO-LINK NEW SIGN-UPS TO A TEACHER RECORD -----
--- Overrides the demo trigger from setup.sql: if the email being
--- signed up matches an unclaimed teachers.email, the new account
--- becomes that teacher (role='teacher', their school) instead of
--- the default super_admin demo path.
-create or replace function handle_new_user()
-returns trigger language plpgsql security definer
-set search_path = public as $$
-declare
-  t teachers%rowtype;
-begin
-  select * into t from teachers
-    where auth_user_id is null and email is not null and lower(email) = lower(new.email)
-    limit 1;
-  if t.id is not null then
-    insert into public.profiles (id, role, school_id) values (new.id, 'teacher', t.school_id)
-      on conflict (id) do update set role = 'teacher', school_id = t.school_id;
-    update teachers set auth_user_id = new.id where id = t.id;
-  else
-    insert into public.profiles (id, role) values (new.id, 'super_admin')
-      on conflict (id) do nothing;
+  -- Confirm email so user can sign in immediately
+  update auth.users
+  set email_confirmed_at = coalesce(email_confirmed_at, now()),
+      updated_at = now()
+  where id = p_user_id;
+
+  -- Upsert profile
+  insert into profiles (id, role, school_id)
+  values (p_user_id, p_role, p_school_id)
+  on conflict (id) do update set role = p_role, school_id = p_school_id;
+
+  -- Create parent_accounts record if parent
+  if p_role = 'parent' and p_phone is not null and p_school_id is not null then
+    insert into parent_accounts (id, school_id, phone, full_name, must_change_password)
+    values (p_user_id, p_school_id, p_phone, p_full_name, true)
+    on conflict (id) do update set phone = p_phone, full_name = p_full_name;
   end if;
-  return new;
-end; $$;
-
--- ---------- 6. ROLE HELPER ------------------------------------
--- Deliberately NOT "role = 'school_admin'": some existing admin
--- accounts were set up as 'super_admin' with a school_id attached
--- (the original handle_new_user() default), and both must keep full
--- access exactly as before. 'teacher' is the only new, lower-trust
--- role this migration introduces, so it's the only one excluded here.
-create or replace function is_school_admin()
-returns boolean language sql stable security definer
-set search_path = public as $$
-  select exists (select 1 from profiles where id = auth.uid() and school_id is not null and role <> 'teacher');
+end;
 $$;
-grant execute on function is_school_admin() to authenticated;
 
--- ---------- 7. RLS — payroll becomes admin-write / self-read --
--- (previously any authenticated user in the school could read/write
--- every payslip; that was fine while only school_admin logged in, but
--- the teacher portal now brings a lower-trust role into the same
--- school, so payroll must be scoped: admins manage it, a teacher may
--- only ever see their own linked payslips/deductions.)
-alter table staff_deductions enable row level security;
+-- Create a user account (parent or school_admin)
+-- Sets ALL auth.users string columns to '' to prevent GoTrue NULL→string scan errors
+create or replace function admin_create_user(
+  p_email text,
+  p_password text,
+  p_role text default 'parent',
+  p_school_id text default null,
+  p_phone text default null,
+  p_full_name text default null
+) returns uuid
+language plpgsql security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  new_id uuid := gen_random_uuid();
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
 
-drop policy if exists p_teachers_rw on teachers;
-drop policy if exists p_teachers_admin_rw on teachers;
-create policy p_teachers_admin_rw on teachers for all to authenticated
-  using (is_super_admin() or (school_id = my_school() and is_school_admin()))
-  with check (is_super_admin() or (school_id = my_school() and is_school_admin()));
-drop policy if exists p_teachers_self_read on teachers;
-create policy p_teachers_self_read on teachers for select to authenticated
-  using (auth_user_id = auth.uid());
+  insert into auth.users (
+    instance_id, id, aud, role, email,
+    encrypted_password, email_confirmed_at,
+    confirmation_token, recovery_token, reauthentication_token,
+    email_change, email_change_token_new, email_change_token_current,
+    email_change_confirm_status,
+    phone, phone_change, phone_change_token,
+    is_sso_user, is_super_admin,
+    created_at, updated_at,
+    raw_app_meta_data, raw_user_meta_data
+  ) values (
+    '00000000-0000-0000-0000-000000000000',
+    new_id, 'authenticated', 'authenticated', p_email,
+    extensions.crypt(p_password, extensions.gen_salt('bf', 10)),
+    now(),
+    '', '', '',
+    '', '', '',
+    0,
+    null, '', '',
+    false, false,
+    now(), now(),
+    '{"provider":"email","providers":["email"]}'::jsonb,
+    jsonb_build_object('full_name', coalesce(p_full_name, ''), 'phone', coalesce(p_phone, ''))
+  );
 
-drop policy if exists p_staff_rw on staff;
-drop policy if exists p_staff_super on staff;
-drop policy if exists p_staff_admin_rw on staff;
-create policy p_staff_admin_rw on staff for all to authenticated
-  using (is_super_admin() or (school_id = my_school() and is_school_admin()))
-  with check (is_super_admin() or (school_id = my_school() and is_school_admin()));
-drop policy if exists p_staff_self_read on staff;
-create policy p_staff_self_read on staff for select to authenticated
-  using (teacher_id in (select id from teachers where auth_user_id = auth.uid()));
+  insert into auth.identities (
+    id, user_id, identity_data, provider, provider_id,
+    last_sign_in_at, created_at, updated_at
+  ) values (
+    gen_random_uuid(), new_id,
+    jsonb_build_object('sub', new_id::text, 'email', p_email),
+    'email', new_id::text,
+    now(), now(), now()
+  );
 
-drop policy if exists p_pruns_rw on payroll_runs;
-drop policy if exists p_pruns_super on payroll_runs;
-drop policy if exists p_pruns_admin_rw on payroll_runs;
-create policy p_pruns_admin_rw on payroll_runs for all to authenticated
-  using (is_super_admin() or (school_id = my_school() and is_school_admin()))
-  with check (is_super_admin() or (school_id = my_school() and is_school_admin()));
-drop policy if exists p_pruns_read on payroll_runs;
-create policy p_pruns_read on payroll_runs for select to authenticated
-  using (school_id = my_school());  -- period/status only, no salary figures
+  insert into profiles (id, role, school_id)
+  values (new_id, p_role, p_school_id)
+  on conflict (id) do update set role = p_role, school_id = p_school_id;
 
-drop policy if exists p_pslips_rw on payslips;
-drop policy if exists p_pslips_super on payslips;
-drop policy if exists p_pslips_admin_rw on payslips;
-create policy p_pslips_admin_rw on payslips for all to authenticated
-  using (is_super_admin() or (school_id = my_school() and is_school_admin()))
-  with check (is_super_admin() or (school_id = my_school() and is_school_admin()));
-drop policy if exists p_pslips_self_read on payslips;
-create policy p_pslips_self_read on payslips for select to authenticated
-  using (staff_id in (select s.id from staff s join teachers t on t.id = s.teacher_id where t.auth_user_id = auth.uid()));
+  if p_role = 'parent' and p_phone is not null then
+    insert into parent_accounts (id, school_id, phone, full_name, must_change_password)
+    values (new_id, p_school_id, p_phone, p_full_name, true)
+    on conflict (id) do update set phone = p_phone, full_name = p_full_name;
+  end if;
 
-drop policy if exists p_sded_admin_rw on staff_deductions;
-create policy p_sded_admin_rw on staff_deductions for all to authenticated
-  using (is_super_admin() or (school_id = my_school() and is_school_admin()))
-  with check (is_super_admin() or (school_id = my_school() and is_school_admin()));
-drop policy if exists p_sded_self_read on staff_deductions;
-create policy p_sded_self_read on staff_deductions for select to authenticated
-  using (staff_id in (select s.id from staff s join teachers t on t.id = s.teacher_id where t.auth_user_id = auth.uid()));
+  return new_id;
+end;
+$$;
 
--- ---------- 8. GRANTS (idempotent) ----------------------------
+-- Reset a user's password
+create or replace function admin_reset_password(
+  p_user_id uuid,
+  p_new_password text
+) returns void
+language plpgsql security definer
+set search_path = public, auth, extensions
+as $$
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+
+  update auth.users
+  set encrypted_password = extensions.crypt(p_new_password, extensions.gen_salt('bf', 10)),
+      updated_at = now()
+  where id = p_user_id;
+end;
+$$;
+
+-- Delete a user account
+create or replace function admin_delete_user(p_user_id uuid)
+returns void
+language plpgsql security definer
+set search_path = public, auth, extensions
+as $$
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+  delete from auth.users where id = p_user_id;
+end;
+$$;
+
+-- List users for a school (or all if null)
+-- Returns JSONB to avoid return-type mismatch issues
+drop function if exists admin_list_users(text);
+create or replace function admin_list_users(p_school_id text default null)
+returns jsonb
+language plpgsql security definer
+set search_path = public, auth
+as $$
+declare
+  result jsonb;
+  has_pa boolean;
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+
+  -- Check if parent_accounts table exists
+  select exists(
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'parent_accounts'
+  ) into has_pa;
+
+  if has_pa then
+    select coalesce(jsonb_agg(row_order), '[]'::jsonb) into result
+    from (
+      select jsonb_build_object(
+        'user_id', u.id,
+        'email', u.email,
+        'role', p.role,
+        'school_id', p.school_id,
+        'phone', coalesce(pa.phone, u.raw_user_meta_data->>'phone', ''),
+        'full_name', coalesce(pa.full_name, u.raw_user_meta_data->>'full_name', ''),
+        'created_at', u.created_at,
+        'must_change_pw', coalesce(pa.must_change_password, false)
+      ) as row_order
+      from auth.users u
+      join public.profiles p on p.id = u.id
+      left join public.parent_accounts pa on pa.id = u.id
+      where (p_school_id is null or p.school_id = p_school_id)
+      order by
+        case p.role
+          when 'super_admin' then 0
+          when 'school_admin' then 1
+          when 'teacher' then 2
+          when 'parent' then 3
+          else 4
+        end,
+        u.created_at desc
+    ) sub;
+  else
+    select coalesce(jsonb_agg(row_order), '[]'::jsonb) into result
+    from (
+      select jsonb_build_object(
+        'user_id', u.id,
+        'email', u.email,
+        'role', p.role,
+        'school_id', p.school_id,
+        'phone', coalesce(u.raw_user_meta_data->>'phone', ''),
+        'full_name', coalesce(u.raw_user_meta_data->>'full_name', ''),
+        'created_at', u.created_at,
+        'must_change_pw', false
+      ) as row_order
+      from auth.users u
+      join public.profiles p on p.id = u.id
+      where (p_school_id is null or p.school_id = p_school_id)
+      order by
+        case p.role
+          when 'super_admin' then 0
+          when 'school_admin' then 1
+          when 'teacher' then 2
+          when 'parent' then 3
+          else 4
+        end,
+        u.created_at desc
+    ) sub;
+  end if;
+
+  return result;
+end;
+$$;
+
+-- Parent: change own password and clear must_change flag
+create or replace function parent_change_password(p_new_password text)
+returns void
+language plpgsql security definer
+set search_path = public, auth, extensions
+as $$
+begin
+  if length(p_new_password) < 8 then
+    raise exception 'Password must be at least 8 characters';
+  end if;
+  if p_new_password !~ '[A-Z]' then
+    raise exception 'Password must contain at least one uppercase letter';
+  end if;
+  if p_new_password !~ '[0-9]' then
+    raise exception 'Password must contain at least one number';
+  end if;
+  if p_new_password !~ '[^a-zA-Z0-9]' then
+    raise exception 'Password must contain at least one special character';
+  end if;
+
+  update auth.users
+  set encrypted_password = extensions.crypt(p_new_password, extensions.gen_salt('bf', 10)),
+      updated_at = now()
+  where id = auth.uid();
+
+  update parent_accounts
+  set must_change_password = false
+  where id = auth.uid();
+end;
+$$;
+
+-- Add school (super admin)
+create or replace function admin_add_school(
+  p_id text,
+  p_name text,
+  p_subdomain text,
+  p_region text default null
+) returns void
+language plpgsql security definer
+set search_path = public
+as $$
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+
+  insert into schools (id, name, subdomain, region, status)
+  values (p_id, p_name, p_subdomain, coalesce(p_region, ''), 'active');
+
+  insert into subscriptions (id, school_id, package_id, status, billing_cycle)
+  values ('sub_' || lower(replace(p_id, '-', '_')), p_id, 'starter', 'active', 'monthly');
+end;
+$$;
+
+-- Reset a table's data for a specific school (bypasses RLS)
+create or replace function admin_reset_table(p_school_id text, p_table text)
+returns integer
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  allowed text[] := array[
+    'students','fee_payments','fee_structures','fee_items',
+    'attendance','grades','exams','exam_results',
+    'announcements','library_books','library_loans',
+    'transport_routes','transport_vehicles','transport_assignments',
+    'timetable_slots','staff','payroll_runs','payslips',
+    'subjects','teachers','class_subjects','class_subject_teachers'
+  ];
+  cnt integer;
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+  if not (p_table = any(allowed)) then
+    raise exception 'Table not allowed: %', p_table;
+  end if;
+  execute format('delete from %I where school_id = $1', p_table) using p_school_id;
+  get diagnostics cnt = row_count;
+  return cnt;
+end;
+$$;
+
+-- Backup: read all data from a table for a school (bypasses RLS)
+create or replace function admin_backup_table(p_school_id text, p_table text)
+returns jsonb
+language plpgsql security definer
+set search_path = public
+as $$
+declare
+  allowed text[] := array[
+    'students','fee_payments','fee_structures','fee_items',
+    'attendance','grades','exams','exam_results',
+    'announcements','library_books','library_loans',
+    'transport_routes','transport_vehicles','transport_assignments'
+  ];
+  result jsonb;
+begin
+  if not is_super_admin() then
+    raise exception 'Not authorized';
+  end if;
+  if not (p_table = any(allowed)) then
+    raise exception 'Table not allowed: %', p_table;
+  end if;
+  execute format('select coalesce(jsonb_agg(row_to_json(t)), ''[]''::jsonb) from %I t where t.school_id = $1', p_table) into result using p_school_id;
+  return result;
+end;
+$$;
+
+-- Super admin: allow writing to schools table
+drop policy if exists p_schools_write on schools;
+create policy p_schools_write on schools for all to authenticated
+  using (is_super_admin()) with check (is_super_admin());
+
+-- Parent: read students linked by guardian_phone
+drop policy if exists p_students_parent on students;
+create policy p_students_parent on students for select to authenticated
+  using (
+    exists (
+      select 1 from parent_accounts pa
+      where pa.id = auth.uid()
+        and pa.school_id = students.school_id
+        and pa.phone = students.guardian_phone
+    )
+  );
+
+-- Parent: read fee payments for their children
+drop policy if exists p_feepay_parent on fee_payments;
+create policy p_feepay_parent on fee_payments for select to authenticated
+  using (
+    exists (
+      select 1 from students s
+      join parent_accounts pa on pa.phone = s.guardian_phone and pa.school_id = s.school_id
+      where s.id = fee_payments.student_id and pa.id = auth.uid()
+    )
+  );
+
+-- Parent: read fee structures for their children's school
+drop policy if exists p_feestr_parent on fee_structures;
+create policy p_feestr_parent on fee_structures for select to authenticated
+  using (
+    exists (
+      select 1 from parent_accounts pa
+      where pa.id = auth.uid() and pa.school_id = fee_structures.school_id
+    )
+  );
+
+drop policy if exists p_feeitems_parent on fee_items;
+create policy p_feeitems_parent on fee_items for select to authenticated
+  using (
+    exists (
+      select 1 from fee_structures fs
+      join parent_accounts pa on pa.school_id = fs.school_id
+      where fs.id = fee_items.structure_id and pa.id = auth.uid()
+    )
+  );
+
+-- Parent: read school info
+-- (p_schools_read already allows if id = my_school(), and parent profile has school_id)
+
+-- Parent: read announcements for their school
+drop policy if exists p_ann_parent on announcements;
+create policy p_ann_parent on announcements for select to authenticated
+  using (
+    exists (
+      select 1 from parent_accounts pa
+      where pa.id = auth.uid() and pa.school_id = announcements.school_id
+    )
+    and (audience = 'all' or audience = 'parents')
+  );
+
+-- M-Pesa: parent can insert transactions (to initiate payment)
+drop policy if exists p_mpesa_tx_parent_insert on mpesa_transactions;
+create policy p_mpesa_tx_parent_insert on mpesa_transactions for insert to authenticated
+  with check (parent_id = auth.uid());
+
+-- ---------- 7. GRANTS ----------------------------------------
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on all tables in schema public to anon;
 grant usage, select on all sequences in schema public to authenticated;
 grant execute on all functions in schema public to anon, authenticated;
-
--- ---------- 9. EXISTING school_admin ACCOUNTS ------------------
--- Older demo profiles were created as 'super_admin' by the original
--- handle_new_user() trigger even when meant to run a single school.
--- If you already have a school_admin, no action needed — this
--- migration only changes behaviour for NEW sign-ups.
-
--- To make one of your existing teachers.email rows loggable in
--- immediately without waiting for them to sign up fresh, have them
--- sign up on /teacher/ with that exact email — the trigger above
--- claims the match automatically.
-
--- Verify:
---   select id, name, email, auth_user_id from teachers where school_id='SCH-10428';
---   select id, staff_id, kind, balance, status from staff_deductions;

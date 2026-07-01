@@ -50,24 +50,86 @@
   .hero-meta .m .l{font-size:12.5px;color:var(--muted);margin-top:2px;}
   @media(max-width:520px){h1{font-size:40px;}}
 
-  /* hero visual — stylised dashboard */
-  .shot{position:relative;animation:up .8s .1s both;}
-  .shot .win{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 30px 70px rgba(16,24,40,.16);overflow:hidden;}
-  .shot .bar{display:flex;align-items:center;gap:7px;padding:12px 15px;border-bottom:1px solid var(--line);background:#FCFDFE;}
-  .shot .bar i{width:10px;height:10px;border-radius:50%;display:block;}
-  .shot .body{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-  .shot .kpi{border:1px solid var(--line);border-radius:11px;padding:12px 13px;}
-  .shot .kpi .l{font-size:10.5px;color:var(--muted);}
-  .shot .kpi .v{font-size:20px;font-weight:700;margin-top:3px;letter-spacing:-.02em;}
-  .shot .chart{grid-column:1/-1;border:1px solid var(--line);border-radius:11px;padding:14px;}
-  .shot .chart .t{font-size:11.5px;font-weight:600;color:var(--ink2);margin-bottom:12px;}
-  .shot .bars{display:flex;align-items:flex-end;gap:10px;height:90px;}
-  .shot .bars span{flex:1;border-radius:5px 5px 0 0;transform-origin:bottom;animation:grow .9s both;}
-  .badge-float{position:absolute;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(16,24,40,.12);padding:11px 14px;display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;animation:floaty 4s ease-in-out infinite;}
+  /* hero device showcase */
+  .devices{position:relative;animation:up .8s .1s both;perspective:1200px;display:flex;align-items:center;justify-content:center;min-height:440px;}
+
+  /* laptop */
+  .laptop{position:relative;z-index:2;transform:rotateY(-8deg) rotateX(4deg);transform-style:preserve-3d;transition:transform .5s;}
+  .laptop:hover{transform:rotateY(-2deg) rotateX(1deg);}
+  .laptop .lid{width:380px;background:#1A1D26;border-radius:12px 12px 0 0;padding:8px 8px 0;box-shadow:0 30px 60px rgba(16,24,40,.22);}
+  .laptop .cam{width:6px;height:6px;border-radius:50%;background:#333;margin:0 auto 5px;}
+  .laptop .screen{background:#fff;border-radius:4px 4px 0 0;overflow:hidden;aspect-ratio:16/10;}
+  .laptop .base{width:420px;height:14px;background:linear-gradient(180deg,#2A2D36,#1A1D26);border-radius:0 0 8px 8px;margin:-1px auto 0;position:relative;}
+  .laptop .base::before{content:"";position:absolute;top:2px;left:50%;transform:translateX(-50%);width:60px;height:4px;border-radius:2px;background:#333;}
+
+  /* phone */
+  .phone{position:absolute;z-index:3;background:#1A1D26;border-radius:22px;padding:6px;box-shadow:0 20px 50px rgba(16,24,40,.28);transition:transform .4s;}
+  .phone .notch{width:60px;height:6px;border-radius:3px;background:#333;margin:2px auto 4px;}
+  .phone .pscreen{background:#fff;border-radius:16px;overflow:hidden;width:150px;height:280px;}
+  .phone-l{left:-40px;bottom:-20px;transform:rotate(-6deg);animation:floaty 5s ease-in-out infinite;}
+  .phone-r{right:-36px;top:-10px;transform:rotate(6deg);animation:floaty 5s 1.5s ease-in-out infinite;}
+  .phone:hover{transform:rotate(0deg) scale(1.04);}
+
+  /* miniature UI inside devices */
+  .mini-sidebar{background:#fff;border-right:1px solid #EAECEF;width:56px;float:left;height:100%;padding:6px 4px;}
+  .mini-sidebar .dot{width:8px;height:8px;border-radius:3px;margin:3px auto;background:#E7F6F3;}
+  .mini-sidebar .dot.active{background:#0E9384;}
+  .mini-main{margin-left:56px;padding:8px;overflow:hidden;}
+
+  .mini-topbar{background:#fff;border-bottom:1px solid #EAECEF;padding:5px 8px;display:flex;align-items:center;gap:5px;}
+  .mini-topbar .logo-sm{width:14px;height:14px;border-radius:4px;background:linear-gradient(135deg,#12B3A1,#0B6E63);}
+  .mini-topbar span{font-size:6px;font-weight:700;color:#15171E;}
+
+  .mini-kpi{display:flex;gap:4px;margin-bottom:5px;}
+  .mini-kpi .k{flex:1;border:1px solid #E8EAED;border-radius:5px;padding:4px 5px;}
+  .mini-kpi .k .lb{font-size:4px;color:#98A2B3;text-transform:uppercase;font-weight:600;letter-spacing:.03em;}
+  .mini-kpi .k .vl{font-size:8px;font-weight:700;margin-top:1px;}
+
+  .mini-chart{border:1px solid #E8EAED;border-radius:5px;padding:4px 5px;}
+  .mini-chart .ct{font-size:5px;font-weight:600;color:#475467;margin-bottom:3px;}
+  .mini-bars{display:flex;align-items:flex-end;gap:3px;height:32px;}
+  .mini-bars span{flex:1;border-radius:2px 2px 0 0;transform-origin:bottom;animation:grow .9s both;}
+
+  .mini-table{margin-top:5px;}
+  .mini-table .hdr{display:flex;gap:2px;margin-bottom:2px;}
+  .mini-table .hdr span{font-size:3.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;flex:1;}
+  .mini-table .row{display:flex;gap:2px;padding:2px 0;border-bottom:1px solid #F2F3F5;}
+  .mini-table .row span{font-size:4.5px;color:#344054;flex:1;}
+  .mini-table .row span.bold{font-weight:700;color:#15171E;}
+  .mini-table .row .pill-sm{font-size:3.5px;padding:1px 4px;border-radius:8px;font-weight:700;}
+  .mini-table .row .pill-green{background:#ECFDF3;color:#067647;}
+  .mini-table .row .pill-amber{background:#FFF6ED;color:#C2410C;}
+
+  /* phone miniature */
+  .pmini-head{background:linear-gradient(135deg,#0E9384,#0B6E63);color:#fff;padding:8px 8px 12px;border-radius:0;}
+  .pmini-head .greeting{font-size:5px;color:rgba(255,255,255,.8);}
+  .pmini-head .school{font-size:7px;font-weight:700;}
+  .pmini-body{padding:6px 8px;background:#F4F6F8;}
+  .pmini-card{background:#fff;border-radius:6px;padding:5px 6px;margin-bottom:4px;border:1px solid #E8EAED;}
+  .pmini-card .lb{font-size:3.5px;color:#98A2B3;text-transform:uppercase;font-weight:600;}
+  .pmini-card .vl{font-size:7px;font-weight:700;margin-top:1px;}
+  .pmini-row{display:flex;gap:3px;margin-bottom:4px;}
+
+  .badge-float{position:absolute;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(16,24,40,.12);padding:11px 14px;display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;animation:floaty 4s ease-in-out infinite;z-index:10;}
   .badge-float .ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;}
   .bf1{top:-22px;left:-26px;}
   .bf2{bottom:-20px;right:-22px;animation-delay:1.2s;}
-  @media(max-width:920px){.bf1{left:6px;}.bf2{right:6px;}}
+
+  @media(max-width:920px){
+    .devices{min-height:340px;perspective:800px;margin-top:20px;}
+    .laptop .lid{width:280px;}
+    .laptop .base{width:310px;}
+    .phone .pscreen{width:120px;height:220px;}
+    .phone-l{left:-20px;bottom:0px;}
+    .phone-r{right:-16px;top:0px;}
+    .bf1{left:6px;}.bf2{right:6px;}
+  }
+  @media(max-width:520px){
+    .phone-l{display:none;}
+    .laptop .lid{width:240px;}
+    .laptop .base{width:268px;}
+    .phone-r{right:0;top:-10px;}
+  }
 
   /* trust */
   .trust{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#FBFCFD;}
@@ -154,7 +216,8 @@
       <a href="#pricing">Pricing</a>
     </div>
     <div class="row" style="display:flex;gap:10px;align-items:center;">
-      <a href="school/" class="btn ghost">Sign in</a>
+      <a href="parent/" class="btn ghost">Parent portal</a>
+      <a href="school/" class="btn ghost">School login</a>
       <a href="#cta" class="btn primary">Book a demo</a>
     </div>
   </div>
@@ -176,23 +239,139 @@
         <div class="m"><div class="n">99.9%</div><div class="l">Uptime, daily backups</div></div>
       </div>
     </div>
-    <div class="shot">
-      <div class="badge-float bf1"><span class="ic" style="background:#E7F8EF;color:#067647;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Fees collected</div>
+    <div class="devices">
+      <div class="badge-float bf1"><span class="ic" style="background:#E7F8EF;color:#067647;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>KES 2.4M collected</div>
       <div class="badge-float bf2"><span class="ic" style="background:#EEF0FF;color:#4F46E5;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 19V9M10 19V4M16 19v-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>+18% this term</div>
-      <div class="win">
-        <div class="bar"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span class="mono" style="margin-left:10px;font-size:11px;color:#98A2B3;">samaji.app/school</span></div>
-        <div class="body">
-          <div class="kpi"><div class="l">TOTAL STUDENTS</div><div class="v">1,284</div></div>
-          <div class="kpi"><div class="l">FEES COLLECTED</div><div class="v" style="color:#067647;">KES 8.4M</div></div>
-          <div class="chart">
-            <div class="t">Enrollment by class</div>
-            <div class="bars">
-              <span style="height:50%;background:#0E9384;animation-delay:.1s;"></span>
-              <span style="height:72%;background:#4F46E5;animation-delay:.2s;"></span>
-              <span style="height:60%;background:#F59E0B;animation-delay:.3s;"></span>
-              <span style="height:88%;background:#0E9384;animation-delay:.4s;"></span>
-              <span style="height:46%;background:#6D28D9;animation-delay:.5s;"></span>
-              <span style="height:66%;background:#EC4899;animation-delay:.6s;"></span>
+
+      <!-- PHONE LEFT — Fees & Invoicing (mobile view) -->
+      <div class="phone phone-l">
+        <div class="notch"></div>
+        <div class="pscreen">
+          <div class="pmini-head">
+            <div class="greeting">Fees &amp; Invoicing</div>
+            <div class="school">Greenwood Int. Academy</div>
+          </div>
+          <div class="pmini-body">
+            <div class="pmini-row">
+              <div class="pmini-card" style="flex:1;"><div class="lb">Billed</div><div class="vl" style="color:#4F46E5;">KES 4.8M</div></div>
+              <div class="pmini-card" style="flex:1;"><div class="lb">Collected</div><div class="vl" style="color:#067647;">KES 2.4M</div></div>
+            </div>
+            <div class="pmini-row">
+              <div class="pmini-card" style="flex:1;"><div class="lb">Outstanding</div><div class="vl" style="color:#C2410C;">KES 2.4M</div></div>
+              <div class="pmini-card" style="flex:1;"><div class="lb">Rate</div><div class="vl" style="color:#6D28D9;">50%</div></div>
+            </div>
+            <div class="pmini-card">
+              <div class="lb" style="margin-bottom:3px;">Student ledger</div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #F2F3F5;"><span style="font-size:5px;font-weight:600;">Aisha Mohammed</span><span style="font-size:5px;color:#067647;font-weight:700;">Cleared</span></div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #F2F3F5;"><span style="font-size:5px;font-weight:600;">Brian Otieno</span><span style="font-size:5px;color:#C2410C;font-weight:700;">KES 15,000</span></div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #F2F3F5;"><span style="font-size:5px;font-weight:600;">Catherine Wanjiru</span><span style="font-size:5px;color:#067647;font-weight:700;">Cleared</span></div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #F2F3F5;"><span style="font-size:5px;font-weight:600;">David Kiprono</span><span style="font-size:5px;color:#C2410C;font-weight:700;">KES 8,500</span></div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0;"><span style="font-size:5px;font-weight:600;">Esther Achieng</span><span style="font-size:5px;color:#D97706;font-weight:700;">KES 3,200</span></div>
+            </div>
+            <div style="margin-top:4px;background:#0E9384;color:#fff;text-align:center;padding:4px;border-radius:5px;font-size:5px;font-weight:700;">+ Collect Payment</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LAPTOP — School Dashboard -->
+      <div class="laptop">
+        <div class="lid">
+          <div class="cam"></div>
+          <div class="screen">
+            <div style="display:flex;height:100%;">
+              <div class="mini-sidebar">
+                <div style="width:16px;height:16px;border-radius:5px;background:linear-gradient(135deg,#12B3A1,#0B6E63);margin:2px auto 6px;display:flex;align-items:center;justify-content:center;"><svg width="8" height="8" viewBox="0 0 24 24" fill="#fff"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/></svg></div>
+                <div class="dot active"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot" style="background:#EEF0FF;"></div>
+                <div class="dot" style="background:#EEF0FF;"></div>
+                <div class="dot" style="background:#EEF0FF;"></div>
+                <div class="dot" style="background:#F1ECFE;"></div>
+              </div>
+              <div class="mini-main">
+                <div style="font-size:7px;font-weight:700;margin-bottom:5px;color:#15171E;">Dashboard</div>
+                <div class="mini-kpi">
+                  <div class="k"><div class="lb">Students</div><div class="vl" style="color:#15171E;">842</div></div>
+                  <div class="k"><div class="lb">Collected</div><div class="vl" style="color:#067647;">KES 2.4M</div></div>
+                  <div class="k"><div class="lb">Outstanding</div><div class="vl" style="color:#C2410C;">KES 1.2M</div></div>
+                  <div class="k"><div class="lb">Attendance</div><div class="vl" style="color:#4F46E5;">96.4%</div></div>
+                </div>
+                <div class="mini-chart">
+                  <div class="ct">Fee collection by class</div>
+                  <div class="mini-bars">
+                    <span style="height:45%;background:#0E9384;animation-delay:.15s;"></span>
+                    <span style="height:72%;background:#4F46E5;animation-delay:.25s;"></span>
+                    <span style="height:58%;background:#F59E0B;animation-delay:.35s;"></span>
+                    <span style="height:88%;background:#0E9384;animation-delay:.45s;"></span>
+                    <span style="height:40%;background:#6D28D9;animation-delay:.55s;"></span>
+                    <span style="height:64%;background:#EC4899;animation-delay:.65s;"></span>
+                    <span style="height:52%;background:#06B6D4;animation-delay:.75s;"></span>
+                    <span style="height:70%;background:#4F46E5;animation-delay:.85s;"></span>
+                  </div>
+                  <div style="display:flex;gap:6px;margin-top:3px;">
+                    <span style="font-size:3.5px;color:#98A2B3;">PP1</span>
+                    <span style="font-size:3.5px;color:#98A2B3;">PP2</span>
+                    <span style="font-size:3.5px;color:#98A2B3;">Gr1</span>
+                    <span style="font-size:3.5px;color:#98A2B3;">Gr2</span>
+                    <span style="font-size:3.5px;color:#98A2B3;">Gr3</span>
+                    <span style="font-size:3.5px;color:#98A2B3;">Gr4</span>
+                    <span style="font-size:3.5px;color:#98A2B3;">Gr5</span>
+                    <span style="font-size:3.5px;color:#98A2B3;">Gr6</span>
+                  </div>
+                </div>
+                <div class="mini-table">
+                  <div style="font-size:5px;font-weight:600;color:#475467;margin:5px 0 3px;">Recent fee payments</div>
+                  <div class="hdr"><span>Student</span><span>Amount</span><span>Method</span><span>Status</span></div>
+                  <div class="row"><span class="bold">Aisha M.</span><span>KES 15,000</span><span>M-Pesa</span><span><span class="pill-sm pill-green">Cleared</span></span></div>
+                  <div class="row"><span class="bold">Brian O.</span><span>KES 10,000</span><span>Cash</span><span><span class="pill-sm pill-amber">Partial</span></span></div>
+                  <div class="row"><span class="bold">Cathy W.</span><span>KES 15,000</span><span>Bank</span><span><span class="pill-sm pill-green">Cleared</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="base"></div>
+      </div>
+
+      <!-- PHONE RIGHT — Parent Portal -->
+      <div class="phone phone-r">
+        <div class="notch"></div>
+        <div class="pscreen">
+          <div class="pmini-head" style="background:linear-gradient(135deg,#0E9384,#0B6E63);">
+            <div class="greeting">Parent Portal</div>
+            <div class="school">Welcome, Mrs. Wanjiku</div>
+          </div>
+          <div class="pmini-body">
+            <div class="pmini-card">
+              <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                <div style="width:14px;height:14px;border-radius:50%;background:#E7F6F3;display:flex;align-items:center;justify-content:center;font-size:5px;font-weight:700;color:#0E9384;">A</div>
+                <div><div style="font-size:6px;font-weight:700;color:#15171E;">Aisha Mohammed</div><div style="font-size:4px;color:#98A2B3;">Grade 5 &middot; Adm: 2024/001</div></div>
+              </div>
+              <div class="pmini-row">
+                <div style="flex:1;background:#ECFDF3;border-radius:4px;padding:3px 4px;"><div style="font-size:3.5px;color:#067647;font-weight:600;">FEE BALANCE</div><div style="font-size:6px;font-weight:700;color:#067647;">Cleared</div></div>
+                <div style="flex:1;background:#EEF0FF;border-radius:4px;padding:3px 4px;"><div style="font-size:3.5px;color:#4F46E5;font-weight:600;">ATTENDANCE</div><div style="font-size:6px;font-weight:700;color:#4F46E5;">96%</div></div>
+              </div>
+            </div>
+            <div class="pmini-card">
+              <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                <div style="width:14px;height:14px;border-radius:50%;background:#EEF0FF;display:flex;align-items:center;justify-content:center;font-size:5px;font-weight:700;color:#4F46E5;">B</div>
+                <div><div style="font-size:6px;font-weight:700;color:#15171E;">Brian Otieno</div><div style="font-size:4px;color:#98A2B3;">Grade 3 &middot; Adm: 2024/015</div></div>
+              </div>
+              <div class="pmini-row">
+                <div style="flex:1;background:#FFF6ED;border-radius:4px;padding:3px 4px;"><div style="font-size:3.5px;color:#C2410C;font-weight:600;">FEE BALANCE</div><div style="font-size:6px;font-weight:700;color:#C2410C;">KES 15K</div></div>
+                <div style="flex:1;background:#EEF0FF;border-radius:4px;padding:3px 4px;"><div style="font-size:3.5px;color:#4F46E5;font-weight:600;">ATTENDANCE</div><div style="font-size:6px;font-weight:700;color:#4F46E5;">92%</div></div>
+              </div>
+            </div>
+            <div class="pmini-card">
+              <div class="lb" style="margin-bottom:2px;">Announcements</div>
+              <div style="font-size:5px;font-weight:600;color:#15171E;">Term 2 Opening Date</div>
+              <div style="font-size:4px;color:#667085;">School reopens on 5th May...</div>
+            </div>
+            <div class="pmini-card">
+              <div class="lb" style="margin-bottom:2px;">Recent Payment</div>
+              <div style="display:flex;justify-content:space-between;"><span style="font-size:5px;font-weight:700;color:#067647;">KES 15,000</span><span style="font-size:4px;color:#98A2B3;">via M-Pesa</span></div>
             </div>
           </div>
         </div>
@@ -335,18 +514,23 @@
 <footer>
   <div class="wrap inner">
     <div class="logo"><span class="mark"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></span>Samaji</div>
-    <div class="row" style="display:flex;gap:22px;">
+    <div class="row" style="display:flex;gap:22px;flex-wrap:wrap;">
       <a href="#features" class="muted">Features</a>
       <a href="#pricing" class="muted">Pricing</a>
+      <a href="parent/" class="muted">Parent portal</a>
+      <a href="teacher/" class="muted">Teacher portal</a>
       <a href="admin/" class="muted">Provider console</a>
-      <a href="school/" class="muted">Sign in</a>
+      <a href="school/" class="muted">School login</a>
     </div>
-    <div class="muted">© <span id="yr"></span> Pillartech Solutions. All rights reserved.</div>
+    <div class="muted" style="text-align:center;">
+      © <span id="yr"></span> Pillartech Solutions. All rights reserved.<br>
+      <span style="font-size:12px;">Technical Support: <a href="https://wa.me/254738522942" style="color:#25D366;text-decoration:none;">WhatsApp</a> · <a href="tel:+254738522942" style="color:#0E9384;text-decoration:none;">0738 522 942</a></span>
+    </div>
   </div>
 </footer>
 
 <script>
-  document.getElementById("yr").textContent=new Date().getFullYear();
+  (function(){var fb=Math.max(2025,new Date().getFullYear()),el=document.getElementById("yr");if(el)el.textContent=fb;try{fetch("https://worldtimeapi.org/api/timezone/Africa/Nairobi").then(function(r){return r.json()}).then(function(d){if(d&&d.datetime&&el)el.textContent=new Date(d.datetime).getFullYear()}).catch(function(){})}catch(e){}})();
   // reveal on scroll
   var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.style.animationPlayState="running";io.unobserve(e.target);}});},{threshold:.12});
   document.querySelectorAll(".reveal").forEach(function(el){el.style.animationPlayState="paused";io.observe(el);});

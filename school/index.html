@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Samaji — School Portal</title>
+<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/styles.css">
 <style>
@@ -95,7 +98,7 @@
         <button class="signin" id="submit">Sign in securely</button>
         <div class="msg" id="msg"></div>
         <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
-        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span></div>
+        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span><br><span style="font-size:11px;">Support: <a href="https://wa.me/254738522942" style="color:#25D366;">WhatsApp</a> &middot; <a href="tel:+254738522942" style="color:#0E9384;">0738 522 942</a></span></div>
       </div>
     </div>
   </div>
@@ -103,6 +106,8 @@
   <!-- APP -->
   <div id="app">
     <div class="layout">
+      <button class="hamburger" id="hamburger" aria-label="Menu">☰</button>
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
       <aside>
         <div class="school"><div class="logo teal" id="school-logo">G</div>
           <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="school-name">School</div><div style="font-size:11px;color:#98A2B3;" id="school-plan">—</div></div>
@@ -123,7 +128,7 @@
 
   <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="../assets/config.js"></script>
 <script src="../assets/app.js"></script>
 <script src="../assets/payslip.js"></script>
@@ -134,7 +139,7 @@
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
   var SCHOOL=null, FLAGS={};
-  var _yr=new Date().getFullYear(); ["year","year-b"].forEach(function(id){ var e=document.getElementById(id); if(e) e.textContent=_yr; });
+  // year set by app.js samajiYear()
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
 
   $("submit").onclick = async function(){
@@ -298,6 +303,21 @@
       tiles.appendChild(b);
     });
   }
+
+  // Mobile sidebar toggle
+  (function(){
+    var ham = $("hamburger"), ovr = $("sidebar-overlay");
+    var aside = document.querySelector(".layout aside");
+    function openSidebar(){ aside.classList.add("open"); ovr.classList.add("open"); }
+    function closeSidebar(){ aside.classList.remove("open"); ovr.classList.remove("open"); }
+    ham.onclick = function(){ aside.classList.contains("open") ? closeSidebar() : openSidebar(); };
+    ovr.onclick = closeSidebar;
+    aside.addEventListener("click", function(e){
+      if (e.target.classList.contains("navitem") || e.target.closest(".navitem") || e.target.id === "signout") {
+        closeSidebar();
+      }
+    });
+  })();
 
   $("nav-dashboard").onclick = showDashboard;
   $("nav-settings").onclick = showSettings;

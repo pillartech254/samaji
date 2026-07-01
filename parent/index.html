@@ -1,0 +1,1357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samaji — Parent Portal</title>
+<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:#F4F6F8;color:#1A1D26;}
+
+  /* ===== BOOT SPLASH ===== */
+  #boot{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;}
+
+  /* ===== SPLIT LOGIN ===== */
+  #auth{display:flex;min-height:100vh;background:#fff;}
+  .login-brand{flex:1;position:relative;overflow:hidden;background:linear-gradient(160deg,#0E9384 0%,#0B6E63 55%,#0A4F49 100%);color:#fff;padding:56px 56px 40px;display:flex;flex-direction:column;}
+  .login-brand .glow{position:absolute;border-radius:50%;filter:blur(8px);opacity:.18;background:#fff;}
+  .login-brand .g1{width:380px;height:380px;top:-120px;right:-120px;}
+  .login-brand .g2{width:260px;height:260px;bottom:-90px;left:-80px;opacity:.12;}
+  .login-brand .blogo{display:flex;align-items:center;gap:12px;position:relative;z-index:2;}
+  .login-brand .blogo .mark{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.16);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px;border:1px solid rgba(255,255,255,.25);}
+  .login-brand h2{position:relative;z-index:2;margin:auto 0 0;font-size:32px;font-weight:700;letter-spacing:-.025em;line-height:1.2;max-width:16ch;text-wrap:balance;}
+  .login-brand .lead{position:relative;z-index:2;margin:16px 0 28px;font-size:15px;line-height:1.6;color:rgba(255,255,255,.82);max-width:42ch;}
+  .trust{position:relative;z-index:2;display:flex;flex-direction:column;gap:13px;}
+  .trust .item{display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.92);font-weight:500;}
+  .trust .ic{flex:none;width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;}
+  .login-brand .bfoot{position:relative;z-index:2;margin-top:40px;font-size:12px;color:rgba(255,255,255,.6);}
+  .login-form{flex:none;width:480px;max-width:100%;display:flex;align-items:center;justify-content:center;padding:48px 56px;}
+  .login-inner{width:100%;max-width:340px;}
+  .login-inner .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0E9384;}
+  .login-inner h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:8px 0 4px;color:#15171E;}
+  .login-inner .sub{font-size:13.5px;color:#667085;margin:0 0 26px;}
+  .login-inner label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:16px 0 6px;}
+  .login-inner input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;transition:border-color .12s, box-shadow .12s;}
+  .login-inner input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  .login-inner .signin{width:100%;font-size:14px;font-weight:600;color:#fff;background:#0E9384;border:none;border-radius:10px;padding:13px;cursor:pointer;font-family:inherit;margin-top:22px;transition:background .12s;}
+  .login-inner .signin:hover{background:#0B7A6E;}
+  .login-inner .signin:disabled{opacity:.6;cursor:default;}
+  .login-inner .hint{text-align:center;font-size:12.5px;color:#667085;margin-top:18px;line-height:1.5;}
+  .login-inner .secure{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;color:#98A2B3;margin-top:18px;}
+  .login-inner .pfoot{text-align:center;font-size:12px;color:#B0B5BE;margin-top:28px;padding-top:18px;border-top:1px solid #F0F1F4;}
+  .login-inner .pfoot strong{color:#667085;font-weight:600;}
+  @media (max-width:840px){
+    .login-brand{display:none;}
+    .login-form{flex:1;width:auto;padding:32px 24px;}
+  }
+
+  /* ===== MSG ===== */
+  .msg{text-align:center;font-size:13px;margin-top:12px;min-height:20px;}
+  .msg.err{color:#D92D20;}
+  .msg.ok{color:#0E9384;}
+
+  /* ===== APP LAYOUT ===== */
+  #app{display:none;min-height:100vh;background:#F4F6F8;}
+  .topbar{background:#fff;border-bottom:1px solid #EAECEF;padding:0 24px;display:flex;align-items:center;height:56px;position:sticky;top:0;z-index:50;}
+  .topbar .school-info{display:flex;align-items:center;gap:10px;min-width:0;flex:1;}
+  .topbar .school-logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex:none;}
+  .topbar .school-label{font-size:14px;font-weight:700;color:#15171E;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .topbar .parent-name{font-size:12.5px;color:#667085;margin-left:auto;white-space:nowrap;padding:0 16px;}
+  .topbar .btn-signout{background:none;border:1px solid #DDE1E6;border-radius:8px;padding:6px 14px;font-size:12.5px;font-weight:600;color:#344054;cursor:pointer;font-family:inherit;white-space:nowrap;}
+  .topbar .btn-signout:hover{background:#F6F7F9;}
+  @media (max-width:600px){
+    .topbar{padding:0 12px;height:50px;}
+    .topbar .parent-name{display:none;}
+  }
+
+  /* ===== TABS ===== */
+  .tab-bar{display:flex;gap:0;background:#fff;border-bottom:1px solid #EAECEF;padding:0 24px;overflow-x:auto;}
+  .tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:12px 18px;font-size:13.5px;font-weight:600;color:#667085;cursor:pointer;font-family:inherit;white-space:nowrap;transition:color .12s;}
+  .tab-btn:hover{color:#0E9384;}
+  .tab-btn.active{color:#0E9384;border-bottom-color:#0E9384;}
+  @media (max-width:600px){
+    .tab-bar{padding:0 8px;}
+    .tab-btn{padding:11px 14px;font-size:13px;}
+  }
+
+  /* ===== CONTENT ===== */
+  .content{max-width:900px;margin:0 auto;padding:20px 24px 60px;}
+  @media (max-width:600px){.content{padding:16px 12px 40px;}}
+
+  /* ===== WELCOME BANNER ===== */
+  .welcome-banner{background:linear-gradient(135deg,#0E9384 0%,#0A6E63 100%);color:#fff;border-radius:14px;padding:24px 28px;margin-bottom:20px;position:relative;overflow:hidden;}
+  .welcome-banner .wb-glow{position:absolute;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.08);top:-60px;right:-40px;}
+  .welcome-banner h2{font-size:22px;font-weight:700;margin:0 0 4px;position:relative;z-index:1;}
+  .welcome-banner p{font-size:13.5px;margin:0;opacity:.85;position:relative;z-index:1;}
+  .welcome-stats{display:flex;gap:16px;margin-top:16px;position:relative;z-index:1;}
+  .ws-item{background:rgba(255,255,255,.15);border-radius:10px;padding:12px 16px;flex:1;min-width:0;}
+  .ws-item .ws-val{font-size:20px;font-weight:700;line-height:1.2;}
+  .ws-item .ws-lbl{font-size:11px;opacity:.8;margin-top:2px;}
+  @media (max-width:600px){
+    .welcome-banner{padding:18px 16px;}
+    .welcome-banner h2{font-size:18px;}
+    .welcome-stats{gap:8px;}
+    .ws-item{padding:10px 12px;}
+    .ws-item .ws-val{font-size:16px;}
+  }
+
+  /* ===== STUDENT CARD (REDESIGNED) ===== */
+  .stu-card{background:#fff;border:1px solid #E8EAED;border-radius:14px;box-shadow:0 1px 3px rgba(16,24,40,.05);margin-bottom:18px;overflow:hidden;}
+  .stu-header{display:flex;align-items:center;gap:14px;padding:20px 22px;border-bottom:1px solid #F0F1F4;}
+  .stu-avatar{width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0E9384,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex:none;}
+  .stu-info{flex:1;min-width:0;}
+  .stu-info h3{font-size:17px;font-weight:700;margin:0;color:#15171E;line-height:1.3;}
+  .stu-info .stu-meta{font-size:12.5px;color:#667085;margin-top:2px;}
+  .stu-info .stu-meta span{margin-right:12px;}
+  .stu-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;text-transform:capitalize;}
+  .stu-badge-active{background:#E7F6F3;color:#0E9384;}
+  .stu-badge-inactive{background:#FDECEA;color:#D92D20;}
+
+  .stu-body{padding:0;}
+  .stu-section{padding:16px 22px;border-bottom:1px solid #F0F1F4;}
+  .stu-section:last-child{border-bottom:none;}
+  .stu-section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#98A2B3;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .stu-section-title svg{flex:none;}
+
+  /* Detail grid */
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;}
+  .detail-item .di-label{font-size:11.5px;color:#98A2B3;font-weight:600;}
+  .detail-item .di-value{font-size:13.5px;color:#15171E;font-weight:500;}
+  @media (max-width:500px){.detail-grid{grid-template-columns:1fr;}}
+
+  /* Fee breakdown */
+  .fee-summary{display:flex;gap:12px;margin-bottom:14px;}
+  .fee-box{flex:1;background:#F9FAFB;border:1px solid #EAECEF;border-radius:10px;padding:12px 14px;text-align:center;}
+  .fee-box .fb-val{font-size:17px;font-weight:700;color:#15171E;line-height:1.2;}
+  .fee-box .fb-lbl{font-size:11px;color:#667085;margin-top:2px;}
+  .fee-box.fb-balance{border-color:transparent;}
+  .fee-box.fb-green{background:#E7F6F3;} .fee-box.fb-green .fb-val{color:#0E9384;}
+  .fee-box.fb-amber{background:#FFF3E0;} .fee-box.fb-amber .fb-val{color:#E65100;}
+  .fee-box.fb-red{background:#FDECEA;} .fee-box.fb-red .fb-val{color:#D92D20;}
+  @media (max-width:500px){
+    .fee-summary{flex-direction:column;gap:8px;}
+  }
+
+  .fee-item-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #F5F6F7;}
+  .fee-item-row:last-child{border-bottom:none;}
+  .fee-item-row .fi-name{color:#667085;}
+  .fee-item-row .fi-amt{font-weight:600;color:#15171E;}
+
+  /* Attendance mini */
+  .att-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+  .att-dot{width:10px;height:10px;border-radius:50%;flex:none;}
+  .att-dot-present{background:#0E9384;}
+  .att-dot-absent{background:#D92D20;}
+  .att-dot-late{background:#E65100;}
+  .att-bar{flex:1;height:8px;border-radius:4px;background:#EAECEF;overflow:hidden;}
+  .att-fill{height:100%;border-radius:4px;}
+  .att-label{font-size:12px;color:#667085;min-width:40px;text-align:right;}
+  .att-summary{display:flex;gap:16px;font-size:12.5px;color:#667085;margin-top:8px;}
+  .att-summary strong{color:#15171E;}
+
+  /* Cards (generic) */
+  .card{background:#fff;border:1px solid #E8EAED;border-radius:13px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:14px;}
+  .card h3{font-size:16px;font-weight:700;margin:0 0 4px;color:#15171E;}
+  .card .meta{font-size:12.5px;color:#667085;margin-bottom:12px;}
+  .card .meta span{margin-right:14px;}
+
+  .balance-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;}
+  .bal-green{background:#E7F6F3;color:#0E9384;}
+  .bal-amber{background:#FFF3E0;color:#E65100;}
+  .bal-red{background:#FDECEA;color:#D92D20;}
+
+  .btn-mpesa{width:100%;margin-top:14px;padding:12px;background:#0E9384;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;min-height:44px;transition:background .12s;}
+  .btn-mpesa:hover{background:#0B7A6E;}
+  .btn-mpesa:disabled{opacity:.6;cursor:default;}
+
+  .btn-pay-all{width:100%;padding:14px;background:#0A4F49;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:18px;min-height:48px;transition:background .12s;}
+  .btn-pay-all:hover{background:#083E3A;}
+
+  /* ===== TABLE ===== */
+  .data-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .data-table th{text-align:left;font-size:11.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid #EAECEF;}
+  .data-table td{padding:10px 12px;border-bottom:1px solid #F0F1F4;color:#344054;}
+  @media (max-width:600px){
+    .data-table-wrap{display:none;}
+    .mobile-cards{display:block !important;}
+  }
+  @media (min-width:601px){
+    .mobile-cards{display:none !important;}
+  }
+
+  /* ===== ANNOUNCEMENT CARDS ===== */
+  .ann-card{background:#fff;border:1px solid #E8EAED;border-radius:13px;box-shadow:0 1px 2px rgba(16,24,40,.04);padding:18px;margin-bottom:14px;}
+  .ann-card h4{font-size:15px;font-weight:700;margin:0 0 6px;color:#15171E;}
+  .ann-card .ann-date{font-size:12px;color:#98A2B3;margin-bottom:10px;}
+  .ann-card .ann-body{font-size:13.5px;color:#344054;line-height:1.6;white-space:pre-wrap;}
+  .ann-badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-left:8px;}
+  .ann-badge-new{background:#E7F6F3;color:#0E9384;}
+
+  /* ===== MODALS ===== */
+  .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;}
+  .modal-box{background:#fff;border-radius:16px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;padding:28px 24px;}
+  .modal-box h2{font-size:20px;font-weight:700;margin:0 0 6px;color:#15171E;}
+  .modal-box .modal-sub{font-size:13.5px;color:#667085;margin:0 0 20px;}
+  .modal-box label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:14px 0 6px;}
+  .modal-box input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;}
+  .modal-box input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  .modal-box .modal-btn{width:100%;padding:13px;background:#0E9384;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:18px;min-height:44px;transition:background .12s;}
+  .modal-box .modal-btn:hover{background:#0B7A6E;}
+  .modal-box .modal-btn:disabled{opacity:.6;cursor:default;}
+  .modal-msg{text-align:center;font-size:13px;margin-top:10px;min-height:18px;}
+  .modal-msg.err{color:#D92D20;}
+  .modal-msg.ok{color:#0E9384;}
+
+  /* ===== PASSWORD STRENGTH ===== */
+  .pw-rules{list-style:none;padding:0;margin:10px 0 0;font-size:12.5px;}
+  .pw-rules li{padding:3px 0;color:#98A2B3;display:flex;align-items:center;gap:6px;}
+  .pw-rules li.pass{color:#0E9384;}
+  .pw-rules li .dot{width:6px;height:6px;border-radius:50%;background:#DDE1E6;flex:none;}
+  .pw-rules li.pass .dot{background:#0E9384;}
+
+  /* ===== EMPTY STATE ===== */
+  .empty{text-align:center;padding:40px 20px;color:#98A2B3;font-size:14px;}
+
+  /* ===== TOAST ===== */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:300;font-size:13.5px;font-weight:600;padding:12px 24px;border-radius:10px;display:none;max-width:90vw;text-align:center;}
+  #toast.show{display:block;}
+  #toast.ok{background:#E7F6F3;color:#0E9384;border:1px solid #A8DDD5;}
+  #toast.err{background:#FDECEA;color:#D92D20;border:1px solid #F5C6C2;}
+
+  /* ===== LOADING ===== */
+  .spinner{display:inline-block;width:20px;height:20px;border:2px solid #DDE1E6;border-top-color:#0E9384;border-radius:50%;animation:spin .6s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loading-center{text-align:center;padding:40px 0;}
+
+  /* ===== COLLAPSIBLE ===== */
+  .collapse-toggle{background:none;border:none;font-size:12px;font-weight:600;color:#0E9384;cursor:pointer;padding:6px 0;font-family:inherit;}
+  .collapse-toggle:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+
+  <!-- BOOT SPLASH -->
+  <div id="boot" style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;">
+    <div style="display:flex;align-items:center;gap:11px;opacity:.7;">
+      <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div>
+      <strong style="font-size:16px;color:#0E1424;">Samaji</strong>
+    </div>
+  </div>
+
+  <!-- AUTH -->
+  <div id="auth" style="display:none;">
+    <div class="login-brand">
+      <span class="glow g1"></span><span class="glow g2"></span>
+      <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
+      <h2>Samaji Parent Portal</h2>
+      <p class="lead">Track your child's education, pay fees, and stay connected with their school.</p>
+      <div class="trust">
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" stroke="#fff" stroke-width="1.8"/><circle cx="10" cy="7" r="4" stroke="#fff" stroke-width="1.8"/></svg></span>Monitor your child's academic progress</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#fff" stroke-width="1.8"/><path d="M2 10h20" stroke="#fff" stroke-width="1.8"/></svg></span>Pay school fees securely via M-Pesa</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="#fff" stroke-width="1.8"/><path d="M13.73 21a2 2 0 0 1-3.46 0" stroke="#fff" stroke-width="1.8"/></svg></span>Receive school announcements instantly</div>
+      </div>
+      <div class="bfoot">&copy; <span id="year-b"></span> Pillartech Solutions. All rights reserved.</div>
+    </div>
+
+    <div class="login-form">
+      <div class="login-inner">
+        <div class="eyebrow">Parent Portal</div>
+        <h1>Welcome back</h1>
+        <p class="sub">Sign in with your phone number to continue.</p>
+        <label for="phone">Phone number</label>
+        <input id="phone" type="tel" placeholder="0712345678" autocomplete="tel">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Enter your password" autocomplete="current-password">
+        <button class="signin" id="submit">Sign in</button>
+        <div class="msg" id="msg"></div>
+        <p class="hint">First time? Your phone number is your default password.</p>
+        <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
+        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span><br><span style="font-size:11px;">Support: <a href="https://wa.me/254738522942" style="color:#25D366;">WhatsApp</a> &middot; <a href="tel:+254738522942" style="color:#0E9384;">0738 522 942</a></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <div class="topbar">
+      <div class="school-info">
+        <div class="school-logo" id="school-logo">S</div>
+        <span class="school-label" id="school-name">School</span>
+      </div>
+      <span class="parent-name" id="parent-name"></span>
+      <button class="btn-signout" id="signout">Sign out</button>
+    </div>
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-children">Dashboard</button>
+      <button class="tab-btn" id="tab-payments">Payments</button>
+      <button class="tab-btn" id="tab-announcements">Announcements</button>
+    </div>
+    <div class="content" id="view"></div>
+  </div>
+
+  <!-- FORCE PASSWORD CHANGE MODAL -->
+  <div id="pw-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h2>Set a new password</h2>
+      <p class="modal-sub">For your security, please change your default password before continuing.</p>
+      <label for="pw-new">New password</label>
+      <input id="pw-new" type="password" placeholder="Enter new password">
+      <label for="pw-confirm">Confirm password</label>
+      <input id="pw-confirm" type="password" placeholder="Re-enter new password">
+      <ul class="pw-rules" id="pw-rules">
+        <li id="rule-len"><span class="dot"></span>Minimum 8 characters</li>
+        <li id="rule-upper"><span class="dot"></span>At least 1 uppercase letter</li>
+        <li id="rule-num"><span class="dot"></span>At least 1 number</li>
+        <li id="rule-special"><span class="dot"></span>At least 1 special character</li>
+      </ul>
+      <button class="modal-btn" id="pw-submit" disabled>Update password</button>
+      <div class="modal-msg" id="pw-msg"></div>
+    </div>
+  </div>
+
+  <!-- MPESA MODAL -->
+  <div id="mpesa-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box" id="mpesa-box"></div>
+  </div>
+
+  <div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../assets/config.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var $ = function(id){ return document.getElementById(id); };
+  var sb = window.getSB();
+  var SCHOOL = null;
+  var PARENT = null;
+  var USER = null;
+  var CHILDREN = [];
+  var CURRENT_TAB = "children";
+
+  // Lookup maps loaded after children
+  var classMap = {};    // class_id -> { level, stream, curriculum }
+  var dormMap = {};     // dormitory_id -> { name, gender }
+  var teacherMap = {};  // class_id -> [ { name, subject } ]
+  var attendanceMap = {}; // student_id -> { present, absent, late, total }
+
+  // year set by app.js samajiYear()
+
+  // ---- helpers ----
+  function showMsg(t, ok) {
+    var m = $("msg");
+    m.textContent = t;
+    m.className = "msg " + (ok ? "ok" : "err");
+  }
+
+  function showToast(msg, type) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.className = "show " + (type || "ok");
+    setTimeout(function(){ t.className = ""; }, 4000);
+  }
+
+  function fmtMoney(n) {
+    if (n == null) return "KES 0";
+    var num = Number(n);
+    return "KES " + num.toLocaleString("en-KE", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  }
+
+  function fmtDate(d) {
+    if (!d) return "-";
+    var dt = new Date(d);
+    return dt.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function fmtDateTime(d) {
+    if (!d) return "-";
+    var dt = new Date(d);
+    return dt.toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" }) + " " +
+           dt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function sanitizePhone(p) {
+    var digits = (p || "").replace(/[^0-9]/g, "");
+    if (digits.length === 10 && digits.charAt(0) === "0") {
+      digits = "254" + digits.substring(1);
+    }
+    return digits;
+  }
+
+  function studentName(s) {
+    var first = s.first_name || "";
+    var last = s.last_name || "";
+    var name = (first + " " + last).replace(/^\s+|\s+$/g, "");
+    return name || "Student";
+  }
+
+  function studentInitials(s) {
+    var first = (s.first_name || "").charAt(0).toUpperCase();
+    var last = (s.last_name || "").charAt(0).toUpperCase();
+    return (first + last) || "S";
+  }
+
+  // ---- idle timeout (15 min for parents) ----
+  var IDLE_MINUTES = 15;
+  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
+  var ACT_KEY = "samaji_parent_last_active";
+  var idleTimer = null;
+
+  function markActive() { try { localStorage.setItem(ACT_KEY, String(Date.now())); } catch(e){} }
+  function lastActive() { var v = 0; try { v = parseInt(localStorage.getItem(ACT_KEY) || "0", 10); } catch(e){} return v || 0; }
+
+  function startIdleWatch() {
+    markActive();
+    var events = ["mousedown","keydown","scroll","touchstart","click","mousemove"];
+    for (var i = 0; i < events.length; i++) {
+      window.addEventListener(events[i], markActive, { passive: true });
+    }
+    if (idleTimer) clearInterval(idleTimer);
+    idleTimer = setInterval(function(){
+      if (Date.now() - lastActive() > IDLE_MS) {
+        doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity.");
+      }
+    }, 15000);
+  }
+
+  function doSignOut(reason) {
+    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+    try { localStorage.removeItem(ACT_KEY); } catch(e){}
+    if (sb) {
+      sb.auth.signOut().then(function(){}).catch(function(){});
+    }
+    $("app").style.display = "none";
+    $("pw-modal").style.display = "none";
+    $("mpesa-modal").style.display = "none";
+    showLogin();
+    if (reason) showMsg(reason, false);
+    $("phone").value = "";
+    $("password").value = "";
+    $("submit").disabled = false;
+  }
+
+  function showLogin() {
+    $("boot").style.display = "none";
+    $("auth").style.display = "flex";
+    $("app").style.display = "none";
+  }
+
+  // ---- LOGIN ----
+  $("submit").onclick = function(){
+    if (!sb) { showMsg("Supabase keys not set.", false); return; }
+    var phone = sanitizePhone($("phone").value);
+    var rawPw = $("password").value;
+    if (!phone || !rawPw) { showMsg("Enter your phone number and password.", false); return; }
+    var email = phone + "@parent.samaji.app";
+    $("submit").disabled = true;
+    $("msg").className = "msg";
+    $("msg").textContent = "";
+
+    function tryLogin(pw) {
+      return sb.auth.signInWithPassword({ email: email, password: pw });
+    }
+
+    var sanitizedPw = sanitizePhone(rawPw);
+    var attempts = [rawPw];
+    if (sanitizedPw !== rawPw) attempts.push(sanitizedPw);
+
+    function attempt(i) {
+      if (i >= attempts.length) {
+        showMsg("Invalid phone number or password.", false);
+        $("submit").disabled = false;
+        return;
+      }
+      tryLogin(attempts[i]).then(function(res){
+        if (res.error) {
+          if (i === attempts.length - 1) {
+            showMsg("Invalid phone number or password.", false);
+            $("submit").disabled = false;
+          } else {
+            attempt(i + 1);
+          }
+        } else {
+          enterApp();
+        }
+      }).catch(function(e){
+        showMsg("Network error. Please try again.", false);
+        $("submit").disabled = false;
+      });
+    }
+    attempt(0);
+  };
+
+  $("password").addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.keyCode === 13) $("submit").click();
+  });
+  $("phone").addEventListener("keydown", function(e){
+    if (e.key === "Enter" || e.keyCode === 13) $("password").focus();
+  });
+
+  // ---- ENTER APP ----
+  function enterApp() {
+    sb.auth.getUser().then(function(u){
+      USER = u.data.user;
+      if (!USER) { showLogin(); return; }
+      sb.from("parent_accounts").select("*").eq("id", USER.id).single().then(function(pr){
+        PARENT = pr.data;
+        if (!PARENT) {
+          showMsg("No parent account found for this login.", false);
+          $("submit").disabled = false;
+          showLogin();
+          return;
+        }
+        SCHOOL = PARENT.school_id;
+
+        if (PARENT.must_change_password) {
+          $("boot").style.display = "none";
+          $("auth").style.display = "none";
+          $("pw-modal").style.display = "flex";
+          return;
+        }
+
+        finishEnterApp();
+      }).catch(function(){
+        showMsg("Could not load parent account.", false);
+        $("submit").disabled = false;
+        showLogin();
+      });
+    }).catch(function(){
+      showLogin();
+    });
+  }
+
+  function finishEnterApp() {
+    $("boot").style.display = "none";
+    $("auth").style.display = "none";
+    $("pw-modal").style.display = "none";
+    $("app").style.display = "block";
+    startIdleWatch();
+
+    $("parent-name").textContent = PARENT.full_name || "";
+
+    sb.from("schools").select("id, name, subdomain").eq("id", SCHOOL).single().then(function(sc){
+      var school = sc.data;
+      if (school) {
+        $("school-name").textContent = school.name || SCHOOL;
+        $("school-logo").textContent = (school.name || "S").charAt(0).toUpperCase();
+      }
+    });
+
+    loadChildren();
+  }
+
+  // ---- FORCE PASSWORD CHANGE ----
+  function checkPwRules(pw) {
+    var rules = {
+      len: pw.length >= 8,
+      upper: /[A-Z]/.test(pw),
+      num: /[0-9]/.test(pw),
+      special: /[^A-Za-z0-9]/.test(pw)
+    };
+    $("rule-len").className = rules.len ? "pass" : "";
+    $("rule-upper").className = rules.upper ? "pass" : "";
+    $("rule-num").className = rules.num ? "pass" : "";
+    $("rule-special").className = rules.special ? "pass" : "";
+    return rules.len && rules.upper && rules.num && rules.special;
+  }
+
+  $("pw-new").addEventListener("input", function(){
+    var valid = checkPwRules($("pw-new").value);
+    var match = $("pw-new").value === $("pw-confirm").value && $("pw-confirm").value.length > 0;
+    $("pw-submit").disabled = !(valid && match);
+  });
+  $("pw-confirm").addEventListener("input", function(){
+    var valid = checkPwRules($("pw-new").value);
+    var match = $("pw-new").value === $("pw-confirm").value && $("pw-confirm").value.length > 0;
+    $("pw-submit").disabled = !(valid && match);
+  });
+
+  $("pw-submit").onclick = function(){
+    var pw = $("pw-new").value;
+    var confirm = $("pw-confirm").value;
+    if (pw !== confirm) {
+      $("pw-msg").textContent = "Passwords do not match.";
+      $("pw-msg").className = "modal-msg err";
+      return;
+    }
+    if (!checkPwRules(pw)) {
+      $("pw-msg").textContent = "Password does not meet the requirements.";
+      $("pw-msg").className = "modal-msg err";
+      return;
+    }
+    $("pw-submit").disabled = true;
+    $("pw-msg").textContent = "";
+    sb.rpc("parent_change_password", { p_new_password: pw }).then(function(res){
+      if (res.error) {
+        $("pw-msg").textContent = res.error.message || "Failed to change password.";
+        $("pw-msg").className = "modal-msg err";
+        $("pw-submit").disabled = false;
+        return;
+      }
+      $("pw-msg").textContent = "Password updated successfully!";
+      $("pw-msg").className = "modal-msg ok";
+      PARENT.must_change_password = false;
+      setTimeout(function(){ finishEnterApp(); }, 800);
+    }).catch(function(){
+      $("pw-msg").textContent = "An error occurred. Please try again.";
+      $("pw-msg").className = "modal-msg err";
+      $("pw-submit").disabled = false;
+    });
+  };
+
+  // ---- TABS ----
+  function setTab(name) {
+    CURRENT_TAB = name;
+    var btns = document.querySelectorAll(".tab-btn");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].className = btns[i].id === "tab-" + name ? "tab-btn active" : "tab-btn";
+    }
+  }
+
+  $("tab-children").onclick = function(){ setTab("children"); renderChildren(); };
+  $("tab-payments").onclick = function(){ setTab("payments"); renderPayments(); };
+  $("tab-announcements").onclick = function(){ setTab("announcements"); renderAnnouncements(); };
+
+  // ---- DATA LOADING ----
+  var childFeeData = {};
+
+  function loadChildren() {
+    var view = $("view");
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+    var phoneClean = sanitizePhone(PARENT.phone);
+    sb.from("students").select("*").eq("school_id", SCHOOL).then(function(res){
+      var all = res.data || [];
+      CHILDREN = all.filter(function(s){
+        return sanitizePhone(s.guardian_phone || "") === phoneClean;
+      });
+      if (CHILDREN.length === 0) {
+        view.innerHTML = '<div class="empty">No students linked to your phone number.</div>';
+        return;
+      }
+      loadSupportingData(function(){
+        loadFeeDataForChildren(function(){
+          loadAttendanceData(function(){
+            renderChildren();
+          });
+        });
+      });
+    }).catch(function(){
+      view.innerHTML = '<div class="empty">Could not load student data.</div>';
+    });
+  }
+
+  function loadSupportingData(cb) {
+    var done = 0;
+    var total = 3;
+
+    function check() { done++; if (done >= total) cb(); }
+
+    // Load classes
+    sb.from("school_classes").select("id, level, stream, curriculum").eq("school_id", SCHOOL).then(function(res){
+      var rows = res.data || [];
+      classMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        classMap[rows[i].id] = rows[i];
+      }
+      check();
+    }).catch(function(){ check(); });
+
+    // Load dormitories
+    sb.from("dormitories").select("id, name, gender").eq("school_id", SCHOOL).then(function(res){
+      var rows = res.data || [];
+      dormMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        dormMap[rows[i].id] = rows[i];
+      }
+      check();
+    }).catch(function(){ check(); });
+
+    // Load class-subject-teachers for the student classes
+    var classIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) {
+      if (CHILDREN[i].class_id && classIds.indexOf(CHILDREN[i].class_id) === -1) {
+        classIds.push(CHILDREN[i].class_id);
+      }
+    }
+    if (classIds.length === 0) { check(); return; }
+
+    sb.from("class_subject_teachers").select("class_id, teacher_id, teachers(name), subjects(name)").in("class_id", classIds).then(function(res){
+      var rows = res.data || [];
+      teacherMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!teacherMap[r.class_id]) teacherMap[r.class_id] = [];
+        teacherMap[r.class_id].push({
+          teacher: r.teachers ? r.teachers.name : "Unknown",
+          subject: r.subjects ? r.subjects.name : ""
+        });
+      }
+      check();
+    }).catch(function(){ check(); });
+  }
+
+  function loadAttendanceData(cb) {
+    var studentIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+    if (studentIds.length === 0) { cb(); return; }
+
+    var currentYear = new Date().getFullYear();
+    var yearStart = currentYear + "-01-01";
+
+    sb.from("attendance").select("student_id, status").in("student_id", studentIds).gte("on_date", yearStart).then(function(res){
+      var rows = res.data || [];
+      attendanceMap = {};
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        if (!attendanceMap[r.student_id]) {
+          attendanceMap[r.student_id] = { present: 0, absent: 0, late: 0, total: 0 };
+        }
+        attendanceMap[r.student_id].total++;
+        if (r.status === "present") attendanceMap[r.student_id].present++;
+        else if (r.status === "absent") attendanceMap[r.student_id].absent++;
+        else if (r.status === "late") attendanceMap[r.student_id].late++;
+      }
+      cb();
+    }).catch(function(){ cb(); });
+  }
+
+  function loadFeeDataForChildren(cb) {
+    var pending = CHILDREN.length;
+    var currentYear = new Date().getFullYear();
+    childFeeData = {};
+
+    for (var i = 0; i < CHILDREN.length; i++) {
+      (function(child){
+        var sid = child.id;
+        var grade = child.grade || "";
+        childFeeData[sid] = { billed: 0, paid: 0, balance: 0, items: [], transportPaid: 0 };
+
+        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(fsRes){
+          var structures = fsRes.data || [];
+          if (structures.length === 0) {
+            loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
+            return;
+          }
+          var structIds = [];
+          for (var j = 0; j < structures.length; j++) { structIds.push(structures[j].id); }
+          sb.from("fee_items").select("name, amount").in("structure_id", structIds).then(function(fiRes){
+            var items = fiRes.data || [];
+            var total = 0;
+            for (var k = 0; k < items.length; k++) {
+              total += Number(items[k].amount) || 0;
+            }
+            childFeeData[sid].billed = total;
+            childFeeData[sid].items = items;
+            loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
+          }).catch(function(){ loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); }); });
+        }).catch(function(){ pending--; if (pending === 0) cb(); });
+      })(CHILDREN[i]);
+    }
+  }
+
+  function loadPaidForChild(studentId, cb) {
+    sb.from("fee_payments").select("amount, transport_amount").eq("school_id", SCHOOL).eq("student_id", studentId).then(function(fpRes){
+      var payments = fpRes.data || [];
+      var tuitionPaid = 0;
+      var transportPaid = 0;
+      for (var i = 0; i < payments.length; i++) {
+        var amt = Number(payments[i].amount) || 0;
+        var transport = Number(payments[i].transport_amount) || 0;
+        tuitionPaid += (amt - transport);
+        transportPaid += transport;
+      }
+      childFeeData[studentId].paid = tuitionPaid;
+      childFeeData[studentId].transportPaid = transportPaid;
+      childFeeData[studentId].balance = childFeeData[studentId].billed - tuitionPaid;
+      cb();
+    }).catch(function(){ cb(); });
+  }
+
+  // ---- RENDER: CHILDREN / DASHBOARD TAB ----
+  function renderChildren() {
+    var view = $("view");
+    var html = "";
+
+    // Welcome banner
+    var totalBilled = 0;
+    var totalPaid = 0;
+    var totalBalance = 0;
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var fd = childFeeData[CHILDREN[i].id] || { billed: 0, paid: 0, balance: 0 };
+      totalBilled += fd.billed;
+      totalPaid += fd.paid;
+      totalBalance += fd.balance;
+    }
+
+    html += '<div class="welcome-banner">';
+    html += '<div class="wb-glow"></div>';
+    html += '<h2>Welcome, ' + escHtml(PARENT.full_name || "Parent") + '</h2>';
+    html += '<p>You have ' + CHILDREN.length + ' student' + (CHILDREN.length > 1 ? "s" : "") + ' enrolled</p>';
+    html += '<div class="welcome-stats">';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBilled) + '</div><div class="ws-lbl">Total Fees</div></div>';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalPaid) + '</div><div class="ws-lbl">Total Paid</div></div>';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBalance) + '</div><div class="ws-lbl">Balance</div></div>';
+    html += '</div></div>';
+
+    // Pay all button
+    var childrenWithBalance = [];
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var fd2 = childFeeData[CHILDREN[i].id] || { balance: 0 };
+      if (fd2.balance > 0) childrenWithBalance.push(CHILDREN[i]);
+    }
+    if (childrenWithBalance.length > 1 && totalBalance > 0) {
+      html += '<button class="btn-pay-all" onclick="window._payAll()">Pay for all children &mdash; ' + fmtMoney(totalBalance) + '</button>';
+    }
+
+    // Student cards
+    for (var i = 0; i < CHILDREN.length; i++) {
+      html += renderStudentCard(CHILDREN[i]);
+    }
+
+    if (CHILDREN.length === 0) {
+      html = '<div class="empty">No students linked to your phone number.</div>';
+    }
+
+    view.innerHTML = html;
+  }
+
+  function renderStudentCard(c) {
+    var fd = childFeeData[c.id] || { billed: 0, paid: 0, balance: 0, items: [], transportPaid: 0 };
+    var name = studentName(c);
+    var initials = studentInitials(c);
+    var grade = c.grade || "";
+    var admNo = c.admission_no || "-";
+    var status = c.status || "active";
+    var statusClass = status === "active" ? "stu-badge-active" : "stu-badge-inactive";
+
+    // Class info
+    var classInfo = null;
+    if (c.class_id && classMap[c.class_id]) {
+      classInfo = classMap[c.class_id];
+    }
+
+    // Dormitory info
+    var dormInfo = null;
+    if (c.dormitory_id && dormMap[c.dormitory_id]) {
+      dormInfo = dormMap[c.dormitory_id];
+    }
+
+    // Balance color
+    var balColorClass = "fb-green";
+    if (fd.balance > 0 && fd.paid > 0) balColorClass = "fb-amber";
+    if (fd.balance > fd.billed * 0.5) balColorClass = "fb-red";
+    if (fd.billed === 0 && fd.balance <= 0) balColorClass = "fb-green";
+
+    var html = '<div class="stu-card">';
+
+    // Header
+    html += '<div class="stu-header">';
+    html += '<div class="stu-avatar">' + escHtml(initials) + '</div>';
+    html += '<div class="stu-info">';
+    html += '<h3>' + escHtml(name) + '</h3>';
+    html += '<div class="stu-meta">';
+    html += '<span>Adm: ' + escHtml(admNo) + '</span>';
+    if (grade) html += '<span>' + escHtml(grade) + '</span>';
+    if (classInfo && classInfo.stream) html += '<span>' + escHtml(classInfo.stream) + ' stream</span>';
+    html += '</div></div>';
+    html += '<span class="stu-badge ' + statusClass + '">' + escHtml(status) + '</span>';
+    html += '</div>';
+
+    html += '<div class="stu-body">';
+
+    // Student details section
+    html += '<div class="stu-section">';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" stroke="#98A2B3" stroke-width="2"/><circle cx="10" cy="7" r="4" stroke="#98A2B3" stroke-width="2"/></svg>Student Details</div>';
+    html += '<div class="detail-grid">';
+    html += '<div class="detail-item"><div class="di-label">Full Name</div><div class="di-value">' + escHtml(name) + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Admission No.</div><div class="di-value">' + escHtml(admNo) + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Grade / Class</div><div class="di-value">' + escHtml(grade || "-") + (classInfo && classInfo.stream ? " (" + escHtml(classInfo.stream) + ")" : "") + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Gender</div><div class="di-value">' + escHtml(c.gender || "-") + '</div></div>';
+    html += '<div class="detail-item"><div class="di-label">Residence</div><div class="di-value">' + escHtml(c.residence || "Day") + '</div></div>';
+    if (dormInfo) {
+      html += '<div class="detail-item"><div class="di-label">Dormitory</div><div class="di-value">' + escHtml(dormInfo.name) + '</div></div>';
+    }
+    if (c.date_of_birth) {
+      html += '<div class="detail-item"><div class="di-label">Date of Birth</div><div class="di-value">' + fmtDate(c.date_of_birth) + '</div></div>';
+    }
+    if (classInfo && classInfo.curriculum) {
+      html += '<div class="detail-item"><div class="di-label">Curriculum</div><div class="di-value">' + escHtml(classInfo.curriculum) + '</div></div>';
+    }
+    html += '</div></div>';
+
+    // Teachers section
+    if (c.class_id && teacherMap[c.class_id] && teacherMap[c.class_id].length > 0) {
+      html += '<div class="stu-section">';
+      html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" stroke="#98A2B3" stroke-width="2"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" stroke="#98A2B3" stroke-width="2"/></svg>Class Teachers</div>';
+      html += '<div class="detail-grid">';
+      var teachers = teacherMap[c.class_id];
+      for (var t = 0; t < teachers.length; t++) {
+        html += '<div class="detail-item"><div class="di-label">' + escHtml(teachers[t].subject || "Teacher") + '</div><div class="di-value">' + escHtml(teachers[t].teacher) + '</div></div>';
+      }
+      html += '</div></div>';
+    }
+
+    // Fee summary section
+    html += '<div class="stu-section">';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M2 10h20" stroke="#98A2B3" stroke-width="2"/></svg>Fee Summary (' + yr + ')</div>';
+    html += '<div class="fee-summary">';
+    html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.billed) + '</div><div class="fb-lbl">Total Billed</div></div>';
+    html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.paid) + '</div><div class="fb-lbl">Tuition Paid</div></div>';
+    html += '<div class="fee-box fb-balance ' + balColorClass + '"><div class="fb-val">' + fmtMoney(fd.balance) + '</div><div class="fb-lbl">Balance</div></div>';
+    html += '</div>';
+
+    if (fd.transportPaid > 0) {
+      html += '<div class="fee-item-row"><span class="fi-name">Transport paid (separate)</span><span class="fi-amt">' + fmtMoney(fd.transportPaid) + '</span></div>';
+    }
+
+    // Fee breakdown
+    if (fd.items && fd.items.length > 0) {
+      html += '<button class="collapse-toggle" onclick="var el=this.nextElementSibling;el.style.display=el.style.display===\'none\'?\'block\':\'none\';this.textContent=el.style.display===\'none\'?\'Show fee breakdown\':\'Hide fee breakdown\';">Show fee breakdown</button>';
+      html += '<div style="display:none;">';
+      for (var k = 0; k < fd.items.length; k++) {
+        html += '<div class="fee-item-row"><span class="fi-name">' + escHtml(fd.items[k].name) + '</span><span class="fi-amt">' + fmtMoney(fd.items[k].amount) + '</span></div>';
+      }
+      html += '</div>';
+    }
+
+    if (fd.balance > 0) {
+      html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\')">Pay via M-Pesa &mdash; ' + fmtMoney(fd.balance) + '</button>';
+    }
+    html += '</div>';
+
+    // Attendance section
+    var att = attendanceMap[c.id];
+    html += '<div class="stu-section">';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="#98A2B3" stroke-width="2"/></svg>Attendance (' + yr + ')</div>';
+    if (att && att.total > 0) {
+      var pctPresent = Math.round((att.present / att.total) * 100);
+      var pctAbsent = Math.round((att.absent / att.total) * 100);
+      var pctLate = Math.round((att.late / att.total) * 100);
+
+      html += '<div class="att-row"><div class="att-dot att-dot-present"></div><div class="att-bar"><div class="att-fill" style="width:' + pctPresent + '%;background:#0E9384;"></div></div><div class="att-label">' + pctPresent + '%</div></div>';
+      html += '<div class="att-row"><div class="att-dot att-dot-absent"></div><div class="att-bar"><div class="att-fill" style="width:' + pctAbsent + '%;background:#D92D20;"></div></div><div class="att-label">' + pctAbsent + '%</div></div>';
+      html += '<div class="att-row"><div class="att-dot att-dot-late"></div><div class="att-bar"><div class="att-fill" style="width:' + pctLate + '%;background:#E65100;"></div></div><div class="att-label">' + pctLate + '%</div></div>';
+      html += '<div class="att-summary">';
+      html += '<span><strong>' + att.present + '</strong> Present</span>';
+      html += '<span><strong>' + att.absent + '</strong> Absent</span>';
+      html += '<span><strong>' + att.late + '</strong> Late</span>';
+      html += '<span>(' + att.total + ' days recorded)</span>';
+      html += '</div>';
+    } else {
+      html += '<div style="font-size:13px;color:#98A2B3;">No attendance records yet this year.</div>';
+    }
+    html += '</div>';
+
+    html += '</div>'; // stu-body
+    html += '</div>'; // stu-card
+
+    return html;
+  }
+
+  function escHtml(s) {
+    var d = document.createElement("div");
+    d.appendChild(document.createTextNode(s || ""));
+    return d.innerHTML;
+  }
+
+  // ---- MPESA PAYMENT ----
+  window._payChild = function(studentId) {
+    var child = null;
+    for (var i = 0; i < CHILDREN.length; i++) {
+      if (CHILDREN[i].id === studentId) { child = CHILDREN[i]; break; }
+    }
+    if (!child) return;
+    var fd = childFeeData[studentId] || { balance: 0 };
+    openMpesaModal([child], fd.balance);
+  };
+
+  window._payAll = function() {
+    var total = 0;
+    var kids = [];
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var fd = childFeeData[CHILDREN[i].id] || { balance: 0 };
+      if (fd.balance > 0) {
+        total += fd.balance;
+        kids.push(CHILDREN[i]);
+      }
+    }
+    if (kids.length === 0) return;
+    openMpesaModal(kids, total);
+  };
+
+  function openMpesaModal(students, totalBalance) {
+    var box = $("mpesa-box");
+    var names = [];
+    var sids = [];
+    for (var i = 0; i < students.length; i++) {
+      names.push(studentName(students[i]));
+      sids.push(students[i].id);
+    }
+
+    var html = '<h2>Pay fees via M-Pesa</h2>';
+    html += '<p class="modal-sub">Send an M-Pesa payment for ' + escHtml(names.join(", ")) + '</p>';
+    html += '<div style="display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px solid #F0F1F4;"><span style="color:#667085;">Total balance</span><span style="font-weight:600;">' + fmtMoney(totalBalance) + '</span></div>';
+    html += '<label for="mpesa-amount">Amount to pay (KES)</label>';
+    html += '<input id="mpesa-amount" type="number" value="' + Math.max(0, totalBalance) + '" min="1">';
+    html += '<label for="mpesa-phone">M-Pesa phone number</label>';
+    html += '<input id="mpesa-phone" type="tel" value="' + escHtml(PARENT.phone || "") + '">';
+    html += '<button class="modal-btn" id="mpesa-pay">Pay now</button>';
+    html += '<div class="modal-msg" id="mpesa-msg"></div>';
+    html += '<button style="width:100%;background:none;border:none;color:#667085;font-size:13px;cursor:pointer;padding:12px 0;font-family:inherit;" id="mpesa-cancel">Cancel</button>';
+
+    box.innerHTML = html;
+    $("mpesa-modal").style.display = "flex";
+
+    $("mpesa-cancel").onclick = function(){ $("mpesa-modal").style.display = "none"; };
+
+    $("mpesa-pay").onclick = function(){
+      var amount = parseInt($("mpesa-amount").value, 10);
+      var phone = sanitizePhone($("mpesa-phone").value);
+      if (!amount || amount < 1) {
+        $("mpesa-msg").textContent = "Enter a valid amount.";
+        $("mpesa-msg").className = "modal-msg err";
+        return;
+      }
+      if (!phone || phone.length < 9) {
+        $("mpesa-msg").textContent = "Enter a valid phone number.";
+        $("mpesa-msg").className = "modal-msg err";
+        return;
+      }
+      $("mpesa-pay").disabled = true;
+      $("mpesa-msg").textContent = "";
+
+      var studentIdArr = [];
+      for (var j = 0; j < sids.length; j++) { studentIdArr.push(sids[j]); }
+
+      sb.from("mpesa_transactions").insert({
+        school_id: SCHOOL,
+        parent_id: USER.id,
+        phone: phone,
+        amount: amount,
+        student_ids: studentIdArr,
+        status: "pending"
+      }).select().single().then(function(res){
+        if (res.error) {
+          $("mpesa-msg").textContent = res.error.message || "Failed to initiate payment.";
+          $("mpesa-msg").className = "modal-msg err";
+          $("mpesa-pay").disabled = false;
+          return;
+        }
+        var txId = res.data.id;
+        // Trigger the STK push via the edge function
+        var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/mpesa-stk";
+        var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+        fetch(stkUrl, {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
+          body: JSON.stringify({
+            transaction_id: txId,
+            school_id: SCHOOL,
+            phone: phone,
+            amount: amount,
+            account_ref: "Samaji"
+          })
+        }).then(function(r){ return r.json(); }).then(function(data){
+          if (data.error && !data.success) {
+            $("mpesa-msg").textContent = data.error;
+            $("mpesa-msg").className = "modal-msg err";
+            $("mpesa-pay").disabled = false;
+            return;
+          }
+          showMpesaPolling(txId);
+        }).catch(function(){
+          $("mpesa-msg").textContent = "Failed to send STK push. Please try again.";
+          $("mpesa-msg").className = "modal-msg err";
+          $("mpesa-pay").disabled = false;
+        });
+      }).catch(function(){
+        $("mpesa-msg").textContent = "Failed to initiate payment. Please try again.";
+        $("mpesa-msg").className = "modal-msg err";
+        $("mpesa-pay").disabled = false;
+      });
+    };
+  }
+
+  function showMpesaPolling(txId) {
+    var box = $("mpesa-box");
+    var html = '<div style="text-align:center;padding:20px 0;">';
+    html += '<div class="spinner" style="width:32px;height:32px;margin:0 auto 16px;border-width:3px;"></div>';
+    html += '<h2 style="font-size:17px;">STK Push sent to your phone</h2>';
+    html += '<p class="modal-sub">Enter your M-Pesa PIN to complete payment.</p>';
+    html += '<div class="modal-msg" id="mpesa-poll-msg">Waiting for confirmation...</div>';
+    html += '</div>';
+    html += '<button style="width:100%;background:none;border:1px solid #DDE1E6;border-radius:10px;color:#344054;font-size:13px;cursor:pointer;padding:12px;font-family:inherit;margin-top:10px;" id="mpesa-poll-cancel">Cancel</button>';
+    box.innerHTML = html;
+
+    var pollCount = 0;
+    var maxPolls = 24;
+    var pollTimer = setInterval(function(){
+      pollCount++;
+      if (pollCount > maxPolls) {
+        clearInterval(pollTimer);
+        $("mpesa-poll-msg").textContent = "Payment timed out. Please try again.";
+        $("mpesa-poll-msg").className = "modal-msg err";
+        return;
+      }
+      sb.from("mpesa_transactions").select("status, mpesa_receipt_no").eq("id", txId).single().then(function(res){
+        if (res.error) return;
+        var tx = res.data;
+        if (tx.status === "completed") {
+          clearInterval(pollTimer);
+          var successHtml = '<div style="text-align:center;padding:20px 0;">';
+          successHtml += '<div style="width:48px;height:48px;border-radius:50%;background:#E7F6F3;color:#0E9384;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:24px;">&#10003;</div>';
+          successHtml += '<h2 style="font-size:17px;">Payment successful!</h2>';
+          successHtml += '<p class="modal-sub">Receipt: ' + escHtml(tx.mpesa_receipt_no || "-") + '</p>';
+          successHtml += '<button class="modal-btn" id="mpesa-done">Done</button>';
+          successHtml += '</div>';
+          box.innerHTML = successHtml;
+          $("mpesa-done").onclick = function(){
+            $("mpesa-modal").style.display = "none";
+            loadChildren();
+          };
+        } else if (tx.status === "failed") {
+          clearInterval(pollTimer);
+          $("mpesa-poll-msg").textContent = "Payment failed. Please try again.";
+          $("mpesa-poll-msg").className = "modal-msg err";
+        }
+      });
+    }, 5000);
+
+    $("mpesa-poll-cancel").onclick = function(){
+      clearInterval(pollTimer);
+      $("mpesa-modal").style.display = "none";
+    };
+  }
+
+  // ---- RENDER: PAYMENTS TAB ----
+  function renderPayments() {
+    var view = $("view");
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+
+    var studentIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+
+    if (studentIds.length === 0) {
+      view.innerHTML = '<div class="empty">No payment history found.</div>';
+      return;
+    }
+
+    var studentNameMap = {};
+    for (var i = 0; i < CHILDREN.length; i++) {
+      studentNameMap[CHILDREN[i].id] = studentName(CHILDREN[i]);
+    }
+
+    var allPayments = [];
+    var allMpesa = [];
+    var done = 0;
+    var total = 2;
+
+    sb.from("fee_payments").select("*").eq("school_id", SCHOOL).in("student_id", studentIds).order("created_at", { ascending: false }).then(function(res){
+      allPayments = res.data || [];
+      done++;
+      if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap);
+    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap); });
+
+    sb.from("mpesa_transactions").select("*").eq("parent_id", USER.id).order("created_at", { ascending: false }).then(function(res){
+      allMpesa = res.data || [];
+      done++;
+      if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap);
+    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap); });
+  }
+
+  var payPage = 1;
+  var mpesaPage = 1;
+  var _payCache = {};
+  function showPaymentsView(payments, mpesa, studentNameMap, pg) {
+    if (pg && pg.pay) payPage = pg.pay;
+    if (pg && pg.mpesa) mpesaPage = pg.mpesa;
+    if (!pg) { payPage = 1; mpesaPage = 1; }
+    _payCache = {payments: payments, mpesa: mpesa, studentNameMap: studentNameMap};
+    var view = $("view");
+    var html = "";
+
+    var totalPaid = 0;
+    var totalTransport = 0;
+    for (var i = 0; i < payments.length; i++) {
+      totalPaid += Number(payments[i].amount) || 0;
+      totalTransport += Number(payments[i].transport_amount) || 0;
+    }
+
+    if (payments.length > 0 || mpesa.length > 0) {
+      html += '<div style="display:flex;gap:12px;margin-bottom:20px;">';
+      html += '<div class="fee-box" style="flex:1;"><div class="fb-val">' + payments.length + '</div><div class="fb-lbl">Payments</div></div>';
+      html += '<div class="fee-box" style="flex:1;"><div class="fb-val">' + fmtMoney(totalPaid) + '</div><div class="fb-lbl">Total Amount</div></div>';
+      if (totalTransport > 0) {
+        html += '<div class="fee-box" style="flex:1;"><div class="fb-val">' + fmtMoney(totalTransport) + '</div><div class="fb-lbl">Transport</div></div>';
+      }
+      html += '</div>';
+    }
+
+    if (payments.length === 0 && mpesa.length === 0) {
+      view.innerHTML = '<div class="empty">No payment history found.</div>';
+      return;
+    }
+
+    if (payments.length > 0) {
+      var pgPay = window.paginate(payments, payPage);
+      html += '<h3 style="font-size:15px;font-weight:700;margin:0 0 12px;color:#15171E;">Fee Payments</h3>';
+
+      html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      html += '<th>Date</th><th>Student</th><th>Amount</th><th>Transport</th><th>Term</th><th>Method</th><th>Receipt</th>';
+      html += '</tr></thead><tbody>';
+      for (var i = 0; i < pgPay.rows.length; i++) {
+        var p = pgPay.rows[i];
+        var tuition = (Number(p.amount) || 0) - (Number(p.transport_amount) || 0);
+        html += '<tr>';
+        html += '<td>' + fmtDate(p.created_at) + '</td>';
+        html += '<td style="font-weight:500;">' + escHtml(studentNameMap[p.student_id] || "-") + '</td>';
+        html += '<td>' + fmtMoney(tuition) + '</td>';
+        html += '<td>' + fmtMoney(p.transport_amount || 0) + '</td>';
+        html += '<td>' + escHtml((p.term || "") + (p.year ? " " + p.year : "")) + '</td>';
+        html += '<td>' + escHtml(p.method || "-") + '</td>';
+        html += '<td style="font-family:\'IBM Plex Mono\',monospace;font-size:12px;">' + escHtml(p.receipt_no || "-") + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+      html += '<div id="pay-pg">' + pgPay.html + '</div>';
+
+      html += '<div class="mobile-cards">';
+      for (var i = 0; i < pgPay.rows.length; i++) {
+        var p = pgPay.rows[i];
+        html += '<div class="card">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
+        html += '<div><strong style="font-size:15px;">' + fmtMoney(p.amount) + '</strong><br><span style="font-size:12.5px;color:#15171E;font-weight:500;">' + escHtml(studentNameMap[p.student_id] || "-") + '</span></div>';
+        html += '<span style="font-size:11.5px;color:#98A2B3;">' + fmtDate(p.created_at) + '</span>';
+        html += '</div>';
+        html += '<div style="margin-top:8px;font-size:12.5px;color:#667085;">';
+        html += escHtml((p.term || "") + (p.year ? " " + p.year : "")) + ' &middot; ' + escHtml(p.method || "-");
+        if (p.receipt_no) html += ' &middot; <span style="font-family:\'IBM Plex Mono\',monospace;">' + escHtml(p.receipt_no) + '</span>';
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+
+    if (mpesa.length > 0) {
+      var pgMpesa = window.paginate(mpesa, mpesaPage);
+      html += '<h3 style="font-size:15px;font-weight:700;margin:24px 0 12px;color:#15171E;">M-Pesa Transactions</h3>';
+      html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>';
+      html += '<th>Date</th><th>Amount</th><th>Phone</th><th>Status</th><th>Receipt</th>';
+      html += '</tr></thead><tbody>';
+      for (var i = 0; i < pgMpesa.rows.length; i++) {
+        var m = pgMpesa.rows[i];
+        var statusColor = m.status === "completed" ? "#0E9384" : (m.status === "failed" ? "#D92D20" : "#E65100");
+        html += '<tr>';
+        html += '<td>' + fmtDateTime(m.created_at) + '</td>';
+        html += '<td>' + fmtMoney(m.amount) + '</td>';
+        html += '<td>' + escHtml(m.phone || "-") + '</td>';
+        html += '<td style="color:' + statusColor + ';font-weight:600;text-transform:capitalize;">' + escHtml(m.status || "-") + '</td>';
+        html += '<td style="font-family:\'IBM Plex Mono\',monospace;font-size:12px;">' + escHtml(m.mpesa_receipt_no || "-") + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+      html += '<div id="mpesa-pg">' + pgMpesa.html + '</div>';
+
+      html += '<div class="mobile-cards">';
+      for (var i = 0; i < pgMpesa.rows.length; i++) {
+        var m = pgMpesa.rows[i];
+        var statusColor = m.status === "completed" ? "#0E9384" : (m.status === "failed" ? "#D92D20" : "#E65100");
+        html += '<div class="card">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
+        html += '<div><strong>' + fmtMoney(m.amount) + '</strong><br><span style="font-size:12px;color:#667085;">' + escHtml(m.phone || "") + '</span></div>';
+        html += '<span class="balance-badge" style="background:' + (m.status === "completed" ? "#E7F6F3" : (m.status === "failed" ? "#FDECEA" : "#FFF3E0")) + ';color:' + statusColor + ';">' + escHtml(m.status || "-") + '</span>';
+        html += '</div>';
+        html += '<div style="margin-top:8px;font-size:12px;color:#98A2B3;">' + fmtDateTime(m.created_at);
+        if (m.mpesa_receipt_no) html += ' &middot; ' + escHtml(m.mpesa_receipt_no);
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+
+    view.innerHTML = html;
+
+    if (payments.length > 0) {
+      pgPay.onAttach(document.getElementById("pay-pg"), function(p) {
+        showPaymentsView(_payCache.payments, _payCache.mpesa, _payCache.studentNameMap, {pay: p, mpesa: mpesaPage});
+      });
+    }
+    if (mpesa.length > 0) {
+      pgMpesa.onAttach(document.getElementById("mpesa-pg"), function(p) {
+        showPaymentsView(_payCache.payments, _payCache.mpesa, _payCache.studentNameMap, {pay: payPage, mpesa: p});
+      });
+    }
+  }
+
+  // ---- RENDER: ANNOUNCEMENTS TAB ----
+  var annPage = 1;
+  var _annCache = [];
+  function renderAnnouncements(pg) {
+    var view = $("view");
+    if (pg) { annPage = pg; renderAnnPage(); return; }
+    annPage = 1;
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+
+    sb.from("announcements").select("*").eq("school_id", SCHOOL).in("audience", ["all", "parents"]).order("created_at", { ascending: false }).then(function(res){
+      _annCache = res.data || [];
+      if (_annCache.length === 0) {
+        view.innerHTML = '<div class="empty">No announcements yet.</div>';
+        return;
+      }
+      renderAnnPage();
+    }).catch(function(){
+      view.innerHTML = '<div class="empty">Could not load announcements.</div>';
+    });
+  }
+  function renderAnnPage() {
+    var view = $("view");
+    var pgData = window.paginate(_annCache, annPage, 10);
+    var html = "";
+    var now = Date.now();
+    for (var i = 0; i < pgData.rows.length; i++) {
+      var a = pgData.rows[i];
+      var isNew = a.created_at && (now - new Date(a.created_at).getTime()) < 3 * 24 * 60 * 60 * 1000;
+      html += '<div class="ann-card">';
+      html += '<h4>' + escHtml(a.title || "");
+      if (isNew) html += '<span class="ann-badge ann-badge-new">New</span>';
+      html += '</h4>';
+      html += '<div class="ann-date">' + fmtDate(a.created_at) + '</div>';
+      html += '<div class="ann-body">' + escHtml(a.body || "") + '</div>';
+      html += '</div>';
+    }
+    html += pgData.html;
+    view.innerHTML = html;
+    pgData.onAttach(view, function(p) { renderAnnouncements(p); });
+  }
+
+  // ---- SIGN OUT ----
+  $("signout").onclick = function(){ doSignOut(); };
+
+  // ---- BOOT ----
+  (function(){
+    if (!sb) { showLogin(); return; }
+    sb.auth.getSession().then(function(s){
+      if (!s.data.session) { showLogin(); return; }
+      var la = lastActive();
+      if (la && (Date.now() - la > IDLE_MS)) {
+        try { localStorage.removeItem(ACT_KEY); } catch(e){}
+        sb.auth.signOut().then(function(){}).catch(function(){});
+        showLogin();
+        showMsg("Your session expired. Please sign in again.", false);
+        return;
+      }
+      enterApp();
+    }).catch(function(){
+      showLogin();
+    });
+  })();
+
+})();
+</script>
+</body>
+</html>
