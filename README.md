@@ -71,14 +71,36 @@ webapp/
     row by email, splits payroll into named allowance lines + a `staff_deductions` table for
     loans/salary advances, and tightens payroll RLS so a teacher can only ever see their **own**
     payslips (admins keep full access exactly as before).
-17. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
+17. **New query** again, paste **`setup-modules-15.sql`**, **Run** — Phase 1 of the CBC
+    Assessment Engine (see below): `academic_years`/`terms`, configurable `assessment_types`,
+    configurable `grading_schemes`/`grading_levels`, `teachers.school_position`
+    (principal/deputy_principal/dos — a title, not a login role) and
+    `school_classes.class_teacher_id`. Manage all of it from **Settings → CBC Assessment** in the
+    School Portal. Purely additive — doesn't touch `exams`/`exam_results`/`grades` yet.
+18. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
     (`supabase functions deploy admin-users` / `mpesa-stk`) and set their secrets
     (`SUPABASE_SERVICE_ROLE_KEY`, M-Pesa Daraja credentials) in Project Settings → Edge Functions.
-18. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
+19. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
     "Confirm email" (re-enable for production).
-19. **Project Settings → API**: copy your **Project URL** and **anon public key**.
+20. **Project Settings → API**: copy your **Project URL** and **anon public key**.
 
 > Tip: you can also paste all the `setup*.sql` files into one query in order and run once.
+
+### CBC Assessment Engine roadmap
+
+A full CBC assessment/grading/publishing/report-card system is being built in phases (each one
+shipped, tested, and merged on its own — not a single giant change):
+
+1. **Foundational schema** ✅ `setup-modules-15.sql` — academic years/terms, configurable
+   assessment types, configurable grading schemes/levels, `teachers.school_position`,
+   `school_classes.class_teacher_id`.
+2. Mark sheets (per class+subject+term) + weighted calculation engine.
+3. Draft → Submitted → Verified → Approved → Published workflow, gated by `school_position`.
+4. Competencies/values/psychomotor ratings + a frozen `report_cards` snapshot (so a later mark
+   edit never silently changes an already-published card).
+5. The KICD-style printable report card (coat of arms, signatures, QR code, A4 print) — same
+   browser-print approach already used for payslips/receipts, no new server infrastructure.
+6. Principal/teacher dashboards and analytics.
 
 ## B. Configure the app
 Open **`assets/config.js`** and paste your two values:
