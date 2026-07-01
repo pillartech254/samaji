@@ -1,13 +1,15 @@
 # Samaji — School Management Platform (deployable web app)
 
-A database-driven feature-flag licensing platform. **Two front-ends, one backend:**
+A database-driven feature-flag licensing platform. **Four front-ends, one backend:**
 
 | Portal | Path | Who | Sees |
 |---|---|---|---|
 | Admin console | `/admin/` | super_admin | every school, all flags, subscriptions |
 | School portal | `/school/` | school_admin | their school only — license-gated UI |
+| Teacher portal | `/teacher/` | teacher | their own classes/subjects, attendance, grading, report books and payslips only |
+| Parent portal | `/parent/` | parent | their own children's records, fees, and M-Pesa payments only |
 
-Both are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
+All three are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
 The licensing logic lives in the database as the `resolve_flags()` function, so there is
 **no server to run or maintain.** That makes it a perfect fit for **Cloudflare Pages** (free).
 
@@ -16,6 +18,9 @@ webapp/
 ├─ index.html          landing → pick a portal
 ├─ admin/index.html    provider console
 ├─ school/index.html   school portal
+├─ teacher/index.html  teacher portal
+├─ parent/index.html   parent portal
+├─ supabase/functions/ Edge Functions (admin user management, M-Pesa STK push)
 ├─ assets/
 │  ├─ config.js        ← the ONLY file you edit (Supabase keys)
 │  ├─ app.js           shared client + module metadata
@@ -48,9 +53,30 @@ webapp/
 10. **New query** again, paste **`setup-modules-8.sql`**, **Run** — academic setup: classes &
     streams, dormitories, richer student biodata, fee structures/items, and payments/receipts.
     Auto-seeds the Kenyan CBC class levels (PP1–Grade 9) for every school.
-11. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
+11. **New query** again, paste **`setup-modules-9.sql`**, **Run** — fee-collection idempotency
+    guard + bus transport toggle on payments.
+12. **New query** again, paste **`setup-modules-10.sql`**, **Run** — subjects catalog, teacher
+    directory, and per-class subject/teacher assignment.
+13. **New query** again, paste **`setup-modules-11.sql`**, **Run** — Parent Portal backend:
+    `parent_accounts`, M-Pesa config/transactions, school backups, and the `admin_*` RPCs the
+    `admin-users` Edge Function and admin console use to create/reset/delete portal logins.
+14. **New query** again, paste **`setup-modules-12.sql`**, **Run** — fixes a `auth.users.phone`
+    unique-constraint bug in `admin_create_user` (empty-string phones collided on the 2nd user).
+15. **New query** again, paste **`setup-modules-13.sql`**, **Run** — adds `profiles.teacher_id`,
+    exam grading columns, and a `teacher_payroll` table from an earlier, simpler pass at the
+    Teacher Portal. **Not used by this repo's `/teacher/` app** (see the note at the top of
+    `setup-modules-14.sql`) — safe to run for the other schema pieces it carries.
+16. **New query** again, paste **`setup-modules-14.sql`**, **Run** — wires the Teacher Portal
+    actually used here: lets a teacher sign up at `/teacher/` and auto-links to their `teachers`
+    row by email, splits payroll into named allowance lines + a `staff_deductions` table for
+    loans/salary advances, and tightens payroll RLS so a teacher can only ever see their **own**
+    payslips (admins keep full access exactly as before).
+17. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
+    (`supabase functions deploy admin-users` / `mpesa-stk`) and set their secrets
+    (`SUPABASE_SERVICE_ROLE_KEY`, M-Pesa Daraja credentials) in Project Settings → Edge Functions.
+18. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
     "Confirm email" (re-enable for production).
-12. **Project Settings → API**: copy your **Project URL** and **anon public key**.
+19. **Project Settings → API**: copy your **Project URL** and **anon public key**.
 
 > Tip: you can also paste all the `setup*.sql` files into one query in order and run once.
 

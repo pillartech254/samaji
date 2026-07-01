@@ -170,6 +170,7 @@
     var tab="classes";
     el.innerHTML='<div class="mod-head"><div><h2>School Settings</h2><p>Configure classes, streams, boarding and fee structures. Set these once — they power registration and billing.</p></div></div>'
       +'<div class="tabs" id="set-tabs">'
+      +'<button data-t="profile">School Profile</button>'
       +'<button data-t="classes" class="on">Classes &amp; Streams</button>'
       +'<button data-t="subjects">Subjects</button>'
       +'<button data-t="teachers">Teachers</button>'
@@ -177,7 +178,66 @@
       +'<button data-t="fees">Fee Structures</button>'
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else fees(); }
+    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else fees(); }
+
+    // ----- school profile & logo -----
+    async function profileTab(){
+      var body=document.getElementById("set-body");
+      var sc=await sb.from("schools").select("*").eq("id",schoolId).single();
+      var info=sc.data||{};
+      var logoUrl=info.logo_url||"";
+      if(!logoUrl) try{ logoUrl=localStorage.getItem("school_logo_"+schoolId)||""; }catch(e2){}
+      body.innerHTML='<div class="chartcard" style="max-width:640px;">'
+        +'<div class="ch-head"><h3>School Profile &amp; Logo</h3></div>'
+        +'<div style="display:flex;gap:24px;align-items:flex-start;margin-top:12px;">'
+        +'<div id="logo-preview" style="width:100px;height:100px;border-radius:12px;border:2px dashed #DDE1E6;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;background:#F8FAFB;">'
+        +(logoUrl?'<img src="'+esc(logoUrl)+'" style="width:100%;height:100%;object-fit:contain;">':'<span class="muted" style="font-size:11px;text-align:center;">No logo<br>uploaded</span>')
+        +'</div>'
+        +'<div style="flex:1;"><div class="field"><label>School name</label><input id="sp-name" value="'+esc(info.name||"")+'" style="width:100%;"></div>'
+        +'<div class="field"><label>Address / Location</label><input id="sp-addr" value="'+esc(info.address||"")+'" style="width:100%;"></div>'
+        +'<div class="grid2"><div class="field"><label>Phone</label><input id="sp-phone" value="'+esc(info.phone||"")+'"></div>'
+        +'<div class="field"><label>Email</label><input id="sp-email" value="'+esc(info.email||"")+'"></div></div>'
+        +'<div class="field"><label>Motto / Tagline</label><input id="sp-motto" value="'+esc(info.motto||"")+'" placeholder="e.g. Education for a Better Tomorrow" style="width:100%;"></div>'
+        +'<div style="display:flex;gap:10px;margin-top:12px;">'
+        +'<label class="btn-sm" style="cursor:pointer;"><input type="file" id="sp-logo-file" accept="image/*" style="display:none;"> ⬆ Upload logo</label>'
+        +(logoUrl?'<button class="btn-sm danger" id="sp-logo-rm">Remove logo</button>':'')
+        +'</div></div></div>'
+        +'<div class="modal-actions" style="margin-top:18px;"><button class="btn-primary" id="sp-save">Save profile</button></div>'
+        +'</div>';
+      document.getElementById("sp-logo-file").onchange=function(e){
+        var file=e.target.files[0]; if(!file) return;
+        if(file.size>500*1024){ toast("Logo must be under 500 KB."); return; }
+        var reader=new FileReader();
+        reader.onload=async function(){
+          var dataUrl=reader.result;
+          var r=await sb.from("schools").update({logo_url:dataUrl}).eq("id",schoolId);
+          if(r.error){
+            try{ localStorage.setItem("school_logo_"+schoolId, dataUrl); }catch(e2){}
+          }
+          toast("Logo saved"); profileTab();
+        };
+        reader.readAsDataURL(file);
+      };
+      var rmBtn=document.getElementById("sp-logo-rm");
+      if(rmBtn) rmBtn.onclick=async function(){
+        var r=await sb.from("schools").update({logo_url:null}).eq("id",schoolId);
+        if(r.error) try{ localStorage.removeItem("school_logo_"+schoolId); }catch(e2){}
+        toast("Logo removed"); profileTab();
+      };
+      document.getElementById("sp-save").onclick=async function(){
+        var name=document.getElementById("sp-name").value.trim();
+        if(!name){ toast("School name is required."); return; }
+        var fields={name:name, phone:document.getElementById("sp-phone").value.trim()||null, address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
+        var rec={name:name};
+        var keys=Object.keys(fields);
+        for(var i=0;i<keys.length;i++){
+          var test={}; Object.keys(rec).forEach(function(k){test[k]=rec[k];}); test[keys[i]]=fields[keys[i]];
+          var r=await sb.from("schools").update(test).eq("id",schoolId);
+          if(!r.error) rec=test;
+        }
+        toast("Profile saved");
+      };
+    }
 
     // ----- classes & streams -----
     async function classes(){
@@ -308,19 +368,20 @@
     // ----- teacher directory -----
     async function teachersTab(){
       var body=document.getElementById("set-body");
-      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Teaching staff directory — assign them to classes &amp; subjects from the Classes tab.</span><button class="btn-primary" id="add-teacher">+ Add teacher</button></div><div id="tch-table"></div>';
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Teaching staff directory — assign them to classes &amp; subjects from the Classes tab. A teacher signs up at <span class="mono">/teacher/</span> with the email below to get their own portal login.</span><button class="btn-primary" id="add-teacher">+ Add teacher</button></div><div id="tch-table"></div>';
       var r=await sb.from("teachers").select("*").eq("school_id",schoolId).order("name");
       var list=r.data||[], t=document.getElementById("tch-table");
       if(!list.length){ t.innerHTML='<div class="empty">No teachers yet. Add your teaching staff here.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Portal login</th><th></th></tr></thead><tbody>';
         list.forEach(function(s){
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.email?esc(s.email):'<span class="muted">—</span>')+'</td><td>'+(s.phone?esc(s.phone):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(s.auth_user_id?'<span class="pill green">active</span>':'<span class="pill gray">not signed up</span>')+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ teacherForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
-        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this teacher? They will be unassigned from any classes/subjects."))return; var r=await sb.from("teachers").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); teachersTab(); }; });
+        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this teacher? They will be unassigned from any classes/subjects and lose portal access."))return; var r=await sb.from("teachers").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); teachersTab(); }; });
       }
       document.getElementById("add-teacher").onclick=function(){ teacherForm(null); };
     }
@@ -328,9 +389,9 @@
       s=s||{};
       var m=modal('<h3>'+(s.id?"Edit teacher":"Add teacher")+'</h3><div class="grid2">'
         +'<div class="field full"><label>Full name</label><input id="t-name" value="'+esc(s.name||"")+'" placeholder="Jane Wambui"></div>'
-        +'<div class="field"><label>Email</label><input id="t-email" value="'+esc(s.email||"")+'" placeholder="jane@school.ac.ke"></div>'
+        +'<div class="field"><label>Email (used to sign in at /teacher/)</label><input id="t-email" value="'+esc(s.email||"")+'" placeholder="jane@school.ac.ke"></div>'
         +'<div class="field"><label>Phone</label><input id="t-phone" value="'+esc(s.phone||"")+'" placeholder="07XX XXX XXX"></div>'
-        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
+        +'</div><p class="muted" style="font-size:12px;margin:12px 0 0;">KRA PIN, ID/payroll number and salary are set in <strong>Payroll → Staff</strong>, linked to this teacher.</p><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
       m.q("#c").onclick=m.close;
       m.q("#sv").onclick=async function(){
         var rec={ school_id:schoolId, name:m.q("#t-name").value.trim(), email:m.q("#t-email").value.trim()||null, phone:m.q("#t-phone").value.trim()||null };
@@ -386,7 +447,7 @@
     async function fees(){
       var body=document.getElementById("set-body");
       body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Define what each class is billed per term. The Fees module uses these to compute every student\u2019s balance.</span><button class="btn-primary" id="add-fs">+ New structure</button></div><div id="fs-list"></div>';
-      var r=await sb.from("fee_structures").select("*, fee_items(amount)").eq("school_id",schoolId).order("year",{ascending:false}).order("level");
+      var r=await sb.from("fee_structures").select("*, fee_items(name,amount,mandatory,sort)").eq("school_id",schoolId).order("year",{ascending:false}).order("level");
       var list=r.data||[], t=document.getElementById("fs-list");
       if(!list.length){ t.innerHTML='<div class="empty">No fee structures yet. Create one per class/term — e.g. Grade 6 · Term 1.</div>'; }
       else {
@@ -395,11 +456,49 @@
           var total=(f.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0);
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(f.level)+'</td><td>'+esc(f.term)+'</td><td>'+f.year+'</td><td>'+(f.fee_items||[]).length+'</td>'
             +'<td style="font-weight:700;">'+money(total)+'</td>'
-            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+f.id+'">Edit items</button> <button class="btn-sm danger" data-del="'+f.id+'">Delete</button></td></tr>';
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-dup="'+f.id+'">Duplicate</button> <button class="btn-sm" data-edit="'+f.id+'">Edit items</button> <button class="btn-sm danger" data-del="'+f.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ fsEditor(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
         t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this fee structure and its items?"))return; var r=await sb.from("fee_structures").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("fee_structures"); toast("Deleted"); fees(); }; });
+        t.querySelectorAll("[data-dup]").forEach(function(b){ b.onclick=function(){
+          var f=list.find(function(x){return x.id===b.getAttribute("data-dup");});
+          if(!f) return;
+          var allTerms=["Term 1","Term 2","Term 3"];
+          var existing={}; list.forEach(function(x){ if(x.level===f.level && x.year===f.year) existing[x.term]=true; });
+          var available=allTerms.filter(function(t){ return !existing[t]; });
+          if(!available.length){ toast("All three terms already have a structure for "+f.level+" "+f.year+"."); return; }
+          var checkboxes=available.map(function(t){ return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;"><input type="checkbox" value="'+esc(t)+'" checked> '+esc(t)+'</label>'; }).join("");
+          var items=(f.fee_items||[]);
+          var itemList=items.length?items.map(function(i){return esc(i.name||"Item")+" — "+money(i.amount);}).join("<br>"):'<span class="muted">No items</span>';
+          var dm=modal('<h3>Duplicate fee structure</h3>'
+            +'<p class="muted" style="font-size:12.5px;margin:0;">Copy <strong>'+esc(f.level)+' · '+esc(f.term)+' '+f.year+'</strong> ('+money((items).reduce(function(a,i){return a+Number(i.amount);},0))+') to other terms with the same items.</p>'
+            +'<div style="margin-top:12px;padding:10px 12px;background:#F8FAFB;border:1px solid #EEF0F2;border-radius:8px;font-size:12.5px;">'+itemList+'</div>'
+            +'<div style="margin-top:14px;"><strong style="font-size:12.5px;">Duplicate to:</strong><div id="dup-terms" style="margin-top:6px;">'+checkboxes+'</div></div>'
+            +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Duplicate</button></div>');
+          dm.q("#c").onclick=dm.close;
+          dm.q("#s").onclick=async function(){
+            var checks=dm.q("#dup-terms").querySelectorAll("input:checked");
+            var selected=[]; checks.forEach(function(c){ selected.push(c.value); });
+            if(!selected.length){ toast("Select at least one term."); return; }
+            var btn=dm.q("#s"); btn.disabled=true; btn.textContent="Duplicating…";
+            var created=0;
+            for(var i=0;i<selected.length;i++){
+              var term=selected[i];
+              var rec={school_id:schoolId, level:f.level, term:term, year:f.year, name:f.level+" — "+term};
+              var nr=await sb.from("fee_structures").insert(rec).select().single();
+              if(nr.error){ toast("Error for "+term+": "+nr.error.message); continue; }
+              if(items.length){
+                var newItems=items.map(function(it){ return {structure_id:nr.data.id, name:it.name, amount:Number(it.amount), mandatory:it.mandatory, sort:it.sort||0}; });
+                var ir=await sb.from("fee_items").insert(newItems);
+                if(ir.error) toast("Items error for "+term+": "+ir.error.message);
+              }
+              created++;
+            }
+            SamajiCache.invalidate("fee_structures");
+            dm.close(); toast("Duplicated to "+created+" term"+(created===1?"":"s")+"."); fees();
+          };
+        }; });
       }
       document.getElementById("add-fs").onclick=async function(){
         var classes=await loadClasses(sb, schoolId);
@@ -479,27 +578,80 @@
       all=all2.slice().sort(function(a,b){ return new Date(a.created_at||0)-new Date(b.created_at||0); });
       draw();
     }
-    function draw(){
+    var stuPage=1;
+    function draw(pg){
+      if(typeof pg==="number") stuPage=pg; else stuPage=1;
       var q=(document.getElementById("stu-search").value||"").toLowerCase();
       var cfv=document.getElementById("stu-class-filter").value;
       var rows=all.filter(function(s){ return (!q||(s.first_name+" "+s.last_name+" "+(s.admission_no||"")).toLowerCase().indexOf(q)>=0) && (!cfv||s.class_id===cfv); });
       document.getElementById("stu-count").textContent=rows.length+" of "+all.length+" students";
       var t=document.getElementById("stu-table");
       if(!rows.length){ t.innerHTML='<div class="empty">No students match. Click <strong>+ New student</strong> to enrol one.</div>'; return; }
+      var siblingMap={};
+      all.forEach(function(x){ if(x.guardian_phone){ if(!siblingMap[x.guardian_phone]) siblingMap[x.guardian_phone]=[]; siblingMap[x.guardian_phone].push(x); } });
+      var pgData=window.paginate(rows,stuPage);
+      var pageRows=pgData.rows;
       var html='<table class="data"><thead><tr><th>Adm. No</th><th>Name</th><th>Class</th><th>Gender</th><th>Boarding</th><th>Guardian</th><th>Status</th><th></th></tr></thead><tbody>';
-      rows.forEach(function(s){
+      pageRows.forEach(function(s){
         var boarding=s.residence==="Boarder"?('<span class="pill" style="color:#6D28D9;background:#F1ECFE;">'+esc(dormOf[s.dormitory_id]||"Boarder")+'</span>'):'<span class="pill gray">Day</span>';
+        var siblings=s.guardian_phone?siblingMap[s.guardian_phone]:[];
+        var siblingHtml='';
+        if(siblings && siblings.length>1){
+          var others=siblings.filter(function(x){return x.id!==s.id;});
+          siblingHtml='<div style="font-size:10.5px;margin-top:2px;"><span style="color:#067647;font-weight:600;">⚇ Sibling'+(others.length>1?"s":"")+': </span>'+others.map(function(o){return '<span style="color:#4F46E5;">'+esc(o.first_name+" "+o.last_name)+'</span>';}).join(", ")+'</div>';
+        }
         html+='<tr><td class="mono" style="font-size:12px;">'+esc(s.admission_no||"—")+'</td>'
-          +'<td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
+          +'<td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+siblingHtml+'</td>'
           +'<td>'+esc(classOf[s.class_id]||s.grade||"—")+'</td><td>'+esc(s.gender||"—")+'</td><td>'+boarding+'</td>'
           +'<td>'+esc(s.guardian_name||"—")+'<div class="muted" style="font-size:11px;">'+esc(s.guardian_phone||"")+'</div></td>'
           +'<td><span class="pill '+(s.status==="active"?"green":"gray")+'">'+esc(s.status)+'</span></td>'
-          +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-view="'+s.id+'">View</button> <button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
+          +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-view="'+s.id+'">View</button> <button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm" data-promo="'+s.id+'">Promote</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
       });
-      t.innerHTML=html+'</tbody></table>';
+      t.innerHTML=html+'</tbody></table>'+pgData.html;
+      pgData.onAttach(t,function(p){ draw(p); });
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ form(all.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-view]").forEach(function(b){ b.onclick=function(){ view(all.find(function(x){return x.id===b.getAttribute("data-view");})); }; });
-      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this student and all related records?"))return; var r=await sb.from("students").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("students"); toast("Student deleted"); load(); }; });
+      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){
+        var sid=b.getAttribute("data-del");
+        var stu=all.find(function(x){return x.id===sid;});
+        var pr=await sb.from("fee_payments").select("amount,transport_amount").eq("student_id",sid);
+        var fp=await sb.from("fee_structures").select("level, fee_items(amount)").eq("school_id",schoolId).eq("level",stu?stu.grade:"");
+        var billed=(fp.data||[]).reduce(function(a,s){return a+(s.fee_items||[]).reduce(function(x,i){return x+Number(i.amount);},0);},0);
+        var paid=(pr.data||[]).reduce(function(a,p){return a+(Number(p.amount)-(Number(p.transport_amount)||0));},0);
+        if(billed>0 && paid<billed){ toast("Cannot delete — student has an outstanding balance of "+money(billed-paid)+". Clear fees first."); return; }
+        if(!await window.SM_confirm("Delete this student and all related records?"))return;
+        var r=await sb.from("students").delete().eq("id",sid);
+        if(r.error){toast("Error: "+r.error.message);return;} SamajiCache.invalidate("students"); toast("Student deleted"); load();
+      }; });
+      t.querySelectorAll("[data-promo]").forEach(function(b){ b.onclick=function(){ var s=all.find(function(x){return x.id===b.getAttribute("data-promo");}); if(s) promoteStudent(s); }; });
+    }
+    function promoteStudent(s){
+      var curClass=classes.find(function(c){return c.id===s.class_id;});
+      var fromLabel=curClass?classLabel(curClass):(s.grade||"Unknown");
+      var toOpts=classes.filter(function(c){return c.id!==s.class_id;}).map(function(c){
+        return '<option value="'+c.id+'">'+esc(classLabel(c))+'</option>';
+      }).join("");
+      if(!toOpts){ toast("No other classes available to promote to."); return; }
+      var m=modal('<h3>Promote Student</h3>'
+        +'<p class="muted" style="font-size:12.5px;margin:0;">'+esc(s.first_name+' '+s.last_name)+' ('+esc(s.admission_no||'—')+')</p>'
+        +'<div class="grid2" style="margin-top:14px;">'
+        +'<div class="field"><label>From class</label><select id="pr-from" disabled><option>'+esc(fromLabel)+'</option></select></div>'
+        +'<div class="field"><label>To class</label><select id="pr-to">'+toOpts+'</select></div>'
+        +'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Promote</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#s").onclick=async function(){
+        var toId=m.q("#pr-to").value;
+        var toClass=classes.find(function(c){return c.id===toId;});
+        if(!toClass){ toast("Select a destination class."); return; }
+        if(!await window.SM_confirm("Promote "+s.first_name+" "+s.last_name+" from "+fromLabel+" to "+classLabel(toClass)+"?")) return;
+        var btn=m.q("#s"); btn.disabled=true; btn.textContent="Promoting…";
+        var r=await sb.from("students").update({class_id:toId, grade:toClass.level}).eq("id",s.id);
+        if(r.error){ toast("Error: "+r.error.message); btn.disabled=false; btn.textContent="Promote"; return; }
+        SamajiCache.invalidate("students");
+        m.close(); toast(s.first_name+" "+s.last_name+" promoted to "+classLabel(toClass));
+        load();
+      };
     }
     function view(s){
       var c=classOf[s.class_id]||s.grade||"—";
@@ -620,7 +772,7 @@
       function refreshCount(){
         var fromId=m.q("#pr-from").value;
         var n=all.filter(function(s){return s.class_id===fromId;}).length;
-        m.q("#pr-count").textContent=n+" student"+(n===1?"":"s")+" currently in "+classLabel(sorted.find(function(c){return c.id===fromId;}));
+        m.q("#pr-count").textContent=n+" of "+all.length+" student"+(n===1?"":"s")+" currently in "+classLabel(sorted.find(function(c){return c.id===fromId;}));
         m.q("#pr-to").value=nextClassId(fromId);
       }
       m.q("#pr-from").onchange=refreshCount; refreshCount();
@@ -714,6 +866,7 @@
     async function init(){
       var sc=await sb.from("schools").select("*").eq("id",schoolId).single(); school=sc.data||{name:schoolId};
       var students=await cget(sb, schoolId, "students", "*");
+      var feeClasses=await loadClasses(sb, schoolId);
       var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
       var payments=await cget(sb, schoolId, "fee_payments", "*");
       // transport assignments — what each student owes for bus
@@ -727,7 +880,7 @@
       el.innerHTML='<div class="mod-head"><div><h2>Fees &amp; Invoicing</h2><p>Collect fees against each class\u2019s structure and issue professional receipts.</p></div>'
         +'<button class="btn-primary" id="collect">+ Collect payment</button></div>'
         +'<div class="statgrid" id="fee-stats" style="grid-template-columns:repeat(3,1fr);"></div>'
-        +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button></div>'
+        +'<div class="tabs" id="fee-tabs"><button data-t="ledger" class="on">Student ledger</button><button data-t="receipts">Receipts</button><button data-t="feereport">Fee reports</button></div>'
         +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;">'
         +'<input id="fee-search" type="search" placeholder="Search by name, admission no. or class…" style="flex:1;max-width:340px;padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;">'
         +'<select id="fee-class" style="padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;"><option value="">All classes</option>'
@@ -736,9 +889,10 @@
         +'<div id="fee-body" style="margin-top:16px;"></div>';
       document.getElementById("collect").onclick=function(){ if(!students.length){toast("Enrol students first.");return;} collectForm(); };
       var tab="ledger", query="", classFilter="";
-      el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); tab==="ledger"?ledger():receipts(); }; });
-      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); tab==="ledger"?ledger():receipts(); };
-      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); tab==="ledger"?ledger():receipts(); };
+      el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); renderTab(); }; });
+      function renderTab(){ if(tab==="ledger") ledger(); else if(tab==="receipts") receipts(); else if(tab==="feereport") feeReport(); }
+      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); renderTab(); };
+      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); renderTab(); };
 
       function matches(name, adm, cls){
         if(classFilter && cls!==classFilter) return false;
@@ -771,13 +925,17 @@
       }
       refreshStats();
 
-      function ledger(){
+      var ledgerPage=1;
+      function ledger(pg){
+        if(typeof pg==="number") ledgerPage=pg; else ledgerPage=1;
         var body=document.getElementById("fee-body");
         if(!students.length){ body.innerHTML='<div class="empty">No students yet.</div>'; return; }
         var filtered=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
-        if(!filtered.length){ body.innerHTML='<div class="empty">No students match “'+esc(query)+'”.</div>'; return; }
+        if(!filtered.length){ body.innerHTML='<div class="empty">No students match "'+esc(query)+'".</div>'; return; }
+        var pgData=window.paginate(filtered,ledgerPage);
+        var pageRows=pgData.rows;
         var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
-        filtered.forEach(function(s){
+        pageRows.forEach(function(s){
           var billed=totalByLevelTerm[s.grade]||0, paid=paidByStudent[s.id]||0, tBal=Math.max(0,billed-paid);
           var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0, bBal=Math.max(0,bf-bp);
           var totalBal=tBal+bBal, totalOwed=billed+bf, totalPaid=paid+bp;
@@ -793,27 +951,33 @@
             +'<td><span class="pill '+st+'">'+lbl+'</span></td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-stmt="'+s.id+'">Statement</button> <button class="btn-primary" style="padding:6px 12px;font-size:12px;" data-pay="'+s.id+'">Collect</button></td></tr>';
         });
-        body.innerHTML=html+'</tbody></table>';
+        body.innerHTML=html+'</tbody></table>'+pgData.html;
+        pgData.onAttach(body,function(p){ ledger(p); });
         body.querySelectorAll("[data-pay]").forEach(function(b){ b.onclick=function(){ collectForm(b.getAttribute("data-pay")); }; });
         body.querySelectorAll("[data-stmt]").forEach(function(b){ b.onclick=function(){ showStatement(b.getAttribute("data-stmt")); }; });
       }
-      async function receipts(){
+      var rcptPage=1;
+      async function receipts(pg){
+        if(typeof pg==="number") rcptPage=pg; else rcptPage=1;
         var body=document.getElementById("fee-body");
         var r=await sb.from("fee_payments").select("*").eq("school_id",schoolId).order("paid_at",{ascending:false});
         var rows=r.data||[]; var nameOf={}, admOf={}, gradeOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; admOf[s.id]=s.admission_no; gradeOf[s.id]=s.grade; });
         if(!rows.length){ body.innerHTML='<div class="empty">No receipts issued yet.</div>'; return; }
         rows=rows.filter(function(p){ return matches(nameOf[p.student_id], admOf[p.student_id], gradeOf[p.student_id]); });
-        if(!rows.length){ body.innerHTML='<div class="empty">No receipts match “'+esc(query)+'”.</div>'; return; }
+        if(!rows.length){ body.innerHTML='<div class="empty">No receipts match "'+esc(query)+'".</div>'; return; }
+        var pgData=window.paginate(rows,rcptPage);
+        var pageRows=pgData.rows;
         var html='<table class="data"><thead><tr><th>Receipt no</th><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th></th></tr></thead><tbody>';
-        rows.forEach(function(p){
+        pageRows.forEach(function(p){
           html+='<tr><td class="mono" style="font-size:12px;font-weight:600;">'+esc(p.receipt_no)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(nameOf[p.student_id]||"—")+'</td>'
             +'<td style="font-weight:700;color:#067647;">'+money(p.amount)+'</td><td><span class="pill gray">'+esc(p.method)+'</span></td>'
             +'<td class="muted" style="font-size:12px;">'+new Date(p.paid_at).toLocaleDateString()+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-r="'+p.id+'">View receipt</button> <button class="btn-sm" style="color:#C2410C;" data-revoke="'+p.id+'">Revoke</button></td></tr>';
         });
-        body.innerHTML=html+'</tbody></table>';
-        body.querySelectorAll("[data-r]").forEach(function(b){ b.onclick=function(){ var p=rows.find(function(x){return x.id===b.getAttribute("data-r");}); showReceipt(p, students.find(function(s){return s.id===p.student_id;})); }; });
-        body.querySelectorAll("[data-revoke]").forEach(function(b){ b.onclick=function(){ var p=rows.find(function(x){return x.id===b.getAttribute("data-revoke");}); revokePayment(p); }; });
+        body.innerHTML=html+'</tbody></table>'+pgData.html;
+        pgData.onAttach(body,function(p){ rcptPage=p; receipts(p); });
+        body.querySelectorAll("[data-r]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-r");}); showReceipt(p, students.find(function(s){return s.id===p.student_id;})); }; });
+        body.querySelectorAll("[data-revoke]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-revoke");}); revokePayment(p); }; });
       }
 
       // Reverses an accidental/disapproved payment: deletes the fee_payments
@@ -831,20 +995,31 @@
         if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=Math.max(0,(busPaidByStudent[p.student_id]||0)-Number(p.transport_amount));
         toast("Payment revoked.");
         refreshStats();
-        tab==="ledger"?ledger():receipts();
+        renderTab();
       }
 
+      function hasStructure(grade){ return structures.some(function(s){ return s.level===grade && (s.fee_items||[]).length>0; }); }
       function collectForm(preId){
+        if(preId){ var ps=students.find(function(x){return x.id===preId;}); if(ps && !hasStructure(ps.grade)){ window.SM_confirm("No fee structure has been set up for "+esc(ps.grade||"this class")+". Please create a fee structure in Settings → Fee Structures before collecting fees."); return; } }
         var opts=students.map(function(s){ return '<option value="'+s.id+'"'+(preId===s.id?" selected":"")+'>'+esc(s.first_name+" "+s.last_name)+(s.admission_no?" ("+esc(s.admission_no)+")":"")+'</option>'; }).join("");
-        // a fresh key per form, sent with the insert; a duplicate insert
-        // (e.g. a fast double-click of "Record") collides on this key at
-        // the database level instead of creating a second payment.
         var idemKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
         var transportFare=0;
-        function balOf(id){ var s=students.find(function(x){return x.id===id;}); var billed=s?(totalByLevelTerm[s.grade]||0):0; var paid=paidByStudent[id]||0; return {billed:billed,paid:paid,bal:Math.max(0,billed-paid),s:s}; }
+        var curYear=new Date().getFullYear();
+        var terms=["Term 1","Term 2","Term 3"];
+        function termBilled(grade,term){ var t=0; structures.forEach(function(s){ if(s.level===grade && s.term===term) t+=(s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); }); return t; }
+        function termPaid(sid,term){ var t=0; payments.forEach(function(p){ if(p.student_id===sid && p.term===term) t+=tuitionOf(p); }); return t; }
+        function termInfo(sid){
+          var s=students.find(function(x){return x.id===sid;}); if(!s) return {terms:[],s:null};
+          var info=[]; terms.forEach(function(t){
+            var billed=termBilled(s.grade,t), paid=termPaid(sid,t), bal=Math.max(0,billed-paid);
+            info.push({term:t, billed:billed, paid:paid, bal:bal, cleared:billed>0&&paid>=billed});
+          });
+          return {terms:info, s:s};
+        }
         var m=modal('<h3>Collect payment</h3><div class="grid2">'
-          +'<div class="field full"><label>Student</label><select id="p-stu">'+opts+'</select></div>'
+          +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':opts)+'</select></div>'
           +'<div class="field full"><div id="p-bal" style="background:#F8FAFB;border:1px solid #EEF0F2;border-radius:10px;padding:11px 13px;font-size:12.5px;"></div></div>'
+          +'<div class="field full"><div id="p-term-info" style="font-size:12px;"></div></div>'
           +'<div class="field full" id="p-bus-wrap" style="display:none;">'
           +'<label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;">'
           +'<input type="checkbox" id="p-bus"> 🚌 <span id="p-bus-label">Include bus transport</span></label></div>'
@@ -853,16 +1028,58 @@
           +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
           +'<div class="field"><label>Reference (M-Pesa/Cheque)</label><input id="p-ref" placeholder="e.g. SLJ7XK2P"></div>'
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
+          +'<div class="field full"><div id="p-spill" style="display:none;background:#FEF9C3;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"></div></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Record &amp; print receipt</button></div>');
-        function refreshBal(){
-          var b=balOf(m.q("#p-stu").value);
-          var extra=(m.q("#p-bus").checked?transportFare:0);
-          m.q("#p-bal").innerHTML='Billed <strong>'+money(b.billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(b.paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(b.bal)+'</strong>'+(b.billed===0?' <span class="muted">(no fee structure for '+esc(b.s?b.s.grade:"")+')</span>':'');
-          if(!m.q("#p-amt").value&&(b.bal+extra)>0) m.q("#p-amt").value=b.bal+extra;
+        function refreshTermInfo(){
+          var sid=preId||m.q("#p-stu").value;
+          var ti=termInfo(sid);
+          var termSel=m.q("#p-term");
+          var html=''; var autoTerm=null;
+          ti.terms.forEach(function(t,i){
+            var color=t.cleared?"#067647":(t.paid>0?"#D97706":"#6B7280");
+            var label=t.cleared?"✓ Cleared":(t.paid>0?"Partial "+money(t.paid)+"/"+money(t.billed):(t.billed>0?"Unpaid "+money(t.billed):"No structure"));
+            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(t.cleared?"#ECFDF3":"#F8FAFB")+';color:'+color+';font-weight:600;">'+esc(t.term)+': '+label+'</span>';
+            if(!autoTerm && !t.cleared && t.billed>0) autoTerm=t.term;
+          });
+          m.q("#p-term-info").innerHTML=html;
+          terms.forEach(function(t,i){
+            termSel.options[i].disabled=ti.terms[i].cleared;
+          });
+          if(autoTerm) termSel.value=autoTerm;
         }
+        function refreshBal(){
+          var sid=preId||m.q("#p-stu").value;
+          var s=students.find(function(x){return x.id===sid;});
+          var billed=s?(totalByLevelTerm[s.grade]||0):0;
+          var paid=paidByStudent[sid]||0;
+          var bal=Math.max(0,billed-paid);
+          var extra=(m.q("#p-bus").checked?transportFare:0);
+          m.q("#p-bal").innerHTML='Billed <strong>'+money(billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(bal)+'</strong>'+(billed===0?' <span class="muted">(no fee structure for '+esc(s?s.grade:"")+')</span>':'');
+          if(!m.q("#p-amt").value&&(bal+extra)>0) m.q("#p-amt").value=bal+extra;
+          refreshTermInfo();
+        }
+        function checkSpill(){
+          var sid=preId||m.q("#p-stu").value;
+          var selectedTerm=m.q("#p-term").value;
+          var amt=Number(m.q("#p-amt").value)||0;
+          var s=students.find(function(x){return x.id===sid;});
+          if(!s){ m.q("#p-spill").style.display="none"; return; }
+          var tb=termBilled(s.grade,selectedTerm), tp=termPaid(sid,selectedTerm);
+          var termBal=Math.max(0,tb-tp);
+          var spillEl=m.q("#p-spill");
+          if(amt>termBal && termBal>0){
+            var excess=amt-termBal;
+            var ti=terms.indexOf(selectedTerm);
+            var nextTerm=ti<2?terms[ti+1]:null;
+            spillEl.innerHTML=nextTerm?'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> will spill over to <strong>'+esc(nextTerm)+'</strong>.':'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> recorded as overpayment.';
+            spillEl.style.display="";
+          } else { spillEl.style.display="none"; }
+        }
+        m.q("#p-amt").oninput=checkSpill;
+        m.q("#p-term").onchange=checkSpill;
         async function loadTransport(){
           var wrap=m.q("#p-bus-wrap"); wrap.style.display="none"; transportFare=0;
-          var sid=m.q("#p-stu").value;
+          var sid=preId||m.q("#p-stu").value;
           var r=await sb.from("transport_assignments").select("*, transport_routes(name,fare)").eq("student_id",sid).maybeSingle();
           if(r.data && r.data.transport_routes){
             transportFare=Number(r.data.transport_routes.fare)||0;
@@ -871,36 +1088,191 @@
           }
           refreshBal();
         }
-        m.q("#p-stu").onchange=function(){ m.q("#p-amt").value=""; loadTransport(); };
+        if(!preId) m.q("#p-stu").onchange=function(){
+          var s=students.find(function(x){return x.id===m.q("#p-stu").value;});
+          if(s && !hasStructure(s.grade)){ toast("No fee structure for "+s.grade+". Set one up in Settings → Fee Structures first."); m.q("#s").disabled=true; } else { m.q("#s").disabled=false; }
+          m.q("#p-amt").value=""; loadTransport();
+        };
         m.q("#p-bus").onchange=function(){ var was=m.q("#p-amt").value; m.q("#p-amt").value=""; refreshBal(); if(!m.q("#p-amt").value) m.q("#p-amt").value=was; };
         loadTransport();
         m.q("#c").onclick=m.close;
         var submitBtn=m.q("#s"), submitting=false;
         submitBtn.onclick=async function(){
-          if(submitting) return; // guard against double-click firing two inserts
-          var sid=m.q("#p-stu").value, amt=Number(m.q("#p-amt").value)||0;
+          if(submitting) return;
+          var sid=preId||m.q("#p-stu").value, amt=Number(m.q("#p-amt").value)||0;
+          var sStu=students.find(function(x){return x.id===sid;});
+          if(sStu && !hasStructure(sStu.grade)){ toast("No fee structure for "+(sStu.grade||"this class")+". Create one in Settings first."); return; }
           if(amt<=0){ toast("Enter an amount."); return; }
           submitting=true; submitBtn.disabled=true; var origLabel=submitBtn.textContent; submitBtn.textContent="Recording…";
           try{
+            var selectedTerm=m.q("#p-term").value;
+            var s=students.find(function(x){return x.id===sid;});
+            var tb=s?termBilled(s.grade,selectedTerm):0, tp=termPaid(sid,selectedTerm);
+            var termBal=Math.max(0,tb-tp);
+            var spillAmt=(amt>termBal&&termBal>0)?(amt-termBal):0;
+            var mainAmt=spillAmt>0?termBal:amt;
             var rn=await sb.rpc("next_receipt_no",{ p_school:schoolId });
             var receiptNo=rn.data||("RCT-"+Date.now());
             var who=(await sb.auth.getUser()).data.user; who=who?who.email:null;
             var includesBus=m.q("#p-bus").checked && transportFare>0;
-            var rec={ school_id:schoolId, student_id:sid, receipt_no:receiptNo, amount:amt, method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:m.q("#p-term").value, year:new Date().getFullYear(), note:m.q("#p-note").value.trim()||null, received_by:who, client_ref:idemKey, includes_transport:includesBus, transport_amount:includesBus?transportFare:0 };
+            var rec={ school_id:schoolId, student_id:sid, receipt_no:receiptNo, amount:mainAmt+(includesBus?transportFare:0), method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:selectedTerm, year:curYear, note:m.q("#p-note").value.trim()||null, received_by:who, client_ref:idemKey, includes_transport:includesBus, transport_amount:includesBus?transportFare:0 };
             var r=await sb.from("fee_payments").insert(rec).select().single();
             if(r.error){
               if(/duplicate|unique/i.test(r.error.message||"")){ toast("This payment was already recorded."); m.close(); init(); return; }
               toast("Error: "+r.error.message); submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
             }
             SamajiCache.invalidate("fee_payments");
-            paidByStudent[sid]=(paidByStudent[sid]||0)+(amt-(includesBus?transportFare:0));
+            paidByStudent[sid]=(paidByStudent[sid]||0)+tuitionOf(rec);
             if(includesBus) busPaidByStudent[sid]=(busPaidByStudent[sid]||0)+transportFare;
-            m.close(); toast("Payment recorded — receipt "+receiptNo);
-            showReceipt(r.data, students.find(function(s){return s.id===sid;}));
-            init(); // refresh stats + ledger
+            payments.push(r.data);
+            var spillMsg="";
+            if(spillAmt>0){
+              var ti=terms.indexOf(selectedTerm);
+              var nextTerm=ti<2?terms[ti+1]:null;
+              if(nextTerm){
+                var rn2=await sb.rpc("next_receipt_no",{ p_school:schoolId });
+                var receiptNo2=rn2.data||("RCT-"+(Date.now()+1));
+                var idemKey2=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+                var rec2={ school_id:schoolId, student_id:sid, receipt_no:receiptNo2, amount:spillAmt, method:m.q("#p-method").value, reference:m.q("#p-ref").value.trim()||null, term:nextTerm, year:curYear, note:"Spillover from "+selectedTerm, received_by:who, client_ref:idemKey2, includes_transport:false, transport_amount:0 };
+                var r2=await sb.from("fee_payments").insert(rec2).select().single();
+                if(!r2.error){
+                  payments.push(r2.data);
+                  paidByStudent[sid]=(paidByStudent[sid]||0)+spillAmt;
+                  spillMsg=" + "+money(spillAmt)+" spilled to "+nextTerm+" ("+receiptNo2+")";
+                }
+              }
+            }
+            m.close(); toast("Payment recorded — "+receiptNo+spillMsg);
+            showReceipt(r.data, students.find(function(x){return x.id===sid;}));
+            init();
           }catch(e){
             toast("Error: "+(e&&e.message?e.message:"could not record payment")); submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel;
           }
+        };
+      }
+      function feeReport(){
+        var body=document.getElementById("fee-body");
+        var levels=Array.from(new Set(feeClasses.map(function(c){return c.level;}))).sort();
+        var levelOpts=levels.map(function(l){return '<option value="'+esc(l)+'">'+esc(l)+'</option>';}).join("");
+        body.innerHTML='<div class="chartcard"><div class="ch-head"><div><h3>Generate Fee Report</h3><div class="sub">Filter by class, stream, term — then print or identify students to send home.</div></div></div>'
+          +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;">'
+          +'<div class="field"><label>Class</label><select id="fr-class"><option value="">All classes</option>'+levelOpts+'</select></div>'
+          +'<div class="field"><label>Stream</label><select id="fr-stream"><option value="">All streams</option></select></div>'
+          +'<div class="field"><label>Term</label><select id="fr-term"><option value="">All terms</option><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+          +'<button class="btn-primary" id="fr-gen" style="height:38px;">Generate report</button>'
+          +'</div>'
+          +'<div style="margin-top:16px;padding:12px;background:#FEF9C3;border:1px solid #FDE68A;border-radius:10px;">'
+          +'<strong style="font-size:12.5px;color:#92400E;">⚠ Send-home list</strong>'
+          +'<div style="display:flex;gap:10px;align-items:center;margin-top:6px;">'
+          +'<span style="font-size:12.5px;color:#92400E;">Show students owing more than</span>'
+          +'<input id="fr-threshold" type="number" placeholder="0" value="" style="width:110px;padding:6px 10px;border:1px solid #FDE68A;border-radius:6px;font-size:13px;">'
+          +'<button class="btn-sm" id="fr-sendhome" style="background:#C2410C;color:#fff;border-color:#C2410C;">Generate send-home list</button>'
+          +'</div></div>'
+          +'<div id="fr-result" style="margin-top:18px;"></div></div>';
+        document.getElementById("fr-class").onchange=function(){
+          var lv=document.getElementById("fr-class").value;
+          var streamSel=document.getElementById("fr-stream");
+          var streams=feeClasses.filter(function(c){return c.level===lv&&c.stream;}).map(function(c){return c.stream;});
+          streamSel.innerHTML='<option value="">All streams</option>'+streams.map(function(s){return '<option>'+esc(s)+'</option>';}).join("");
+        };
+        function getFiltered(termV,classV,streamV){
+          var filtered=students.slice();
+          if(classV) filtered=filtered.filter(function(s){return s.grade===classV;});
+          if(streamV){
+            var matchIds={}; feeClasses.forEach(function(c){if(c.level===classV&&c.stream===streamV) matchIds[c.id]=true;});
+            filtered=filtered.filter(function(s){return matchIds[s.class_id];});
+          }
+          var termBilledFn=function(grade){
+            var t=0; structures.forEach(function(st){
+              if(st.level===grade && (!termV||st.term===termV))
+                t+=(st.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0);
+            }); return t;
+          };
+          var termPaidFn=function(sid){
+            var t=0; payments.forEach(function(p){
+              if(p.student_id===sid && (!termV||p.term===termV)) t+=tuitionOf(p);
+            }); return t;
+          };
+          return filtered.map(function(s){
+            var billed=termBilledFn(s.grade), paid=termPaidFn(s.id), bal=Math.max(0,billed-paid);
+            return {s:s,billed:billed,paid:paid,bal:bal};
+          });
+        }
+        function renderReport(rows,title,subtitle){
+          var totalBilled=0,totalPaid=0,totalBal=0,cleared=0;
+          rows.forEach(function(r){totalBilled+=r.billed;totalPaid+=r.paid;totalBal+=r.bal;if(r.bal<=0&&r.billed>0)cleared++;});
+          var logo=schoolLogo(school,48);
+          var details=[school.address,school.phone,school.email,school.motto].filter(Boolean).join(" · ");
+          var html='<div id="fr-print-area" style="font-family:system-ui,-apple-system,sans-serif;">'
+            +'<table style="width:100%;border-collapse:collapse;margin-bottom:8px;border-bottom:2px solid #1A1D26;padding-bottom:8px;"><tr>'
+            +'<td style="width:52px;vertical-align:top;padding-bottom:10px;">'+logo+'</td>'
+            +'<td style="vertical-align:top;padding:0 12px 10px;"><div style="font-size:16px;font-weight:700;">'+esc(school.name||"School")+'</div>'
+            +(details?'<div style="font-size:10px;color:#667085;">'+esc(details)+'</div>':'')+'</td>'
+            +'<td style="text-align:right;vertical-align:top;padding-bottom:10px;"><div style="font-size:13px;font-weight:700;color:#1A1D26;">'+esc(title)+'</div>'
+            +'<div style="font-size:10px;color:#667085;">'+esc(subtitle)+'</div>'
+            +'<div style="font-size:9px;color:#98A2B3;">Generated '+new Date().toLocaleDateString()+'</div></td></tr></table>'
+            +'<table style="width:100%;border-collapse:collapse;margin-bottom:10px;"><tr>'
+            +'<td style="background:#EEF0FF;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#4F46E5;letter-spacing:.03em;">Total billed</div><div style="font-size:14px;font-weight:700;">'+money(totalBilled)+'</div></td>'
+            +'<td style="width:4px;"></td>'
+            +'<td style="background:#ECFDF3;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#067647;letter-spacing:.03em;">Collected</div><div style="font-size:14px;font-weight:700;">'+money(totalPaid)+'</div></td>'
+            +'<td style="width:4px;"></td>'
+            +'<td style="background:#FFF6ED;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#C2410C;letter-spacing:.03em;">Outstanding</div><div style="font-size:14px;font-weight:700;">'+money(totalBal)+'</div></td>'
+            +'<td style="width:4px;"></td>'
+            +'<td style="background:#F1ECFE;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#6D28D9;letter-spacing:.03em;">Cleared</div><div style="font-size:14px;font-weight:700;">'+cleared+' / '+rows.length+'</div></td>'
+            +'</tr></table>'
+            +'<table class="data" style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">#</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Adm No</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Student name</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Class</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Billed</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Paid</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Balance</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Status</th></tr></thead><tbody>';
+          rows.forEach(function(r,i){
+            var st=r.bal<=0&&r.billed>0?'Cleared':(r.paid>0?'Partial':'Unpaid');
+            var stCol=r.bal<=0&&r.billed>0?'#067647':(r.paid>0?'#D97706':'#C2410C');
+            if(r.billed===0){ st='N/A'; stCol='#98A2B3'; }
+            html+='<tr style="border-bottom:1px solid #EEF0F2;"><td style="padding:5px 4px;">'+(i+1)+'</td><td style="padding:5px 4px;font-size:10px;font-family:monospace;">'+esc(r.s.admission_no||"—")+'</td>'
+              +'<td style="padding:5px 4px;font-weight:600;">'+esc(r.s.first_name+" "+r.s.last_name)+'</td>'
+              +'<td style="padding:5px 4px;">'+esc(r.s.grade||"—")+'</td>'
+              +'<td style="padding:5px 4px;text-align:right;">'+money(r.billed)+'</td>'
+              +'<td style="padding:5px 4px;text-align:right;color:#067647;">'+money(r.paid)+'</td>'
+              +'<td style="padding:5px 4px;text-align:right;color:#C2410C;font-weight:700;">'+money(r.bal)+'</td>'
+              +'<td style="padding:5px 4px;color:'+stCol+';font-weight:600;">'+st+'</td></tr>';
+          });
+          html+='</tbody></table>'
+            +'<div style="margin-top:10px;font-size:9px;color:#98A2B3;border-top:1px solid #EEF0F2;padding-top:6px;">Computer-generated report · Samaji School Management · '+new Date().toLocaleDateString()+'</div></div>'
+            +'<div style="margin-top:12px;"><button class="btn-primary" id="fr-print">🖨 Print / Save as PDF</button></div>';
+          document.getElementById("fr-result").innerHTML=html;
+          document.getElementById("fr-print").onclick=function(){
+            var content=document.getElementById("fr-print-area");
+            if(!content) return;
+            var w=window.open("","_blank","width=800,height=600");
+            w.document.write('<!DOCTYPE html><html><head><title>Fee Report</title><style>'
+              +'@page{size:A4 portrait;margin:10mm;}'
+              +'body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:20px;font-size:12px;color:#1A1D26;-webkit-print-color-adjust:exact;print-color-adjust:exact;}'
+              +'table{width:100%;border-collapse:collapse;}'
+              +'</style></head><body>'+content.innerHTML+'</body></html>');
+            w.document.close();
+            w.focus();
+            setTimeout(function(){ w.print(); }, 300);
+          };
+        }
+        document.getElementById("fr-gen").onclick=function(){
+          var termV=document.getElementById("fr-term").value;
+          var classV=document.getElementById("fr-class").value;
+          var streamV=document.getElementById("fr-stream").value;
+          var rows=getFiltered(termV,classV,streamV).sort(function(a,b){return b.bal-a.bal;});
+          var title="Fee Payment & Balances Report";
+          var parts=[]; if(classV) parts.push(classV); if(streamV) parts.push(streamV); if(termV) parts.push(termV);
+          var subtitle=parts.length?parts.join(" · "):"All classes · All terms";
+          renderReport(rows,title,subtitle);
+        };
+        document.getElementById("fr-sendhome").onclick=function(){
+          var threshold=Number(document.getElementById("fr-threshold").value)||0;
+          if(threshold<=0){ toast("Enter a minimum balance amount for the send-home list."); return; }
+          var termV=document.getElementById("fr-term").value;
+          var classV=document.getElementById("fr-class").value;
+          var streamV=document.getElementById("fr-stream").value;
+          var rows=getFiltered(termV,classV,streamV).filter(function(r){return r.bal>=threshold;}).sort(function(a,b){return b.bal-a.bal;});
+          if(!rows.length){ toast("No students owe "+money(threshold)+" or more."); return; }
+          var title="SEND HOME LIST — Balance ≥ "+money(threshold);
+          var parts=[]; if(classV) parts.push(classV); if(streamV) parts.push(streamV); if(termV) parts.push(termV);
+          var subtitle=(parts.length?parts.join(" · "):"All classes")+" · "+rows.length+" student"+(rows.length===1?"":"s");
+          renderReport(rows,title,subtitle);
         };
       }
       ledger();
@@ -917,7 +1289,7 @@
           var ov=document.createElement("div"); ov.className="overlay";
           ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
             +'<div id="print-area"><div class="rcpt">'
-            +'<div class="rc-top"><div class="rc-logo"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg> Samaji</div>'
+            +'<div class="rc-top"><div class="rc-logo">'+(getLogoUrl(school)?'<img src="'+esc(getLogoUrl(school))+'" style="height:32px;object-fit:contain;">':('<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg>'))+'</div>'
             +'<div class="rc-school">'+esc(school.name||"School")+'</div><div class="rc-sub">Official Fee Receipt</div>'
             +'<div class="rc-stamp">'+status+'</div></div>'
             +'<div class="rc-body"><div class="rc-meta">'
@@ -963,7 +1335,7 @@
       var paid=payments.reduce(function(a,p){return a+Number(p.amount);},0), bal=Math.max(0,billed-paid);
 
       var body='<div class="st-head">'
-        +'<div class="st-school"><div class="st-logo">'+esc((school.name||"S").charAt(0))+'</div><div><div class="st-name">'+esc(school.name||"School")+'</div><div class="st-addr">Official Fee Statement</div></div></div>'
+        +'<div class="st-school">'+schoolLogo(school)+'<div><div class="st-name">'+esc(school.name||"School")+'</div><div class="st-addr">Official Fee Statement</div></div></div>'
         +'<div class="st-doc">FEE STATEMENT</div></div>'
         +'<table class="st-meta"><tr>'
         +'<td><span class="k">Student</span><span class="v">'+esc(stu.first_name+" "+stu.last_name)+'</span></td>'
@@ -1179,7 +1551,7 @@
         return '<tr><td>'+esc(d.label)+'</td><td class="num">'+money(d.value)+'</td><td class="num">'+pct+'%</td></tr>';
       }).join("") : '<tr><td colspan="3" style="text-align:center;color:#888;">No payments recorded.</td></tr>';
       var body='<div class="st-head">'
-        +'<div class="st-school"><div class="st-logo">'+esc((schoolInfo.name||"S").charAt(0))+'</div><div><div class="st-name">'+esc(schoolInfo.name||"School")+'</div><div class="st-addr">'+esc(schoolInfo.address||"")+(schoolInfo.phone?' · '+esc(schoolInfo.phone):"")+'</div></div></div>'
+        +'<div class="st-school">'+schoolLogo(schoolInfo)+'<div><div class="st-name">'+esc(schoolInfo.name||"School")+'</div><div class="st-addr">'+esc(schoolInfo.address||"")+(schoolInfo.phone?' · '+esc(schoolInfo.phone):"")+'</div></div></div>'
         +'<div class="st-doc">FEE COLLECTION REPORT</div></div>'
         +'<table class="st-meta"><tr>'
         +'<td><span class="k">Term</span><span class="v">'+esc(r.term)+'</span></td>'
@@ -1270,6 +1642,17 @@
     ov.querySelector("#dd-close").onclick=function(){ ov.remove(); };
   }
   function icArrow(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+  function getLogoUrl(info){
+    if(info&&info.logo_url) return info.logo_url;
+    if(info&&info.id) try{ return localStorage.getItem("school_logo_"+info.id)||""; }catch(e){ return ""; }
+    return "";
+  }
+  function schoolLogo(info,size){
+    size=size||40;
+    var url=getLogoUrl(info);
+    if(url) return '<img src="'+esc(url)+'" style="width:'+size+'px;height:'+size+'px;object-fit:contain;border-radius:6px;">';
+    return '<div class="st-logo" style="width:'+size+'px;height:'+size+'px;font-size:'+Math.round(size*0.45)+'px;">'+esc((info&&info.name||"S").charAt(0))+'</div>';
+  }
 
   // icons
   function icDoc(){ return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3v4h4" stroke="currentColor" stroke-width="1.8"/></svg>'; }
