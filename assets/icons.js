@@ -37,6 +37,7 @@
     // ---- teacher portal ----
     marks:       '<svg '+S+'><path d="M4 20h4L18 10l-4-4L4 16v4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13 7l4 4" stroke="currentColor" stroke-width="1.8"/></svg>',
     reportbooks: '<svg '+S+'><circle cx="12" cy="9" r="5" stroke="currentColor" stroke-width="1.8"/><path d="M9 13.5L7.5 21l4.5-2.5 4.5 2.5-1.5-7.5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    publish:     '<svg '+S+'><rect x="7" y="3" width="10" height="7" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M9 10v3h6v-3" stroke="currentColor" stroke-width="1.8"/><rect x="5" y="17" width="14" height="4" rx="1" stroke="currentColor" stroke-width="1.8"/></svg>',
     // ---- parent portal ----
     payments:      '<svg '+S+'><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>',
     announcements: '<svg '+S+'><path d="M4 10v4a1 1 0 0 0 1 1h2l8 4V5L7 9H5a1 1 0 0 0-1 1z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>'

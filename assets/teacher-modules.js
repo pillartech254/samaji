@@ -316,73 +316,216 @@
   }
 
   // ====================================================
-  //  REPORT BOOKS  (per-class printable report cards)
+  //  REPORT BOOKS  (real KICD-style colored report cards, built from
+  //  Marks & Grading's weighted totals + learner ratings/remarks)
   // ====================================================
   async function renderReportBooks(sb, ctx, el){
     var assignments = await loadMyAssignments(sb, ctx);
     var classes = myClasses(assignments);
+    var ctRes = await sb.from("school_classes").select("*").eq("class_teacher_id", ctx.teacher.id);
+    (ctRes.data||[]).forEach(function(c){ if(!classes.some(function(x){return x.id===c.id;})) classes.push(c); });
+    classes.sort(function(a,b){ return classLabel(a) < classLabel(b) ? -1 : 1; });
     if (!classes.length){ el.innerHTML='<div class="mod-head"><div><h2>Report Books</h2></div></div><div class="empty">No classes assigned yet. Ask your school admin to assign you in Settings.</div>'; return; }
 
-    el.innerHTML = '<div class="mod-head"><div><h2>Report Books</h2><p>Compile subject scores into a printable report card per student.</p></div><button class="btn-primary" id="rb-print">Print report books</button></div>'
+    var ayRes = await sb.from("academic_years").select("*, terms(*)").eq("school_id",ctx.schoolId).order("year",{ascending:false});
+    var years = ayRes.data||[];
+    if (!years.length){ el.innerHTML='<div class="mod-head"><div><h2>Report Books</h2></div></div><div class="empty">No academic year set up yet. Ask your school admin to set one up in Settings → CBC Assessment.</div>'; return; }
+    years.forEach(function(y){ y.terms=(y.terms||[]).slice().sort(function(a,b){return a.sort-b.sort;}); });
+
+    var atRes = await sb.from("assessment_types").select("*").eq("school_id",ctx.schoolId);
+    var allTypes = atRes.data||[];
+    var schemeRes = await sb.from("grading_schemes").select("*, grading_levels(*)").eq("school_id",ctx.schoolId);
+    var schemes = schemeRes.data||[];
+    var teachersRes = await sb.from("teachers").select("id,name").eq("school_id",ctx.schoolId);
+    var teacherNameById = {}; (teachersRes.data||[]).forEach(function(t){ teacherNameById[t.id]=t.name; });
+
+    var defaultYear = years.find(function(y){ return y.status==="active"; }) || years[0];
+    var defaultTerm = defaultYear.terms.find(function(t){ return t.status==="active"; }) || defaultYear.terms[defaultYear.terms.length-1];
+    var isPublisherRole = ctx.teacher.school_position==="principal" || ctx.teacher.school_position==="deputy_principal";
+
+    el.innerHTML = '<div class="mod-head"><div><h2>Report Books</h2><p>Real, colored CBC report cards — pulling live from Marks &amp; Grading.</p></div><button class="btn-primary" id="rb-print">Print all</button></div>'
       + '<div class="toolbar">'
       + '<div class="field"><label>Class</label><select id="rb-class">'+classes.map(function(c){ return '<option value="'+c.id+'">'+esc(classLabel(c))+'</option>'; }).join("")+'</select></div>'
-      + '<div class="field"><label>Term</label><select id="rb-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+      + '<div class="field"><label>Academic year</label><select id="rb-year">'+years.map(function(y){ return '<option value="'+y.id+'"'+(y.id===defaultYear.id?" selected":"")+'>'+y.year+'</option>'; }).join("")+'</select></div>'
+      + '<div class="field"><label>Reporting term</label><select id="rb-term"></select></div>'
       + '</div><div id="rb-table"></div>';
 
-    var current={ students:[], subjects:[], scores:{} };
+    function populateTerms(){
+      var year = years.find(function(y){ return y.id===document.getElementById("rb-year").value; });
+      var sel = document.getElementById("rb-term");
+      sel.innerHTML = year.terms.map(function(t){ return '<option value="'+t.id+'"'+(defaultTerm && t.id===defaultTerm.id?" selected":"")+'>'+esc(t.name)+'</option>'; }).join("");
+      if (!year.terms.length) sel.innerHTML = '<option value="">No terms yet</option>';
+    }
+    populateTerms();
+
+    var current = { cls:null, year:null, term:null, termsUpTo:[], students:[], subjects:[], types:[], scheme:null, levels:[],
+      termScoreFor:function(){ return null; }, ratingsByStudent:{}, remarksByStudent:{}, attByStudent:{}, isClassTeacher:false, isPublisher:false };
+
     async function load(){
       var classId = document.getElementById("rb-class").value;
-      var term = document.getElementById("rb-term").value;
       var cls = classes.find(function(c){ return c.id===classId; });
+      var year = years.find(function(y){ return y.id===document.getElementById("rb-year").value; });
+      var termId = document.getElementById("rb-term").value;
+      var term = termId ? year.terms.find(function(t){ return t.id===termId; }) : null;
+      var t = document.getElementById("rb-table");
+      if (!term){ t.innerHTML='<div class="empty">This academic year has no terms yet.</div>'; return; }
+      var termsUpTo = year.terms.filter(function(x){ return x.sort<=term.sort; });
+
       var csr = await sb.from("class_subjects").select("subjects(id,name)").eq("class_id",classId);
       var subjects = (csr.data||[]).map(function(x){ return x.subjects; }).filter(Boolean).sort(function(a,b){ return a.name<b.name?-1:1; });
+
       var sr = await sb.from("students").select("*").eq("school_id",ctx.schoolId).eq("class_id",classId).eq("status","active").order("first_name");
       var students = sr.data||[];
-      var scores={};
-      if (students.length && subjects.length){
-        var gr = await sb.from("grades").select("*").eq("school_id",ctx.schoolId).eq("term",term).in("student_id",students.map(function(s){return s.id;})).in("subject",subjects.map(function(s){return s.name;}));
-        (gr.data||[]).forEach(function(g){ scores[g.student_id]=scores[g.student_id]||{}; scores[g.student_id][g.subject]=g.score; });
+      var studentIds = students.map(function(s){ return s.id; });
+
+      var types = window.SamajiGrading.typesForGrade(allTypes, cls.level);
+      var scheme = window.SamajiGrading.schemeForGrade(schemes, cls.level);
+      var levels = scheme ? (scheme.grading_levels||[]) : [];
+
+      var msRes = await sb.from("mark_sheets").select("*").eq("class_id",classId).eq("academic_year_id",year.id);
+      var markSheets = msRes.data||[];
+      var msByKey = {}; markSheets.forEach(function(m){ msByKey[m.subject_id+"|"+m.term_id]=m.id; });
+      var msIds = markSheets.map(function(m){ return m.id; });
+
+      var examsByMs = {}, typeByExam = {};
+      if (msIds.length){
+        var exRes = await sb.from("exams").select("id,mark_sheet_id,assessment_type_id").in("mark_sheet_id",msIds);
+        (exRes.data||[]).forEach(function(e){ (examsByMs[e.mark_sheet_id]=examsByMs[e.mark_sheet_id]||[]).push(e); typeByExam[e.id]=e.assessment_type_id; });
       }
-      current={ students:students, subjects:subjects, scores:scores, cls:cls, term:term };
+      var resultsByExam = {};
+      var allExamIds = Object.keys(typeByExam);
+      if (allExamIds.length && studentIds.length){
+        var resRes = await sb.from("exam_results").select("exam_id,student_id,score").in("exam_id",allExamIds).in("student_id",studentIds);
+        (resRes.data||[]).forEach(function(r){ (resultsByExam[r.exam_id]=resultsByExam[r.exam_id]||{})[r.student_id]=r.score; });
+      }
+      function termScoreFor(subjectId, termId2, studentId){
+        var msId = msByKey[subjectId+"|"+termId2];
+        if (!msId) return null;
+        var exams = examsByMs[msId]||[];
+        var scoreArr = exams.map(function(e){ return { assessment_type_id:e.assessment_type_id, score:(resultsByExam[e.id]||{})[studentId] }; });
+        return window.SamajiGrading.weightedTotal(scoreArr, types);
+      }
+
+      var ratingsByStudent = {};
+      if (studentIds.length){
+        var ratingsRes = await sb.from("learner_ratings").select("*").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
+        (ratingsRes.data||[]).forEach(function(r){
+          ratingsByStudent[r.student_id] = ratingsByStudent[r.student_id] || { competency:{}, value:{}, psychomotor:{} };
+          ratingsByStudent[r.student_id][r.category][r.item_name] = r.level_code;
+        });
+      }
+      var remarksByStudent = {};
+      if (studentIds.length){
+        var remarksRes = await sb.from("report_remarks").select("*").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
+        (remarksRes.data||[]).forEach(function(r){ remarksByStudent[r.student_id]=r; });
+      }
+      var attByStudent = {};
+      if (studentIds.length){
+        var attQ = sb.from("attendance").select("student_id,status,on_date").eq("school_id",ctx.schoolId).in("student_id",studentIds);
+        if (term.start_date) attQ = attQ.gte("on_date",term.start_date);
+        if (term.end_date) attQ = attQ.lte("on_date",term.end_date);
+        var attRes = await attQ;
+        (attRes.data||[]).forEach(function(a){
+          attByStudent[a.student_id] = attByStudent[a.student_id] || { daysOpen:0, daysPresent:0, daysAbsent:0 };
+          attByStudent[a.student_id].daysOpen++;
+          if (a.status==="present") attByStudent[a.student_id].daysPresent++;
+          else if (a.status==="absent") attByStudent[a.student_id].daysAbsent++;
+        });
+      }
+
+      current = { cls:cls, year:year, term:term, termsUpTo:termsUpTo, subjects:subjects, students:students, types:types, scheme:scheme, levels:levels,
+        termScoreFor:termScoreFor, ratingsByStudent:ratingsByStudent, remarksByStudent:remarksByStudent, attByStudent:attByStudent,
+        isClassTeacher: cls.class_teacher_id===ctx.teacher.id, isPublisher: isPublisherRole };
       draw();
     }
-    function avgFor(studentId){
-      var row = current.scores[studentId]||{}; var vals = current.subjects.map(function(s){ return row[s.name]; }).filter(function(v){ return v!=null; });
-      if (!vals.length) return null;
-      return Math.round((vals.reduce(function(a,b){return a+Number(b);},0)/vals.length)*10)/10;
+
+    function subjectRowsFor(studentId){
+      return current.subjects.map(function(sub){
+        var termScores = current.termsUpTo.map(function(t){ return current.termScoreFor(sub.id, t.id, studentId); });
+        var valid = termScores.filter(function(v){ return v!=null; });
+        var average = valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
+        var lvl = average==null ? null : window.SamajiGrading.levelFor(current.levels, average);
+        return { name:sub.name, termScores:termScores, termNames:current.termsUpTo.map(function(t){ return t.name; }),
+          average:average, gradeLabel: lvl && lvl.grade_label, competencyCode: lvl && lvl.competency_code, remark: lvl && lvl.remark };
+      });
     }
+
     function draw(){
       var t=document.getElementById("rb-table");
       if (!current.students.length){ t.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
       if (!current.subjects.length){ t.innerHTML='<div class="empty">No subjects assigned to this class yet — set them in Settings → Classes.</div>'; return; }
-      var html='<table class="data"><thead><tr><th>Name</th>'+current.subjects.map(function(s){ return '<th style="text-align:right;">'+esc(s.name)+'</th>'; }).join("")+'<th style="text-align:right;">Average</th></tr></thead><tbody>';
+      var html='<table class="data"><thead><tr><th>Name</th>'+current.subjects.map(function(s){ return '<th style="text-align:right;">'+esc(s.name)+'</th>'; }).join("")+'<th style="text-align:right;">Overall Avg</th><th></th></tr></thead><tbody>';
       current.students.forEach(function(s){
-        var row = current.scores[s.id]||{};
+        var rows = subjectRowsFor(s.id);
+        var valid = rows.map(function(r){ return r.average; }).filter(function(v){ return v!=null; });
+        var overall = valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
-          + current.subjects.map(function(sub){ var v=row[sub.name]; return '<td style="text-align:right;">'+(v==null?'<span class="muted">—</span>':v)+'</td>'; }).join("")
-          + '<td style="text-align:right;font-weight:700;">'+(avgFor(s.id)==null?"—":avgFor(s.id))+'</td></tr>';
+          + rows.map(function(r){ return '<td style="text-align:right;">'+(r.average==null?'<span class="muted">—</span>':r.average)+'</td>'; }).join("")
+          + '<td style="text-align:right;font-weight:700;">'+(overall==null?'<span class="muted">—</span>':overall)+'</td>'
+          + '<td style="text-align:right;white-space:nowrap;">'+((current.isClassTeacher||current.isPublisher)?'<button class="btn-sm" data-rate="'+s.id+'">Ratings &amp; Remarks</button> ':'')+'<button class="btn-sm" data-print="'+s.id+'">Print</button></td></tr>';
       });
       html+='</tbody></table>';
       t.innerHTML=html;
+      t.querySelectorAll("[data-rate]").forEach(function(b){ b.onclick=function(){ ratingsModal(current.students.find(function(s){ return s.id===b.getAttribute("data-rate"); })); }; });
+      t.querySelectorAll("[data-print]").forEach(function(b){ b.onclick=function(){ printOne(current.students.find(function(s){ return s.id===b.getAttribute("data-print"); })); }; });
     }
+
+    function levelOptions(selected){
+      var codes = Array.from(new Set((current.levels||[]).map(function(l){ return l.competency_code; }).filter(Boolean)));
+      return '<option value="">—</option>'+codes.map(function(c){ return '<option value="'+c+'"'+(selected===c?" selected":"")+'>'+c+'</option>'; }).join("");
+    }
+    function ratingsModal(s){
+      var ratings = current.ratingsByStudent[s.id]||{ competency:{}, value:{}, psychomotor:{} };
+      var remark = current.remarksByStudent[s.id]||{};
+      var canEditRatings = current.isClassTeacher, canEditPrincipal = current.isPublisher;
+      function section(title, cat){
+        return '<div class="section-h">'+title+'</div>'+window.SamajiReportCard.CATALOG[cat].map(function(name){
+          return '<div class="field"><label>'+esc(name)+'</label>'+(canEditRatings
+            ? '<select class="rt-lvl" data-cat="'+cat+'" data-name="'+esc(name)+'">'+levelOptions(ratings[cat][name])+'</select>'
+            : '<div style="padding:9px 0;font-weight:600;">'+esc(ratings[cat][name]||"—")+'</div>')+'</div>';
+        }).join("");
+      }
+      var m = modal('<h3>Ratings &amp; Remarks — '+esc(s.first_name+" "+s.last_name)+'</h3><p class="muted" style="font-size:12.5px;margin:0 0 8px;">'+esc(current.term.name)+' · '+current.year.year+'</p>'
+        + '<div class="grid2">'
+        + section("Core Competencies","competency")
+        + section("Values","value")
+        + section("Psychomotor Skills","psychomotor")
+        + '<div class="field full"><label>Teacher\'s remark</label>'+(canEditRatings?'<textarea id="rt-teacher-remark" rows="3" style="width:100%;font-family:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:9px 11px;">'+esc(remark.teacher_remark||"")+'</textarea>':'<div class="muted">'+esc(remark.teacher_remark||"—")+'</div>')+'</div>'
+        + '<div class="field full"><label>Head Teacher\'s remark</label>'+(canEditPrincipal?'<textarea id="rt-principal-remark" rows="3" style="width:100%;font-family:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:9px 11px;">'+esc(remark.principal_remark||"")+'</textarea>':'<div class="muted">'+esc(remark.principal_remark||"—")+'</div>')+'</div>'
+        + '</div><div class="modal-actions"><button class="btn-sm" id="c">Close</button>'+((canEditRatings||canEditPrincipal)?'<button class="btn-primary" id="sv">Save</button>':'')+'</div>', true);
+      m.q("#c").onclick=m.close;
+      if (m.q("#sv")) m.q("#sv").onclick=async function(){
+        if (canEditRatings){
+          var payload=[];
+          m.qa(".rt-lvl").forEach(function(sel){ if (sel.value) payload.push({ school_id:ctx.schoolId, student_id:s.id, term_id:current.term.id, academic_year_id:current.year.id, category:sel.getAttribute("data-cat"), item_name:sel.getAttribute("data-name"), level_code:sel.value }); });
+          if (payload.length){ var r=await sb.from("learner_ratings").upsert(payload,{ onConflict:"student_id,term_id,academic_year_id,category,item_name" }); if (r.error){ toast("Error: "+r.error.message); return; } }
+        }
+        var remRec = { school_id:ctx.schoolId, student_id:s.id, term_id:current.term.id, academic_year_id:current.year.id,
+          teacher_remark: canEditRatings ? (m.q("#rt-teacher-remark").value.trim()||null) : (remark.teacher_remark||null),
+          principal_remark: canEditPrincipal ? (m.q("#rt-principal-remark").value.trim()||null) : (remark.principal_remark||null) };
+        var rr = await sb.from("report_remarks").upsert(remRec,{ onConflict:"student_id,term_id,academic_year_id" });
+        if (rr.error){ toast("Error: "+rr.error.message); return; }
+        m.close(); toast("Saved"); load();
+      };
+    }
+
+    function reportOpts(s){
+      return { school:ctx.school, student:s, classLabel:classLabel(current.cls), classTeacherName: teacherNameById[current.cls.class_teacher_id]||"—",
+        term:current.term, academicYear:current.year, subjectRows:subjectRowsFor(s.id), levels:current.levels, attendance:current.attByStudent[s.id],
+        ratings:current.ratingsByStudent[s.id]||{}, teacherRemark:(current.remarksByStudent[s.id]||{}).teacher_remark, principalRemark:(current.remarksByStudent[s.id]||{}).principal_remark };
+    }
+    function printOne(s){
+      var html = window.SamajiReportCard.studentReportHTML(reportOpts(s));
+      window.SamajiReportCard.printHTML(html, "Report Card — "+s.first_name+" "+s.last_name);
+    }
+
     document.getElementById("rb-class").onchange=load;
+    document.getElementById("rb-year").onchange=function(){ populateTerms(); load(); };
     document.getElementById("rb-term").onchange=load;
     document.getElementById("rb-print").onclick=function(){
       if (!current.students.length){ toast("Nothing to print yet."); return; }
-      var cards = current.students.map(function(s){
-        var row = current.scores[s.id]||{};
-        var lines = current.subjects.map(function(sub){ var v=row[sub.name]; return '<div class="tsc-row"><span>'+esc(sub.name)+'</span><span>'+(v==null?"—":v)+'</span></div>'; }).join("");
-        var avg = avgFor(s.id);
-        return '<div class="tsc-slip rb-card" style="margin-bottom:22px;">'
-          + '<div class="tsc-head"><div class="tsc-title">'+esc(ctx.school.name||"")+'</div><div class="tsc-sub">Report Book — '+esc(classLabel(current.cls))+' · '+esc(current.term)+'</div></div>'
-          + '<div class="tsc-meta-row"><span>Name</span><span>'+esc(s.first_name+" "+s.last_name)+'</span></div>'
-          + '<div class="tsc-meta-row"><span>Admission No</span><span>'+esc(s.admission_no||"—")+'</span></div>'
-          + '<div class="tsc-section">'+lines+'</div>'
-          + '<div class="tsc-net"><span>Average</span><span>'+(avg==null?"—":avg)+'</span></div>'
-          + '</div>';
-      }).join("");
-      var html = '<style>@media print{.rb-card{page-break-after:always;}}</style>'+cards;
-      window.SamajiPayslip.printHTML(html, "Report Books — "+classLabel(current.cls));
+      var cards = current.students.map(function(s){ return window.SamajiReportCard.studentReportHTML(reportOpts(s)); }).join("");
+      window.SamajiReportCard.printHTML(cards, "Report Books — "+classLabel(current.cls));
     };
     load();
   }
@@ -451,11 +594,43 @@
     draw();
   }
 
+  // ====================================================
+  //  PUBLISH RESULTS  (Principal/Deputy Principal only —
+  //  gated purely by teachers.school_position, a title, not a login role)
+  // ====================================================
+  async function renderPublish(sb, ctx, el){
+    el.innerHTML = '<div class="mod-head"><div><h2>Publish Results</h2><p>Publishing locks a class &amp; subject\'s marks for that term so the report card can be finalized.</p></div></div><div id="pub-table"></div>';
+    var r = await sb.from("mark_sheets").select("*, school_classes(level,stream), subjects(name), terms(name), academic_years(year), teachers(name)").eq("school_id",ctx.schoolId).order("created_at",{ascending:false});
+    var rows = r.data||[];
+    var t = document.getElementById("pub-table");
+    if (!rows.length){ t.innerHTML='<div class="empty">No mark sheets recorded yet.</div>'; return; }
+    var html='<table class="data"><thead><tr><th>Class</th><th>Subject</th><th>Term</th><th>Year</th><th>Teacher</th><th>Status</th><th></th></tr></thead><tbody>';
+    rows.forEach(function(m){
+      var cls = m.school_classes ? (m.school_classes.level+(m.school_classes.stream?" "+m.school_classes.stream:"")) : "—";
+      html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(cls)+'</td><td>'+esc(m.subjects?m.subjects.name:"—")+'</td><td>'+esc(m.terms?m.terms.name:"—")+'</td><td>'+(m.academic_years?m.academic_years.year:"—")+'</td>'
+        +'<td>'+esc(m.teachers?m.teachers.name:"—")+'</td>'
+        +'<td><span class="pill '+(m.status==="published"?"green":"amber")+'">'+esc(m.status)+'</span></td>'
+        +'<td style="text-align:right;">'+(m.status==="published"?'<button class="btn-sm" data-unpub="'+m.id+'">Unpublish</button>':'<button class="btn-primary" data-pub="'+m.id+'">Publish</button>')+'</td></tr>';
+    });
+    html+='</tbody></table>';
+    t.innerHTML=html;
+    t.querySelectorAll("[data-pub]").forEach(function(b){ b.onclick=async function(){
+      var res=await sb.from("mark_sheets").update({ status:"published", published_at:new Date().toISOString(), published_by:ctx.teacher.id }).eq("id",b.getAttribute("data-pub"));
+      if (res.error){ toast("Error: "+res.error.message); return; } toast("Published"); renderPublish(sb,ctx,el);
+    }; });
+    t.querySelectorAll("[data-unpub]").forEach(function(b){ b.onclick=async function(){
+      if (!window.confirm("Unpublish this mark sheet? The teacher will be able to edit it again.")) return;
+      var res=await sb.from("mark_sheets").update({ status:"draft" }).eq("id",b.getAttribute("data-unpub"));
+      if (res.error){ toast("Error: "+res.error.message); return; } toast("Unpublished"); renderPublish(sb,ctx,el);
+    }; });
+  }
+
   window.TeacherModules = {
     dashboard: renderDashboard,
     attendance: renderAttendance,
     grading: renderGrading,
     reportbooks: renderReportBooks,
-    payroll: renderPayroll
+    payroll: renderPayroll,
+    publish: renderPublish
   };
 })();
