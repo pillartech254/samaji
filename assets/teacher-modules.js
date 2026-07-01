@@ -151,52 +151,166 @@
 
   // ====================================================
   //  MARKS & GRADING  (scoped to the teacher's own class+subject pairs)
+  //  Weighted CBC assessment grid: assessment types are columns, the
+  //  Total/Grade are computed live via assets/grading.js as the teacher
+  //  types, then saved as mark_sheets + exams + exam_results.
   // ====================================================
   async function renderGrading(sb, ctx, el){
     var assignments = await loadMyAssignments(sb, ctx);
     if (!assignments.length){ el.innerHTML='<div class="mod-head"><div><h2>Marks &amp; Grading</h2></div></div><div class="empty">No classes/subjects assigned yet. Ask your school admin to assign you in Settings.</div>'; return; }
     var pairs = assignments.filter(function(a){ return a.school_classes && a.subjects; });
+    if (!pairs.length){ el.innerHTML='<div class="mod-head"><div><h2>Marks &amp; Grading</h2></div></div><div class="empty">No subjects assigned yet. Ask your school admin to assign you in Settings.</div>'; return; }
 
-    el.innerHTML = '<div class="mod-head"><div><h2>Marks &amp; Grading</h2><p>Enter and save scores for your classes and subjects.</p></div></div>'
+    var ayRes = await sb.from("academic_years").select("*, terms(*)").eq("school_id",ctx.schoolId).order("year",{ascending:false});
+    var years = ayRes.data||[];
+    if (!years.length){ el.innerHTML='<div class="mod-head"><div><h2>Marks &amp; Grading</h2></div></div><div class="empty">No academic year set up yet. Ask your school admin to set one up in Settings → CBC Assessment.</div>'; return; }
+    years.forEach(function(y){ y.terms = (y.terms||[]).slice().sort(function(a,b){ return a.sort-b.sort; }); });
+
+    var atRes = await sb.from("assessment_types").select("*").eq("school_id",ctx.schoolId).order("name");
+    var allTypes = atRes.data||[];
+    var schemeRes = await sb.from("grading_schemes").select("*, grading_levels(*)").eq("school_id",ctx.schoolId);
+    var schemes = schemeRes.data||[];
+
+    var defaultYear = years.find(function(y){ return y.status==="active"; }) || years[0];
+    var defaultTerm = defaultYear.terms.find(function(t){ return t.status==="active"; }) || defaultYear.terms[0];
+
+    el.innerHTML = '<div class="mod-head"><div><h2>Marks &amp; Grading</h2><p>Enter scores per assessment type — the weighted total and grade update automatically.</p></div></div>'
       + '<div class="toolbar">'
       + '<div class="field"><label>Class &amp; subject</label><select id="gb-pair">'+pairs.map(function(a,i){ return '<option value="'+i+'">'+esc(classLabel(a.school_classes))+' — '+esc(a.subjects.name)+'</option>'; }).join("")+'</select></div>'
-      + '<div class="field"><label>Term</label><select id="gb-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+      + '<div class="field"><label>Academic year</label><select id="gb-year">'+years.map(function(y){ return '<option value="'+y.id+'"'+(y.id===defaultYear.id?" selected":"")+'>'+y.year+'</option>'; }).join("")+'</select></div>'
+      + '<div class="field"><label>Term</label><select id="gb-term"></select></div>'
       + '<div style="flex:1;"></div><button class="btn-primary indigo" id="gb-save">Save scores</button></div>'
-      + '<div id="gb-table"></div>';
+      + '<div id="gb-grid"></div>';
 
-    var students=[];
+    function populateTerms(){
+      var year = years.find(function(y){ return y.id===document.getElementById("gb-year").value; });
+      var sel = document.getElementById("gb-term");
+      sel.innerHTML = (year.terms||[]).map(function(t){ return '<option value="'+t.id+'"'+(defaultTerm && t.id===defaultTerm.id?" selected":"")+'>'+esc(t.name)+'</option>'; }).join("");
+      if (!year.terms.length) sel.innerHTML = '<option value="">No terms yet</option>';
+    }
+    populateTerms();
+
+    var state = { pair:null, year:null, term:null, students:[], types:[], scheme:null, markSheet:null, scores:{} };
+
     async function load(){
       var pair = pairs[Number(document.getElementById("gb-pair").value)];
-      var term = document.getElementById("gb-term").value;
-      var sr = await sb.from("students").select("*").eq("school_id",ctx.schoolId).eq("class_id",pair.class_id).eq("status","active").order("first_name");
-      students = sr.data||[];
-      var existing={};
-      if (students.length){
-        var r = await sb.from("grades").select("*").eq("school_id",ctx.schoolId).eq("term",term).eq("subject",pair.subjects.name).in("student_id",students.map(function(s){return s.id;}));
-        (r.data||[]).forEach(function(g){ existing[g.student_id]=g.score; });
+      var year = years.find(function(y){ return y.id===document.getElementById("gb-year").value; });
+      var termId = document.getElementById("gb-term").value;
+      var term = termId ? year.terms.find(function(t){ return t.id===termId; }) : null;
+      var grid = document.getElementById("gb-grid");
+      if (!term){ grid.innerHTML='<div class="empty">This academic year has no terms yet.</div>'; return; }
+
+      var classLevel = pair.school_classes.level;
+      var types = window.SamajiGrading.typesForGrade(allTypes, classLevel);
+      var scheme = window.SamajiGrading.schemeForGrade(schemes, classLevel);
+
+      var stuRes = await sb.from("students").select("*").eq("school_id",ctx.schoolId).eq("class_id",pair.class_id).eq("status","active").order("first_name");
+      var students = stuRes.data||[];
+
+      var scores = {};
+      var msRes = await sb.from("mark_sheets").select("*").eq("class_id",pair.class_id).eq("subject_id",pair.subject_id).eq("term_id",term.id).eq("academic_year_id",year.id).maybeSingle();
+      var markSheet = msRes.data;
+      if (markSheet && students.length){
+        var exRes = await sb.from("exams").select("id,assessment_type_id").eq("mark_sheet_id",markSheet.id);
+        var exams = exRes.data||[];
+        if (exams.length){
+          var typeByExam = {}; exams.forEach(function(e){ typeByExam[e.id]=e.assessment_type_id; });
+          var resRes = await sb.from("exam_results").select("*").in("exam_id",exams.map(function(e){return e.id;}));
+          (resRes.data||[]).forEach(function(r){
+            scores[r.student_id] = scores[r.student_id] || {};
+            scores[r.student_id][typeByExam[r.exam_id]] = r.score;
+          });
+        }
       }
-      var t=document.getElementById("gb-table");
-      if (!students.length){ t.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
-      var html='<table class="data"><thead><tr><th>Name</th><th style="text-align:right;">Score / 100</th></tr></thead><tbody>';
-      students.forEach(function(s){
-        var v=existing[s.id]; v=(v==null?"":v);
-        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
-          +'<td style="text-align:right;"><input class="gb-score" type="number" min="0" max="100" data-stu="'+s.id+'" value="'+v+'" style="width:90px;text-align:right;"></td></tr>';
-      });
-      html+='</tbody></table>';
-      t.innerHTML=html;
+      state = { pair:pair, year:year, term:term, students:students, types:types, scheme:scheme, markSheet:markSheet, scores:scores };
+      draw();
     }
+
+    function rowTotalAndLevel(sid){
+      var row = state.scores[sid]||{};
+      var scoreArr = state.types.map(function(t){ return { assessment_type_id:t.id, score: row[t.id] }; });
+      var total = window.SamajiGrading.weightedTotal(scoreArr, state.types);
+      var levels = state.scheme ? (state.scheme.grading_levels||[]) : [];
+      var lvl = total==null ? null : window.SamajiGrading.levelFor(levels, total);
+      return { total:total, lvl:lvl };
+    }
+    function badgeHTML(lvl){
+      if (!lvl) return '<span class="muted">—</span>';
+      var c = lvl.color || "#475467";
+      return '<span class="pill" style="background:'+c+'22;color:'+c+';">'+esc(lvl.grade_label || lvl.competency_code || "—")+'</span>';
+    }
+
+    function draw(){
+      var grid = document.getElementById("gb-grid");
+      if (!state.students.length){ grid.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
+      if (!state.types.length){ grid.innerHTML='<div class="empty">No assessment types configured for '+esc(state.pair.school_classes.level)+' yet. Ask your school admin to add some in Settings → CBC Assessment.</div>'; return; }
+      var html='<div style="overflow-x:auto;"><table class="data" style="min-width:'+(480+state.types.length*100)+'px;"><thead><tr><th>Name</th>'
+        + state.types.map(function(t){ return '<th style="text-align:right;">'+esc(t.name)+'<div class="muted" style="font-size:10px;font-weight:500;">/'+t.max_marks+' · '+t.weight_percent+'%</div></th>'; }).join("")
+        + '<th style="text-align:right;">Total</th><th>Grade</th></tr></thead><tbody>';
+      state.students.forEach(function(s){
+        var row = state.scores[s.id]||{};
+        var tl = rowTotalAndLevel(s.id);
+        html+='<tr data-row="'+s.id+'"><td style="font-weight:600;color:#1A1D26;white-space:nowrap;">'+esc(s.first_name+" "+s.last_name)+'</td>'
+          + state.types.map(function(t){ var v=row[t.id]; return '<td style="text-align:right;"><input class="gb-score" type="number" min="0" max="'+t.max_marks+'" data-stu="'+s.id+'" data-type="'+t.id+'" value="'+(v!=null?v:"")+'" style="width:64px;text-align:right;"></td>'; }).join("")
+          + '<td class="gb-total" style="text-align:right;font-weight:700;">'+(tl.total==null?'<span class="muted">—</span>':tl.total)+'</td>'
+          + '<td class="gb-grade">'+badgeHTML(tl.lvl)+'</td></tr>';
+      });
+      html+='</tbody></table></div>';
+      grid.innerHTML = html;
+      grid.querySelectorAll(".gb-score").forEach(function(inp){
+        inp.oninput = function(){
+          var sid = inp.getAttribute("data-stu"), tid = inp.getAttribute("data-type");
+          state.scores[sid] = state.scores[sid] || {};
+          state.scores[sid][tid] = inp.value === "" ? null : Number(inp.value);
+          var tl = rowTotalAndLevel(sid);
+          var tr = grid.querySelector('tr[data-row="'+sid+'"]');
+          tr.querySelector(".gb-total").innerHTML = tl.total==null ? '<span class="muted">—</span>' : tl.total;
+          tr.querySelector(".gb-grade").innerHTML = badgeHTML(tl.lvl);
+        };
+      });
+    }
+
     document.getElementById("gb-pair").onchange=load;
+    document.getElementById("gb-year").onchange=function(){ populateTerms(); load(); };
     document.getElementById("gb-term").onchange=load;
     document.getElementById("gb-save").onclick=async function(){
-      var pair = pairs[Number(document.getElementById("gb-pair").value)];
-      var term = document.getElementById("gb-term").value;
-      var payload=[];
-      document.querySelectorAll(".gb-score").forEach(function(inp){ if(inp.value!==""){ payload.push({ school_id:ctx.schoolId, student_id:inp.getAttribute("data-stu"), subject:pair.subjects.name, term:term, score:Number(inp.value) }); } });
+      if (!state.students.length || !state.types.length) return;
+      var markSheet = state.markSheet;
+      if (!markSheet){
+        var ins = await sb.from("mark_sheets").insert({ school_id:ctx.schoolId, class_id:state.pair.class_id, subject_id:state.pair.subject_id,
+          term_id:state.term.id, academic_year_id:state.year.id, teacher_id:ctx.teacher.id, status:"draft" }).select().single();
+        if (ins.error){ toast("Error: "+ins.error.message); return; }
+        markSheet = ins.data; state.markSheet = markSheet;
+      }
+      var exRes = await sb.from("exams").select("id,assessment_type_id").eq("mark_sheet_id",markSheet.id);
+      var examByType = {}; (exRes.data||[]).forEach(function(e){ examByType[e.assessment_type_id]=e.id; });
+      var missing = state.types.filter(function(t){ return !examByType[t.id]; });
+      if (missing.length){
+        var newExams = missing.map(function(t){ return { school_id:ctx.schoolId, name:t.name, subject:state.pair.subjects.name, subject_id:state.pair.subject_id,
+          class_id:state.pair.class_id, teacher_id:ctx.teacher.id, term:state.term.name, term_id:state.term.id, academic_year_id:state.year.id,
+          max_score:t.max_marks, mark_sheet_id:markSheet.id, assessment_type_id:t.id }; });
+        var insEx = await sb.from("exams").insert(newExams).select();
+        if (insEx.error){ toast("Error: "+insEx.error.message); return; }
+        (insEx.data||[]).forEach(function(e){ examByType[e.assessment_type_id]=e.id; });
+      }
+      var levels = state.scheme ? (state.scheme.grading_levels||[]) : [];
+      var payload = [];
+      document.querySelectorAll(".gb-score").forEach(function(inp){
+        if (inp.value==="") return;
+        var tid=inp.getAttribute("data-type"), sid=inp.getAttribute("data-stu"), examId=examByType[tid];
+        if (!examId) return;
+        var type = state.types.find(function(t){ return t.id===tid; });
+        var score = Number(inp.value);
+        var pct = (score/(type.max_marks||100))*100;
+        var lvl = window.SamajiGrading.levelFor(levels, pct);
+        payload.push({ school_id:ctx.schoolId, exam_id:examId, student_id:sid, score:score,
+          grade: lvl ? (lvl.grade_label || lvl.competency_code) : null, remarks: lvl ? lvl.remark : null });
+      });
       if (!payload.length){ toast("Enter at least one score."); return; }
-      var r = await sb.from("grades").upsert(payload,{ onConflict:"student_id,subject,term" });
+      var r = await sb.from("exam_results").upsert(payload, { onConflict:"exam_id,student_id" });
       if (r.error){ toast("Error: "+r.error.message); return; }
-      toast("Saved "+payload.length+" scores for "+pair.subjects.name+" · "+term);
+      toast("Saved "+payload.length+" score"+(payload.length===1?"":"s")+" for "+state.pair.subjects.name+" · "+state.term.name);
+      load();
     };
     load();
   }
