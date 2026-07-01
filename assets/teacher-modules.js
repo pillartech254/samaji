@@ -7,7 +7,26 @@
 (function () {
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function money(n){ return "KES " + Number(n||0).toLocaleString(); }
-  function toast(t){ if(window.SM_toast) return window.SM_toast(t, /error|fail|required|invalid/i.test(t)?"err":"ok"); }
+
+  // The Teacher Portal doesn't load school-plus.js (that's where the School
+  // Portal's toast UI lives), so it needs its own — same #sm-toasts/.sm-toast
+  // markup and CSS classes (already shared via styles.css) for a consistent look.
+  var TICONS={
+    ok:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    err:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 7v6M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+    "":'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+  };
+  function smToast(msg, type){
+    type = type || "";
+    var wrap = document.getElementById("sm-toasts");
+    if (!wrap){ wrap = document.createElement("div"); wrap.id = "sm-toasts"; document.body.appendChild(wrap); }
+    var t = document.createElement("div"); t.className = "sm-toast " + type;
+    t.innerHTML = '<span class="ti">'+(TICONS[type]||TICONS[""])+'</span><span>'+esc(msg)+'</span>';
+    wrap.appendChild(t);
+    setTimeout(function(){ t.classList.add("out"); setTimeout(function(){ t.remove(); }, 260); }, 2800);
+  }
+  if (!window.SM_toast) window.SM_toast = smToast;
+  function toast(t){ window.SM_toast(t, /error|fail|required|invalid/i.test(t)?"err":"ok"); }
   function classLabel(c){ if(!c) return "—"; return c.level + (c.stream ? " "+c.stream : ""); }
   function uniq(arr){ return Array.from(new Set(arr)); }
 
