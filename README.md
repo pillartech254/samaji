@@ -1,13 +1,14 @@
 # Samaji — School Management Platform (deployable web app)
 
-A database-driven feature-flag licensing platform. **Two front-ends, one backend:**
+A database-driven feature-flag licensing platform. **Three front-ends, one backend:**
 
 | Portal | Path | Who | Sees |
 |---|---|---|---|
 | Admin console | `/admin/` | super_admin | every school, all flags, subscriptions |
 | School portal | `/school/` | school_admin | their school only — license-gated UI |
+| Teacher portal | `/teacher/` | teacher | their own classes/subjects, attendance, grading, report books and payslips only |
 
-Both are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
+All three are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
 The licensing logic lives in the database as the `resolve_flags()` function, so there is
 **no server to run or maintain.** That makes it a perfect fit for **Cloudflare Pages** (free).
 
@@ -16,6 +17,7 @@ webapp/
 ├─ index.html          landing → pick a portal
 ├─ admin/index.html    provider console
 ├─ school/index.html   school portal
+├─ teacher/index.html  teacher portal
 ├─ assets/
 │  ├─ config.js        ← the ONLY file you edit (Supabase keys)
 │  ├─ app.js           shared client + module metadata
@@ -48,9 +50,18 @@ webapp/
 10. **New query** again, paste **`setup-modules-8.sql`**, **Run** — academic setup: classes &
     streams, dormitories, richer student biodata, fee structures/items, and payments/receipts.
     Auto-seeds the Kenyan CBC class levels (PP1–Grade 9) for every school.
-11. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
+11. **New query** again, paste **`setup-modules-9.sql`**, **Run** — fee-collection idempotency
+    guard + bus transport toggle on payments.
+12. **New query** again, paste **`setup-modules-10.sql`**, **Run** — subjects catalog, teacher
+    directory, and per-class subject/teacher assignment.
+13. **New query** again, paste **`setup-modules-11.sql`**, **Run** — wires the Teacher Portal:
+    lets a teacher sign up at `/teacher/` and auto-links to their `teachers` row by email, splits
+    payroll into named allowance lines + a `staff_deductions` table for loans/salary advances, and
+    tightens payroll RLS so a teacher can only ever see their **own** payslips (admins keep full
+    access exactly as before).
+14. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
     "Confirm email" (re-enable for production).
-12. **Project Settings → API**: copy your **Project URL** and **anon public key**.
+15. **Project Settings → API**: copy your **Project URL** and **anon public key**.
 
 > Tip: you can also paste all the `setup*.sql` files into one query in order and run once.
 

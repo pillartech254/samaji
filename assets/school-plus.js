@@ -308,19 +308,20 @@
     // ----- teacher directory -----
     async function teachersTab(){
       var body=document.getElementById("set-body");
-      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Teaching staff directory — assign them to classes &amp; subjects from the Classes tab.</span><button class="btn-primary" id="add-teacher">+ Add teacher</button></div><div id="tch-table"></div>';
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Teaching staff directory — assign them to classes &amp; subjects from the Classes tab. A teacher signs up at <span class="mono">/teacher/</span> with the email below to get their own portal login.</span><button class="btn-primary" id="add-teacher">+ Add teacher</button></div><div id="tch-table"></div>';
       var r=await sb.from("teachers").select("*").eq("school_id",schoolId).order("name");
       var list=r.data||[], t=document.getElementById("tch-table");
       if(!list.length){ t.innerHTML='<div class="empty">No teachers yet. Add your teaching staff here.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Portal login</th><th></th></tr></thead><tbody>';
         list.forEach(function(s){
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.email?esc(s.email):'<span class="muted">—</span>')+'</td><td>'+(s.phone?esc(s.phone):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(s.auth_user_id?'<span class="pill green">active</span>':'<span class="pill gray">not signed up</span>')+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ teacherForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
-        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this teacher? They will be unassigned from any classes/subjects."))return; var r=await sb.from("teachers").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); teachersTab(); }; });
+        t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this teacher? They will be unassigned from any classes/subjects and lose portal access."))return; var r=await sb.from("teachers").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); teachersTab(); }; });
       }
       document.getElementById("add-teacher").onclick=function(){ teacherForm(null); };
     }
@@ -328,9 +329,9 @@
       s=s||{};
       var m=modal('<h3>'+(s.id?"Edit teacher":"Add teacher")+'</h3><div class="grid2">'
         +'<div class="field full"><label>Full name</label><input id="t-name" value="'+esc(s.name||"")+'" placeholder="Jane Wambui"></div>'
-        +'<div class="field"><label>Email</label><input id="t-email" value="'+esc(s.email||"")+'" placeholder="jane@school.ac.ke"></div>'
+        +'<div class="field"><label>Email (used to sign in at /teacher/)</label><input id="t-email" value="'+esc(s.email||"")+'" placeholder="jane@school.ac.ke"></div>'
         +'<div class="field"><label>Phone</label><input id="t-phone" value="'+esc(s.phone||"")+'" placeholder="07XX XXX XXX"></div>'
-        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
+        +'</div><p class="muted" style="font-size:12px;margin:12px 0 0;">KRA PIN, ID/payroll number and salary are set in <strong>Payroll → Staff</strong>, linked to this teacher.</p><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
       m.q("#c").onclick=m.close;
       m.q("#sv").onclick=async function(){
         var rec={ school_id:schoolId, name:m.q("#t-name").value.trim(), email:m.q("#t-email").value.trim()||null, phone:m.q("#t-phone").value.trim()||null };

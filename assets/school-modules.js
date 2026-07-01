@@ -9,12 +9,12 @@
   function money(n){ return "KES " + Number(n||0).toLocaleString(); }
   var toastT;
   function toast(t){ if(window.SM_toast) return window.SM_toast(t, /error|fail|required|invalid/i.test(t)?"err":"ok"); }
-  function modal(html){
+  function modal(html, wide){
     var ov=document.createElement("div"); ov.className="overlay";
-    ov.innerHTML='<div class="modal">'+html+'</div>';
+    ov.innerHTML='<div class="modal'+(wide?" wide":"")+'">'+html+'</div>';
     ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
     document.body.appendChild(ov);
-    return { el: ov, close: function(){ ov.remove(); }, q: function(sel){ return ov.querySelector(sel); } };
+    return { el: ov, close: function(){ ov.remove(); }, q: function(sel){ return ov.querySelector(sel); }, qa: function(sel){ return Array.prototype.slice.call(ov.querySelectorAll(sel)); } };
   }
   window.SM_toast = toast;
 
@@ -807,33 +807,17 @@
   }
 
   // ====================================================
-  //  PAYROLL  (staff + runs + Kenyan statutory deductions)
+  //  PAYROLL  (staff + runs + Kenyan statutory deductions +
+  //  loans/advances + TSC-style payslip via assets/payslip.js)
   // ====================================================
-  // Statutory rules (2024/25 monthly, standard approximation):
-  //  NSSF  : 6% of pensionable pay, upper limit KES 36,000 → max 2,160
-  //  SHIF  : 2.75% of gross (min 300)
-  //  Housing Levy : 1.5% of gross
-  //  PAYE  : banded on (gross − NSSF), less personal relief 2,400
-  function calcPAYE(taxable){
-    var bands=[[24000,0.10],[8333,0.25],[467667,0.30],[300000,0.325],[Infinity,0.35]];
-    var t=0, rem=taxable;
-    for(var i=0;i<bands.length && rem>0;i++){ var amt=Math.min(rem,bands[i][0]); t+=amt*bands[i][1]; rem-=amt; }
-    return Math.max(0, Math.round(t-2400));
-  }
-  function computePayslip(basic, allow){
-    var gross=(basic||0)+(allow||0);
-    var nssf=Math.round(Math.min(gross,36000)*0.06);
-    var shif=Math.max(300, Math.round(gross*0.0275));
-    var housing=Math.round(gross*0.015);
-    var paye=calcPAYE(gross-nssf);
-    var net=gross-paye-nssf-shif-housing;
-    return { basic:basic||0, allowances:allow||0, gross:gross, paye:paye, nssf:nssf, shif:shif, housing_levy:housing, net:net };
-  }
-
   async function renderPayroll(sb, schoolId, el){
     var tab="staff";
-    el.innerHTML='<div class="mod-head"><div><h2>Payroll</h2><p>Staff records and monthly runs with PAYE, NSSF, SHIF &amp; Housing Levy.</p></div><div id="pr-addwrap"></div></div>'
-      +'<div class="toolbar"><div class="seg" id="pr-tabs"><button data-tab="staff" class="on-present">Staff</button><button data-tab="runs">Payroll runs</button></div></div>'
+    var school = { name: schoolId };
+    var sc = await sb.from("schools").select("name").eq("id",schoolId).single();
+    if (sc.data) school.name = sc.data.name;
+
+    el.innerHTML='<div class="mod-head"><div><h2>Payroll</h2><p>Staff records, loans/advances and monthly runs with PAYE, NSSF, SHIF &amp; Housing Levy.</p></div><div id="pr-addwrap"></div></div>'
+      +'<div class="toolbar"><div class="seg" id="pr-tabs"><button data-tab="staff" class="on-present">Staff</button><button data-tab="loans">Loans &amp; Advances</button><button data-tab="runs">Payroll runs</button></div></div>'
       +'<div id="pr-body"></div>';
     document.querySelectorAll("#pr-tabs button").forEach(function(b){
       b.onclick=function(){ tab=b.getAttribute("data-tab"); document.querySelectorAll("#pr-tabs button").forEach(function(x){x.className="";}); b.className="on-present"; render(); };
@@ -841,19 +825,23 @@
     function render(){
       var add=document.getElementById("pr-addwrap");
       if(tab==="staff"){ add.innerHTML='<button class="btn-primary" id="pr-add">+ New staff</button>'; document.getElementById("pr-add").onclick=function(){ staffForm(); }; drawStaff(); }
+      else if(tab==="loans"){ add.innerHTML='<button class="btn-primary" id="pr-add">+ New loan/advance</button>'; document.getElementById("pr-add").onclick=function(){ loanForm(); }; drawLoans(); }
       else { add.innerHTML='<button class="btn-primary" id="pr-add">+ Run payroll</button>'; document.getElementById("pr-add").onclick=function(){ newRun(); }; drawRuns(); }
     }
 
+    async function loadStaff(){ var r=await sb.from("staff").select("*").eq("school_id",schoolId).order("full_name"); return r.data||[]; }
+    async function loadTeachers(){ var r=await sb.from("teachers").select("id,name,email").eq("school_id",schoolId).order("name"); return r.data||[]; }
+
     // ---- STAFF ----
     async function drawStaff(){
-      var r=await sb.from("staff").select("*").eq("school_id",schoolId).order("full_name");
-      var rows=r.data||[];
+      var rows=await loadStaff();
       if(!rows.length){ document.getElementById("pr-body").innerHTML='<div class="empty">No staff yet. Click <strong>+ New staff</strong>.</div>'; return; }
       var html='<table class="data"><thead><tr><th>Name</th><th>Role</th><th>KRA PIN</th><th>Basic</th><th>Allowances</th><th>Net (est.)</th><th></th></tr></thead><tbody>';
       rows.forEach(function(s){
-        var ps=computePayslip(s.basic_salary,s.allowances);
-        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.full_name)+(s.active?"":' <span class="pill gray">inactive</span>')+'</td><td>'+esc(s.role||"—")+'</td>'
-          +'<td class="mono" style="font-size:12px;">'+esc(s.kra_pin||"—")+'</td><td>'+money(s.basic_salary)+'</td><td>'+money(s.allowances)+'</td>'
+        var ps=window.SamajiPayslip.compute(s.basic_salary, s.house_allowance, s.transport_allowance, s.allowances, []);
+        var totalAllow=(s.house_allowance||0)+(s.transport_allowance||0)+(s.allowances||0);
+        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.full_name)+(s.active?"":' <span class="pill gray">inactive</span>')+(s.teacher_id?' <span class="pill green" title="Linked to a teacher-portal login">portal</span>':'')+'</td><td>'+esc(s.role||"—")+'</td>'
+          +'<td class="mono" style="font-size:12px;">'+esc(s.kra_pin||"—")+'</td><td>'+money(s.basic_salary)+'</td><td>'+money(totalAllow)+'</td>'
           +'<td style="font-weight:600;">'+money(ps.net)+'</td>'
           +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
       });
@@ -862,24 +850,75 @@
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ staffForm(rows.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this staff member?"))return; var r=await sb.from("staff").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); drawStaff(); }; });
     }
-    function staffForm(s){
+    async function staffForm(s){
       s=s||{};
-      var m=modal('<h3>'+(s.id?"Edit staff":"New staff")+'</h3><div class="grid2">'
+      var teachers=await loadTeachers();
+      var tOpts='<option value="">— not linked (non-teaching staff) —</option>'+teachers.map(function(t){ return '<option value="'+t.id+'"'+(s.teacher_id===t.id?" selected":"")+'>'+esc(t.name)+(t.email?" ("+esc(t.email)+")":"")+'</option>'; }).join("");
+      var m=modal('<h3>'+(s.id?"Edit staff":"New staff")+'</h3><p class="muted" style="font-size:12.5px;margin:0 0 6px;">Link to a teacher so they can see this payslip &amp; P9 in their own Teacher Portal login.</p><div class="grid2">'
         +'<div class="field full"><label>Full name</label><input id="s-name" value="'+esc(s.full_name||"")+'"></div>'
-        +'<div class="field"><label>Role</label><input id="s-role" value="'+esc(s.role||"")+'"></div>'
+        +'<div class="field full"><label>Link to teacher (optional)</label><select id="s-teacher">'+tOpts+'</select></div>'
+        +'<div class="field"><label>Role / designation</label><input id="s-role" value="'+esc(s.role||"")+'" placeholder="Senior Teacher"></div>'
+        +'<div class="field"><label>Station</label><input id="s-station" value="'+esc(s.station||"")+'" placeholder="Same as school, or a different one"></div>'
+        +'<div class="field"><label>ID number</label><input id="s-idno" value="'+esc(s.id_no||"")+'"></div>'
+        +'<div class="field"><label>TSC / payroll number</label><input id="s-payno" value="'+esc(s.payroll_no||"")+'"></div>'
         +'<div class="field"><label>KRA PIN</label><input id="s-pin" value="'+esc(s.kra_pin||"")+'"></div>'
         +'<div class="field"><label>Basic salary</label><input id="s-basic" type="number" value="'+(s.basic_salary||0)+'"></div>'
-        +'<div class="field"><label>Allowances</label><input id="s-allow" type="number" value="'+(s.allowances||0)+'"></div>'
+        +'<div class="field"><label>Rental/House allowance</label><input id="s-house" type="number" value="'+(s.house_allowance||0)+'"></div>'
+        +'<div class="field"><label>Commuter/Transport allowance</label><input id="s-transport" type="number" value="'+(s.transport_allowance||0)+'"></div>'
+        +'<div class="field"><label>Other allowances</label><input id="s-allow" type="number" value="'+(s.allowances||0)+'"></div>'
         +'<div class="field"><label>Phone</label><input id="s-phone" value="'+esc(s.phone||"")+'"></div>'
         +'<div class="field"><label>Status</label><select id="s-active"><option value="true"'+(s.active!==false?" selected":"")+'>active</option><option value="false"'+(s.active===false?" selected":"")+'>inactive</option></select></div>'
-        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>');
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
         var rec={ school_id:schoolId, full_name:m.q("#s-name").value.trim(), role:m.q("#s-role").value.trim()||null, kra_pin:m.q("#s-pin").value.trim()||null,
-          basic_salary:Number(m.q("#s-basic").value)||0, allowances:Number(m.q("#s-allow").value)||0, phone:m.q("#s-phone").value.trim()||null, active:m.q("#s-active").value==="true" };
+          teacher_id:m.q("#s-teacher").value||null, station:m.q("#s-station").value.trim()||null,
+          id_no:m.q("#s-idno").value.trim()||null, payroll_no:m.q("#s-payno").value.trim()||null,
+          basic_salary:Number(m.q("#s-basic").value)||0, house_allowance:Number(m.q("#s-house").value)||0, transport_allowance:Number(m.q("#s-transport").value)||0,
+          allowances:Number(m.q("#s-allow").value)||0, phone:m.q("#s-phone").value.trim()||null, active:m.q("#s-active").value==="true" };
         if(!rec.full_name){ toast("Name required."); return; }
         var res=s.id?await sb.from("staff").update(rec).eq("id",s.id):await sb.from("staff").insert(rec);
-        if(res.error){ toast("Error: "+res.error.message); return; } m.close(); toast("Saved"); drawStaff();
+        if(res.error){ toast(res.error.message.indexOf("staff_teacher_uidx")>=0?"That teacher is already linked to another staff record.":("Error: "+res.error.message)); return; } m.close(); toast("Saved"); drawStaff();
+      };
+    }
+
+    // ---- LOANS / ADVANCES ----
+    async function drawLoans(){
+      var staff=await loadStaff(); var nameOf={}; staff.forEach(function(s){ nameOf[s.id]=s.full_name; });
+      var r=await sb.from("staff_deductions").select("*").eq("school_id",schoolId).order("created_at",{ascending:false});
+      var rows=r.data||[];
+      if(!rows.length){ document.getElementById("pr-body").innerHTML='<div class="empty">No loans or salary advances recorded. These are deducted automatically from each payroll run until repaid.</div>'; return; }
+      var html='<table class="data"><thead><tr><th>Staff</th><th>Type</th><th>Description</th><th style="text-align:right;">Principal</th><th style="text-align:right;">Monthly</th><th style="text-align:right;">Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+      rows.forEach(function(d){
+        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(nameOf[d.staff_id]||"—")+'</td><td><span class="pill '+(d.kind==="loan"?"amber":"gray")+'">'+esc(d.kind)+'</span></td>'
+          +'<td>'+esc(d.description||"—")+'</td><td style="text-align:right;">'+money(d.principal)+'</td><td style="text-align:right;">'+money(d.monthly_amount)+'</td>'
+          +'<td style="text-align:right;font-weight:600;">'+money(d.balance)+'</td><td><span class="pill '+(d.status==="active"?"green":d.status==="completed"?"gray":"red")+'">'+esc(d.status)+'</span></td>'
+          +'<td style="text-align:right;white-space:nowrap;">'+(d.status==="active"?'<button class="btn-sm" data-cancel="'+d.id+'">Cancel</button> ':'')+'<button class="btn-sm danger" data-del="'+d.id+'">Delete</button></td></tr>';
+      });
+      html+='</tbody></table>';
+      var t=document.getElementById("pr-body"); t.innerHTML=html;
+      t.querySelectorAll("[data-cancel]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Stop deducting this loan/advance? Remaining balance is written off."))return; var r=await sb.from("staff_deductions").update({status:"cancelled"}).eq("id",b.getAttribute("data-cancel")); if(r.error){toast("Error: "+r.error.message);return;} toast("Cancelled"); drawLoans(); }; });
+      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this record? Past payslips already keep their own deduction history."))return; var r=await sb.from("staff_deductions").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); drawLoans(); }; });
+    }
+    async function loanForm(){
+      var staff=await loadStaff();
+      if(!staff.length){ toast("Add staff first."); return; }
+      var sOpts=staff.map(function(s){ return '<option value="'+s.id+'">'+esc(s.full_name)+'</option>'; }).join("");
+      var m=modal('<h3>New loan / advance</h3><p class="muted" style="font-size:12.5px;margin:0 0 6px;">A fixed instalment is deducted from every payroll run until the balance reaches zero.</p><div class="grid2">'
+        +'<div class="field full"><label>Staff</label><select id="ln-staff">'+sOpts+'</select></div>'
+        +'<div class="field"><label>Type</label><select id="ln-kind"><option value="advance">Salary advance</option><option value="loan">Loan</option></select></div>'
+        +'<div class="field"><label>Description</label><input id="ln-desc" placeholder="e.g. School fees advance"></div>'
+        +'<div class="field"><label>Principal amount</label><input id="ln-principal" type="number" value="0"></div>'
+        +'<div class="field"><label>Monthly deduction</label><input id="ln-monthly" type="number" value="0"></div>'
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+      m.q("#c").onclick=m.close;
+      m.q("#s").onclick=async function(){
+        var principal=Number(m.q("#ln-principal").value)||0, monthly=Number(m.q("#ln-monthly").value)||0;
+        if(!principal||!monthly){ toast("Enter a principal amount and a monthly deduction."); return; }
+        var rec={ school_id:schoolId, staff_id:m.q("#ln-staff").value, kind:m.q("#ln-kind").value, description:m.q("#ln-desc").value.trim()||null,
+          principal:principal, monthly_amount:monthly, balance:principal, status:"active" };
+        var r=await sb.from("staff_deductions").insert(rec);
+        if(r.error){ toast("Error: "+r.error.message); return; } m.close(); toast("Recorded"); drawLoans();
       };
     }
 
@@ -900,37 +939,80 @@
     }
     async function newRun(){
       var now=new Date(); var period=now.toISOString().slice(0,7);
-      var m=modal('<h3>Run payroll</h3><p class="muted" style="font-size:12.5px;margin:0;">Generates payslips for all active staff with statutory deductions.</p>'
+      var staff=await loadStaff(); var active=staff.filter(function(s){return s.active;});
+      if(!active.length){ toast("No active staff to pay."); return; }
+      var rows=active.map(function(s){ return '<label style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--line-2);font-size:13px;cursor:pointer;"><input type="checkbox" class="run-chk" data-staff="'+s.id+'" checked> '+esc(s.full_name)+' <span class="muted" style="margin-left:auto;font-size:11.5px;">'+esc(s.role||"")+'</span></label>'; }).join("");
+      var m=modal('<h3>Run payroll</h3><p class="muted" style="font-size:12.5px;margin:0;">Pick the period and which staff to pay. Loans/advances due are deducted automatically.</p>'
         +'<div class="grid2"><div class="field full"><label>Period (month)</label><input id="run-period" type="month" value="'+period+'"></div></div>'
-        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Generate</button></div>');
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;"><strong style="font-size:13px;">Staff to pay</strong><button class="btn-sm" id="run-toggle" type="button">Select/deselect all</button></div>'
+        +'<div style="max-height:280px;overflow:auto;margin-top:4px;">'+rows+'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Generate</button></div>', true);
       m.q("#c").onclick=m.close;
+      m.q("#run-toggle").onclick=function(){ var boxes=m.qa(".run-chk"); var allOn=boxes.every(function(b){return b.checked;}); boxes.forEach(function(b){ b.checked=!allOn; }); };
       m.q("#s").onclick=async function(){
         var p=m.q("#run-period").value; if(!p){ toast("Pick a period."); return; }
-        var staffRes=await sb.from("staff").select("*").eq("school_id",schoolId).eq("active",true);
-        var staff=staffRes.data||[]; if(!staff.length){ toast("No active staff to pay."); return; }
-        // create (or fetch) the run
-        var runRes=await sb.from("payroll_runs").insert({ school_id:schoolId, period:p, status:"draft" }).select().single();
-        if(runRes.error){ toast(runRes.error.message.indexOf("duplicate")>=0?"A run for "+p+" already exists.":("Error: "+runRes.error.message)); return; }
+        var pickedIds=m.qa(".run-chk").filter(function(b){return b.checked;}).map(function(b){return b.getAttribute("data-staff");});
+        if(!pickedIds.length){ toast("Select at least one staff member."); return; }
+        var picked=active.filter(function(s){ return pickedIds.indexOf(s.id)>=0; });
+        // get or create the run for this period
+        var runRes=await sb.from("payroll_runs").select("*").eq("school_id",schoolId).eq("period",p).maybeSingle();
         var run=runRes.data;
-        var slips=staff.map(function(s){ var c=computePayslip(s.basic_salary,s.allowances); c.school_id=schoolId; c.run_id=run.id; c.staff_id=s.id; return c; });
-        var ins=await sb.from("payslips").insert(slips);
-        if(ins.error){ toast("Error: "+ins.error.message); return; }
+        if(!run){
+          var ins=await sb.from("payroll_runs").insert({ school_id:schoolId, period:p, status:"draft" }).select().single();
+          if(ins.error){ toast("Error: "+ins.error.message); return; }
+          run=ins.data;
+        } else if(run.status==="finalized"){ toast("The "+p+" run is already finalized."); return; }
+        // refund any deduction instalments already applied to a re-generated slip in THIS run,
+        // so re-running the same staff twice doesn't double-deduct their loan balance
+        var existingRes=await sb.from("payslips").select("staff_id,deduction_lines").eq("run_id",run.id).in("staff_id",pickedIds);
+        var refunds={}; // deduction id -> amount to add back to balance
+        (existingRes.data||[]).forEach(function(row){ (row.deduction_lines||[]).forEach(function(l){ if(l.id) refunds[l.id]=(refunds[l.id]||0)+l.amount; }); });
+        if(Object.keys(refunds).length){
+          var ded=await sb.from("staff_deductions").select("*").in("id",Object.keys(refunds));
+          for (var i=0;i<(ded.data||[]).length;i++){
+            var d=ded.data[i]; var newBal=d.balance+refunds[d.id];
+            await sb.from("staff_deductions").update({ balance:newBal, status: newBal>0 ? "active" : d.status }).eq("id",d.id);
+          }
+        }
+        // fetch fresh (post-refund) active deductions for the picked staff
+        var dedRes=await sb.from("staff_deductions").select("*").eq("status","active").in("staff_id",pickedIds);
+        var dedByStaff={}; (dedRes.data||[]).forEach(function(d){ (dedByStaff[d.staff_id]=dedByStaff[d.staff_id]||[]).push(d); });
+        var slips=[], dedUpdates=[];
+        picked.forEach(function(s){
+          var lines=[];
+          (dedByStaff[s.id]||[]).forEach(function(d){
+            var amt=Math.min(d.monthly_amount, d.balance);
+            if(amt<=0) return;
+            lines.push({ id:d.id, label:(d.kind==="loan"?"Loan":"Advance")+(d.description?" — "+d.description:""), amount:amt });
+            dedUpdates.push({ id:d.id, balance:d.balance-amt });
+          });
+          var c=window.SamajiPayslip.compute(s.basic_salary, s.house_allowance, s.transport_allowance, s.allowances, lines);
+          slips.push({ school_id:schoolId, run_id:run.id, staff_id:s.id, basic:c.basic, house_allowance:c.house_allowance, transport_allowance:c.transport_allowance,
+            allowances:c.allowances, gross:c.gross, paye:c.paye, nssf:c.nssf, shif:c.shif, housing_levy:c.housing_levy,
+            deductions_other:c.deductions_other, deduction_lines:c.deduction_lines, net:c.net });
+        });
+        var insSlips=await sb.from("payslips").upsert(slips,{ onConflict:"run_id,staff_id" });
+        if(insSlips.error){ toast("Error: "+insSlips.error.message); return; }
+        for (var j=0;j<dedUpdates.length;j++){
+          var u=dedUpdates[j];
+          await sb.from("staff_deductions").update({ balance:u.balance, status: u.balance<=0 ? "completed" : "active" }).eq("id",u.id);
+        }
         m.close(); toast("Payroll generated for "+p); runDetail(run);
       };
     }
     async function runDetail(run){
-      var sres=await sb.from("staff").select("id,full_name,role").eq("school_id",schoolId);
+      var sres=await sb.from("staff").select("id,full_name,role,station,payroll_no,id_no,kra_pin").eq("school_id",schoolId);
       var sName={}; (sres.data||[]).forEach(function(s){ sName[s.id]=s; });
       var pres=await sb.from("payslips").select("*").eq("run_id",run.id);
       var slips=pres.data||[];
-      var tot=slips.reduce(function(a,p){ a.gross+=p.gross;a.paye+=p.paye;a.nssf+=p.nssf;a.shif+=p.shif;a.housing+=p.housing_levy;a.net+=p.net; return a; },{gross:0,paye:0,nssf:0,shif:0,housing:0,net:0});
+      var tot=slips.reduce(function(a,p){ a.gross+=p.gross;a.paye+=p.paye;a.nssf+=p.nssf;a.shif+=p.shif;a.housing+=p.housing_levy;a.other+=(p.deductions_other||0);a.net+=p.net; return a; },{gross:0,paye:0,nssf:0,shif:0,housing:0,other:0,net:0});
       el.innerHTML='<div class="mod-head"><div><h2>Payroll · '+esc(run.period)+'</h2><p>'+slips.length+' staff · <span class="pill '+(run.status==="finalized"?"green":"amber")+'">'+esc(run.status)+'</span></p></div>'
         +'<div style="display:flex;gap:10px;"><button class="btn-sm" id="pr-back">← All runs</button>'+(run.status!=="finalized"?'<button class="btn-primary indigo" id="pr-final">Finalize</button>':"")+'</div></div>'
         +'<div class="kpis" style="grid-template-columns:repeat(3,1fr);"><div class="panel"><div class="muted" style="font-size:12.5px;">Gross</div><div style="font-size:22px;font-weight:700;margin-top:6px;">'+money(tot.gross)+'</div></div>'
-        +'<div class="panel"><div class="muted" style="font-size:12.5px;">Total deductions</div><div style="font-size:22px;font-weight:700;margin-top:6px;color:#B54708;">'+money(tot.paye+tot.nssf+tot.shif+tot.housing)+'</div></div>'
+        +'<div class="panel"><div class="muted" style="font-size:12.5px;">Total deductions</div><div style="font-size:22px;font-weight:700;margin-top:6px;color:#B54708;">'+money(tot.paye+tot.nssf+tot.shif+tot.housing+tot.other)+'</div></div>'
         +'<div class="panel"><div class="muted" style="font-size:12.5px;">Net pay</div><div style="font-size:22px;font-weight:700;margin-top:6px;color:#067647;">'+money(tot.net)+'</div></div></div>'
-        +'<div style="overflow-x:auto;margin-top:18px;"><table class="data" style="min-width:760px;"><thead><tr><th>Staff</th><th style="text-align:right;">Gross</th><th style="text-align:right;">PAYE</th><th style="text-align:right;">NSSF</th><th style="text-align:right;">SHIF</th><th style="text-align:right;">Housing</th><th style="text-align:right;">Net</th><th></th></tr></thead><tbody id="pr-slips"></tbody>'
-        +'<tfoot><tr style="font-weight:700;background:#FCFCFD;"><td style="padding:11px 14px;">Totals</td><td style="text-align:right;padding:11px 14px;">'+money(tot.gross)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.paye)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.nssf)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.shif)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.housing)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.net)+'</td><td></td></tr></tfoot></table></div>';
+        +'<div style="overflow-x:auto;margin-top:18px;"><table class="data" style="min-width:820px;"><thead><tr><th>Staff</th><th style="text-align:right;">Gross</th><th style="text-align:right;">PAYE</th><th style="text-align:right;">NSSF</th><th style="text-align:right;">SHIF</th><th style="text-align:right;">Housing</th><th style="text-align:right;">Loans/Adv.</th><th style="text-align:right;">Net</th><th></th></tr></thead><tbody id="pr-slips"></tbody>'
+        +'<tfoot><tr style="font-weight:700;background:#FCFCFD;"><td style="padding:11px 14px;">Totals</td><td style="text-align:right;padding:11px 14px;">'+money(tot.gross)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.paye)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.nssf)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.shif)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.housing)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.other)+'</td><td style="text-align:right;padding:11px 14px;">'+money(tot.net)+'</td><td></td></tr></tfoot></table></div>';
       document.getElementById("pr-back").onclick=function(){ tab="runs"; render(); };
       if(document.getElementById("pr-final")) document.getElementById("pr-final").onclick=async function(){
         var r=await sb.from("payroll_runs").update({ status:"finalized" }).eq("id",run.id);
@@ -940,22 +1022,20 @@
       slips.forEach(function(p){
         var s=sName[p.staff_id]||{full_name:"—"};
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.full_name)+'<div class="muted" style="font-size:11px;">'+esc(s.role||"")+'</div></td>'
-          +'<td style="text-align:right;">'+money(p.gross)+'</td><td style="text-align:right;">'+money(p.paye)+'</td><td style="text-align:right;">'+money(p.nssf)+'</td><td style="text-align:right;">'+money(p.shif)+'</td><td style="text-align:right;">'+money(p.housing_levy)+'</td>'
+          +'<td style="text-align:right;">'+money(p.gross)+'</td><td style="text-align:right;">'+money(p.paye)+'</td><td style="text-align:right;">'+money(p.nssf)+'</td><td style="text-align:right;">'+money(p.shif)+'</td><td style="text-align:right;">'+money(p.housing_levy)+'</td><td style="text-align:right;">'+money(p.deductions_other||0)+'</td>'
           +'<td style="text-align:right;font-weight:600;">'+money(p.net)+'</td><td style="text-align:right;"><button class="btn-sm" data-slip="'+p.id+'">Payslip</button></td></tr>';
       });
       body.innerHTML=html;
       body.querySelectorAll("[data-slip]").forEach(function(b){ b.onclick=function(){ var p=slips.find(function(x){return x.id===b.getAttribute("data-slip");}); payslipModal(p, sName[p.staff_id]||{}, run); }; });
     }
     function payslipModal(p, s, run){
-      var m=modal('<h3>Payslip — '+esc(s.full_name||"")+'</h3><p class="muted" style="font-size:12.5px;margin:0;">'+esc(s.role||"")+' · '+esc(run.period)+'</p>'
-        +'<div style="margin-top:14px;border:1px solid #EEF0F2;border-radius:11px;overflow:hidden;">'
-        +row("Basic salary",money(p.basic))+row("Allowances",money(p.allowances))+row("Gross pay",money(p.gross),true)
-        +row("PAYE","− "+money(p.paye))+row("NSSF","− "+money(p.nssf))+row("SHIF","− "+money(p.shif))+row("Housing Levy","− "+money(p.housing_levy))
-        +row("Net pay",money(p.net),true)+'</div>'
-        +'<div class="modal-actions"><button class="btn-primary" id="c">Close</button></div>');
+      var slipHtml=window.SamajiPayslip.slipHTML({ school:school, staff:s, payslip:p, period:run.period });
+      var m=modal('<h3>Payslip — '+esc(s.full_name||"")+'</h3>'
+        +'<div style="margin-top:14px;">'+slipHtml+'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Close</button><button class="btn-primary" id="pr">Print</button></div>');
       m.q("#c").onclick=m.close;
+      m.q("#pr").onclick=function(){ window.SamajiPayslip.printHTML(slipHtml, "Payslip — "+(s.full_name||"")); };
     }
-    function row(k,v,bold){ return '<div style="display:flex;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #F4F5F7;'+(bold?"background:#FAFBFC;font-weight:700;":"")+'"><span style="font-size:13px;color:'+(bold?"#1A1D26":"#667085")+';">'+k+'</span><span style="font-size:13px;color:#1A1D26;'+(bold?"font-weight:700;":"")+'">'+v+'</span></div>'; }
 
     render();
   }
