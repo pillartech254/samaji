@@ -15,24 +15,31 @@
     return window.__sb;
   };
 
-  // Module display metadata, keyed by feature flag.
+  // Module display metadata, keyed by feature flag. `icon` is a lookup key
+  // into window.SamajiIcons (assets/icons.js) rather than the SVG itself,
+  // resolved lazily in metaFor() so script load order doesn't matter.
   window.MODULE_META = {
-    "module.students":   { name: "Students",         mono: "S", tint: "#EEF1F5", ink: "#475467", kpi: { label: "Active students",  value: "842" } },
-    "module.attendance": { name: "Attendance",       mono: "A", tint: "#EEF1F5", ink: "#475467", kpi: { label: "Attendance today", value: "96.4%" } },
-    "module.academics":  { name: "Academics",        mono: "A", tint: "#EEF1F5", ink: "#475467" },
-    "module.messaging":  { name: "Communications",   mono: "C", tint: "#EEF1F5", ink: "#475467" },
-    "module.finance":    { name: "Fees & Invoicing", mono: "F", tint: "#EEF0FF", ink: "#4F46E5", kpi: { label: "Outstanding fees", value: "$48,200" } },
-    "module.exams":      { name: "Exams",            mono: "E", tint: "#EEF0FF", ink: "#4F46E5" },
-    "module.timetable":  { name: "Timetable",        mono: "T", tint: "#EEF0FF", ink: "#4F46E5" },
-    "module.library":    { name: "Library",          mono: "L", tint: "#EEF0FF", ink: "#4F46E5" },
-    "module.transport":  { name: "Transport",        mono: "T", tint: "#EEF0FF", ink: "#4F46E5" },
-    "module.payroll":    { name: "Payroll",          mono: "P", tint: "#F1ECFE", ink: "#6D28D9" },
-    "module.sms":        { name: "SMS Gateway",      mono: "S", tint: "#F1ECFE", ink: "#6D28D9" },
-    "module.biometric":  { name: "Biometric",        mono: "B", tint: "#F1ECFE", ink: "#6D28D9" },
-    "module.analytics":  { name: "Analytics Pro",    mono: "A", tint: "#F1ECFE", ink: "#6D28D9" },
-    "module.api":        { name: "API & Webhooks",   mono: "A", tint: "#F1ECFE", ink: "#6D28D9" }
+    "module.students":   { name: "Students",         icon: "students",   tint: "#EEF1F5", ink: "#475467", kpi: { label: "Active students",  value: "842" } },
+    "module.attendance": { name: "Attendance",       icon: "attendance", tint: "#EEF1F5", ink: "#475467", kpi: { label: "Attendance today", value: "96.4%" } },
+    "module.academics":  { name: "Academics",        icon: "academics",  tint: "#EEF1F5", ink: "#475467" },
+    "module.messaging":  { name: "Communications",   icon: "messaging",  tint: "#EEF1F5", ink: "#475467" },
+    "module.finance":    { name: "Fees & Invoicing", icon: "finance",    tint: "#EEF0FF", ink: "#4F46E5", kpi: { label: "Outstanding fees", value: "$48,200" } },
+    "module.exams":      { name: "Exams",            icon: "exams",      tint: "#EEF0FF", ink: "#4F46E5" },
+    "module.timetable":  { name: "Timetable",        icon: "timetable",  tint: "#EEF0FF", ink: "#4F46E5" },
+    "module.library":    { name: "Library",          icon: "library",    tint: "#EEF0FF", ink: "#4F46E5" },
+    "module.transport":  { name: "Transport",        icon: "transport",  tint: "#EEF0FF", ink: "#4F46E5" },
+    "module.payroll":    { name: "Payroll",          icon: "payroll",    tint: "#F1ECFE", ink: "#6D28D9" },
+    "module.sms":        { name: "SMS Gateway",      icon: "sms",        tint: "#F1ECFE", ink: "#6D28D9" },
+    "module.biometric":  { name: "Biometric",        icon: "biometric",  tint: "#F1ECFE", ink: "#6D28D9" },
+    "module.analytics":  { name: "Analytics Pro",    icon: "analytics",  tint: "#F1ECFE", ink: "#6D28D9" },
+    "module.api":        { name: "API & Webhooks",   icon: "api",        tint: "#F1ECFE", ink: "#6D28D9" }
   };
-  window.metaFor = function (k) { return window.MODULE_META[k] || { name: k, mono: "•", tint: "#EEF1F5", ink: "#475467" }; };
+  window.metaFor = function (k) {
+    var m = window.MODULE_META[k] || { name: k, icon: k, tint: "#EEF1F5", ink: "#475467" };
+    var out = {}; for (var p in m) out[p] = m[p];
+    out.icon = window.iconFor ? window.iconFor(m.icon) : "";
+    return out;
+  };
 
   // ---- Shared pagination utility ----
   // Usage:

@@ -103,11 +103,11 @@
         <div class="school"><div class="logo teal" id="school-logo">S</div>
           <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="teacher-name">Teacher</div><div style="font-size:11px;color:#98A2B3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="school-name">—</div></div>
         </div>
-        <button class="navitem" id="nav-dashboard"><span class="tile" style="background:#E7F6F3;color:#0E9384;">◆</span>Dashboard</button>
-        <button class="navitem" id="nav-attendance" style="display:none;"><span class="tile" style="background:#EEF1F5;color:#475467;">A</span>Attendance</button>
-        <button class="navitem" id="nav-grading" style="display:none;"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">M</span>Marks &amp; Grading</button>
-        <button class="navitem" id="nav-reportbooks" style="display:none;"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">R</span>Report Books</button>
-        <button class="navitem" id="nav-payroll" style="display:none;"><span class="tile" style="background:#F1ECFE;color:#6D28D9;">P</span>My Payroll</button>
+        <button class="navitem" id="nav-dashboard"><span class="tile" style="background:#E7F6F3;color:#0E9384;" data-icon="dashboard"></span>Dashboard</button>
+        <button class="navitem" id="nav-attendance" style="display:none;"><span class="tile" style="background:#EEF1F5;color:#475467;" data-icon="attendance"></span>Attendance</button>
+        <button class="navitem" id="nav-grading" style="display:none;"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="marks"></span>Marks &amp; Grading</button>
+        <button class="navitem" id="nav-reportbooks" style="display:none;"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reportbooks"></span>Report Books</button>
+        <button class="navitem" id="nav-payroll" style="display:none;"><span class="tile" style="background:#F1ECFE;color:#6D28D9;" data-icon="payroll"></span>My Payroll</button>
         <div style="flex:1;"></div>
         <button class="ghost" id="signout" style="margin:8px;">Sign out</button>
       </aside>
@@ -119,11 +119,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="../assets/config.js"></script>
+<script src="../assets/icons.js"></script>
 <script src="../assets/app.js"></script>
 <script src="../assets/payslip.js"></script>
 <script src="../assets/teacher-modules.js"></script>
 <script>
   var $ = function(id){ return document.getElementById(id); };
+  if (window.SamajiIcons) window.SamajiIcons.fill();
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
   var CTX = { schoolId:null, school:null, teacher:null, flags:{} };

@@ -112,14 +112,14 @@
         <div class="school"><div class="logo teal" id="school-logo">G</div>
           <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="school-name">School</div><div style="font-size:11px;color:#98A2B3;" id="school-plan">—</div></div>
         </div>
-        <button class="navitem" id="nav-dashboard"><span class="tile" style="background:#E7F6F3;color:#0E9384;">◆</span>Dashboard</button>
-        <button class="navitem" id="nav-reports"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">◩</span>Reports</button>
+        <button class="navitem" id="nav-dashboard"><span class="tile" style="background:#E7F6F3;color:#0E9384;" data-icon="dashboard"></span>Dashboard</button>
+        <button class="navitem" id="nav-reports"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reports"></span>Reports</button>
         <div class="nav-h">Modules</div>
         <div id="nav-live"></div>
         <div class="nav-h" id="nav-locked-h" style="display:none;">Not in your plan</div>
         <div id="nav-locked"></div>
         <div style="flex:1;"></div>
-        <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;">⚙</span>Settings</button>
+        <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;" data-icon="settings"></span>Settings</button>
         <button class="ghost" id="signout" style="margin:8px;">Sign out</button>
       </aside>
       <main id="view"><!-- module renders here --></main>
@@ -130,12 +130,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="../assets/config.js"></script>
+<script src="../assets/icons.js"></script>
 <script src="../assets/app.js"></script>
 <script src="../assets/payslip.js"></script>
 <script src="../assets/school-modules.js"></script>
 <script src="../assets/school-plus.js"></script>
 <script>
   var $ = function(id){ return document.getElementById(id); };
+  if (window.SamajiIcons) window.SamajiIcons.fill();
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
   var SCHOOL=null, FLAGS={};
@@ -197,7 +199,7 @@
     granted.forEach(function(k){
       var m = window.metaFor(k), b = document.createElement("button");
       b.className = "navitem"; b.setAttribute("data-flag", k);
-      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.mono+'</span>'+m.name;
+      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.icon+'</span>'+m.name;
       b.onclick = function(){ openModule(k); };
       live.appendChild(b);
     });
@@ -206,7 +208,7 @@
     locked.forEach(function(k){
       var m = window.metaFor(k), b = document.createElement("button");
       b.className = "navitem locked";
-      b.innerHTML = '<span class="tile" style="background:#F1F2F6;color:#98A2B3">'+m.mono+'</span>'+m.name+' <span style="margin-left:auto;font-size:11px;">🔒</span>';
+      b.innerHTML = '<span class="tile" style="background:#F1F2F6;color:#98A2B3">'+m.icon+'</span>'+m.name+' <span style="margin-left:auto;font-size:11px;">🔒</span>';
       b.onclick = function(){ window.SM_toast(m.name + " isn't in your plan ("+k+" = false)."); };
       lockBox.appendChild(b);
     });
@@ -298,7 +300,7 @@
     var tiles = $("dash-tiles"); tiles.innerHTML = "";
     granted.forEach(function(k){
       var m = window.metaFor(k), b = document.createElement("button"); b.className = "modtile";
-      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.mono+'</span><div><div style="font-size:13.5px;font-weight:600;">'+m.name+'</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">'+k+'</div></div>';
+      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.icon+'</span><div><div style="font-size:13.5px;font-weight:600;">'+m.name+'</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">'+k+'</div></div>';
       b.onclick = function(){ openModule(k); };
       tiles.appendChild(b);
     });

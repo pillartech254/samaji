@@ -125,16 +125,16 @@
           <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;">Samaji</div><div style="font-size:11px;color:#98A2B3;">Admin Console</div></div>
         </div>
         <div class="nav-h">Overview</div>
-        <button class="navitem active" id="nav-dashboard"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9670;</span>Dashboard</button>
+        <button class="navitem active" id="nav-dashboard"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="dashboard"></span>Dashboard</button>
         <div class="nav-h">Management</div>
-        <button class="navitem" id="nav-schools"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9632;</span>Schools</button>
-        <button class="navitem" id="nav-licensing"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9881;</span>Licensing</button>
-        <button class="navitem" id="nav-users"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9679;</span>Users</button>
+        <button class="navitem" id="nav-schools"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="schools"></span>Schools</button>
+        <button class="navitem" id="nav-licensing"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="licensing"></span>Licensing</button>
+        <button class="navitem" id="nav-users"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="users"></span>Users</button>
         <div class="nav-h">Operations</div>
-        <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9733;</span>M-Pesa Config</button>
-        <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;">&#9636;</span>Database</button>
+        <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
+        <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="database"></span>Database</button>
         <div style="flex:1;"></div>
-        <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;">&#9881;</span>Settings</button>
+        <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;" data-icon="settings"></span>Settings</button>
       </aside>
       <main id="view"></main>
     </div>
@@ -144,11 +144,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="../assets/config.js"></script>
+<script src="../assets/icons.js"></script>
 <script src="../assets/app.js"></script>
 <script>
 (function(){
   "use strict";
   var $ = function(id){ return document.getElementById(id); };
+  if (window.SamajiIcons) window.SamajiIcons.fill();
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   // year set by app.js samajiYear()
   var sb = window.getSB();
@@ -490,7 +492,7 @@
       else if (isAddon) { src = "Add-on &middot; $" + m.monthly_price; srcStyle = "color:#067647;background:#ECFDF3;"; action = '<button class="act rm" data-rm="' + m.id + '">Remove</button>'; }
       else { src = "Off"; srcStyle = "color:#98A2B3;background:#F4F5F7;"; action = '<button class="act add" data-add="' + m.id + '">+ Add $' + m.monthly_price + '</button>'; }
       row.innerHTML =
-        '<span class="tile" style="background:' + meta.tint + ';color:' + meta.ink + '">' + meta.mono + '</span>' +
+        '<span class="tile" style="background:' + meta.tint + ';color:' + meta.ink + '">' + meta.icon + '</span>' +
         '<div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:600;">' + m.name + '</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">' + m.key + '</div></div>' +
         '<span class="src" style="' + srcStyle + '">' + src + '</span>' +
         '<span style="width:96px;text-align:right;">' + action + '</span>';
