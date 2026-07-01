@@ -110,6 +110,7 @@
         <button class="navitem" id="nav-grading" style="display:none;"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="marks"></span>Marks &amp; Grading</button>
         <button class="navitem" id="nav-reportbooks" style="display:none;"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reportbooks"></span>Report Books</button>
         <button class="navitem" id="nav-payroll" style="display:none;"><span class="tile" style="background:#F1ECFE;color:#6D28D9;" data-icon="payroll"></span>My Payroll</button>
+        <button class="navitem" id="nav-publish" style="display:none;"><span class="tile" style="background:#FFF6ED;color:#C2410C;" data-icon="publish"></span>Publish Results</button>
         <div style="flex:1;"></div>
         <button class="ghost" id="signout" style="margin:8px;">Sign out</button>
       </aside>
@@ -125,6 +126,7 @@
 <script src="../assets/app.js"></script>
 <script src="../assets/payslip.js"></script>
 <script src="../assets/grading.js"></script>
+<script src="../assets/report-card.js"></script>
 <script src="../assets/teacher-modules.js"></script>
 <script>
   var $ = function(id){ return document.getElementById(id); };
@@ -191,6 +193,7 @@
     $("nav-grading").style.display = CTX.flags["module.academics"] ? "flex" : "none";
     $("nav-reportbooks").style.display = CTX.flags["module.academics"] ? "flex" : "none";
     $("nav-payroll").style.display = CTX.flags["module.payroll"] ? "flex" : "none";
+    $("nav-publish").style.display = (CTX.teacher.school_position==="principal" || CTX.teacher.school_position==="deputy_principal") ? "flex" : "none";
 
     showTab("dashboard");
   }
@@ -204,7 +207,8 @@
     attendance:  function(){ return window.TeacherModules.attendance; },
     grading:     function(){ return window.TeacherModules.grading; },
     reportbooks: function(){ return window.TeacherModules.reportbooks; },
-    payroll:     function(){ return window.TeacherModules.payroll; }
+    payroll:     function(){ return window.TeacherModules.payroll; },
+    publish:     function(){ return window.TeacherModules.publish; }
   };
   function showTab(key){
     setActive(key);
@@ -218,6 +222,7 @@
   $("nav-grading").onclick     = function(){ showTab("grading"); };
   $("nav-reportbooks").onclick = function(){ showTab("reportbooks"); };
   $("nav-payroll").onclick     = function(){ showTab("payroll"); };
+  $("nav-publish").onclick     = function(){ showTab("publish"); };
 
   // Mobile sidebar toggle (same pattern as School Portal)
   (function(){
