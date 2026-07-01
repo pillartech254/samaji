@@ -18,6 +18,10 @@
   };
   function smToast(msg, type){
     type = type || "";
+    // On mobile, a still-focused score input keeps the on-screen keyboard open,
+    // which can cover a bottom-anchored toast entirely. Blurring first dismisses
+    // the keyboard immediately so the toast is actually visible.
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     var wrap = document.getElementById("sm-toasts");
     if (!wrap){ wrap = document.createElement("div"); wrap.id = "sm-toasts"; document.body.appendChild(wrap); }
     var t = document.createElement("div"); t.className = "sm-toast " + type;

@@ -126,6 +126,10 @@
   var TICONS={ ok:ICONS.ok, err:ICONS.danger, info:ICONS.info, "":'<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 8v5M12 16h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>' };
   function smToast(msg, type){
     type=type||"";
+    // On mobile, a still-focused number/text input keeps the on-screen keyboard
+    // open, which can cover a bottom-anchored toast entirely. Blurring first
+    // dismisses the keyboard immediately so the toast is actually visible.
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     var wrap=document.getElementById("sm-toasts");
     if(!wrap){ wrap=document.createElement("div"); wrap.id="sm-toasts"; document.body.appendChild(wrap); }
     var t=document.createElement("div"); t.className="sm-toast "+type;
