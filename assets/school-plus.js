@@ -180,9 +180,10 @@
       +'<button data-t="teachers">Teachers</button>'
       +'<button data-t="dorms">Dormitories</button>'
       +'<button data-t="fees">Fee Structures</button>'
+      +'<button data-t="cbc">CBC Assessment</button>'
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else fees(); }
+    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else cbcSetup(); }
 
     // ----- school profile & logo -----
     async function profileTab(){
@@ -404,6 +405,192 @@
         if(r.error){ toast("Error: "+r.error.message); return; }
         m.close(); toast("Saved"); teachersTab();
       };
+    }
+
+    // ----- CBC assessment setup (academic years/terms, assessment types, grading schemes) -----
+    async function cbcSetup(){
+      var body=document.getElementById("set-body");
+      var sub="years";
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><div class="seg" id="cbc-tabs"><button data-s="years" class="on-present">Years &amp; Terms</button><button data-s="assess">Assessment Types</button><button data-s="grading">Grading Schemes</button></div></div><div id="cbc-body" style="margin-top:14px;"></div>';
+      body.querySelectorAll("#cbc-tabs button").forEach(function(b){ b.onclick=function(){ sub=b.getAttribute("data-s"); body.querySelectorAll("#cbc-tabs button").forEach(function(x){x.className="";}); b.className="on-present"; draw(); }; });
+      function draw(){ if(sub==="years") yearsTermsTab(); else if(sub==="assess") assessmentTypesTab(); else gradingSchemesTab(); }
+
+      // ----- years & terms -----
+      async function yearsTermsTab(){
+        var cb=document.getElementById("cbc-body");
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Academic years and their terms. Only one year and one term should typically be marked active at a time.</span><button class="btn-primary" id="add-year">+ Add academic year</button></div><div id="years-list"></div>';
+        var r=await sb.from("academic_years").select("*, terms(*)").eq("school_id",schoolId).order("year",{ascending:false});
+        var list=r.data||[]; var wrap=document.getElementById("years-list");
+        if(!list.length){ wrap.innerHTML='<div class="empty">No academic years yet. Click <strong>+ Add academic year</strong>.</div>'; }
+        else {
+          wrap.innerHTML=list.map(function(ay){
+            var terms=(ay.terms||[]).slice().sort(function(a,b){return a.sort-b.sort;});
+            return '<div class="panel" style="margin-bottom:12px;"><div style="display:flex;align-items:center;justify-content:space-between;">'
+              +'<strong style="font-size:14px;">'+ay.year+'</strong>'
+              +'<div style="display:flex;align-items:center;gap:8px;"><span class="pill '+(ay.status==="active"?"green":ay.status==="closed"?"gray":"amber")+'">'+ay.status+'</span>'
+              +'<button class="btn-sm" data-add-term="'+ay.id+'">+ Term</button> <button class="btn-sm danger" data-del-year="'+ay.id+'">Delete</button></div></div>'
+              +(terms.length?'<table class="data" style="margin-top:10px;"><thead><tr><th>Term</th><th>Dates</th><th>Status</th><th></th></tr></thead><tbody>'
+                + terms.map(function(t){ return '<tr><td style="font-weight:600;">'+esc(t.name)+'</td><td>'+(t.start_date&&t.end_date?(t.start_date+" – "+t.end_date):'<span class="muted">—</span>')+'</td>'
+                  +'<td><span class="pill '+(t.status==="active"?"green":t.status==="closed"?"gray":"amber")+'">'+t.status+'</span></td>'
+                  +'<td style="text-align:right;"><button class="btn-sm" data-edit-term="'+t.id+'">Edit</button> <button class="btn-sm danger" data-del-term="'+t.id+'">Delete</button></td></tr>'; }).join("")
+                +'</tbody></table>' : '<div class="empty" style="margin-top:10px;">No terms yet for this year.</div>')
+              +'</div>';
+          }).join("");
+          wrap.querySelectorAll("[data-add-term]").forEach(function(b){ b.onclick=function(){ termForm(b.getAttribute("data-add-term"), null); }; });
+          wrap.querySelectorAll("[data-edit-term]").forEach(function(b){ b.onclick=function(){ var term=null; list.some(function(ay){ term=(ay.terms||[]).find(function(t){return t.id===b.getAttribute("data-edit-term");}); return term; }); if(term) termForm(term.academic_year_id, term); }; });
+          wrap.querySelectorAll("[data-del-term]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this term?"))return; var r=await sb.from("terms").delete().eq("id",b.getAttribute("data-del-term")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); yearsTermsTab(); }; });
+          wrap.querySelectorAll("[data-del-year]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this academic year and all its terms?"))return; var r=await sb.from("academic_years").delete().eq("id",b.getAttribute("data-del-year")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); yearsTermsTab(); }; });
+        }
+        document.getElementById("add-year").onclick=function(){ yearForm(); };
+      }
+      function yearForm(){
+        var now=new Date();
+        var m=modal('<h3>Add academic year</h3><div class="grid2">'
+          +'<div class="field"><label>Year</label><input id="ay-year" type="number" value="'+now.getFullYear()+'"></div>'
+          +'<div class="field"><label>Status</label><select id="ay-status"><option value="upcoming">upcoming</option><option value="active" selected>active</option><option value="closed">closed</option></select></div>'
+          +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>');
+        m.q("#c").onclick=m.close;
+        m.q("#s").onclick=async function(){
+          var year=Number(m.q("#ay-year").value); if(!year){ toast("Enter a year."); return; }
+          var r=await sb.from("academic_years").insert({ school_id:schoolId, year:year, status:m.q("#ay-status").value }).select().single();
+          if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That year already exists.":("Error: "+r.error.message)); return; }
+          m.close(); toast("Academic year added"); yearsTermsTab();
+        };
+      }
+      function termForm(academicYearId, t){
+        t=t||{};
+        var m=modal('<h3>'+(t.id?"Edit term":"Add term")+'</h3><div class="grid2">'
+          +'<div class="field"><label>Name</label><input id="tm-name" value="'+esc(t.name||"")+'" placeholder="Term 1"></div>'
+          +'<div class="field"><label>Sort order</label><input id="tm-sort" type="number" value="'+(t.sort||1)+'"></div>'
+          +'<div class="field"><label>Start date</label><input id="tm-start" type="date" value="'+(t.start_date||"")+'"></div>'
+          +'<div class="field"><label>End date</label><input id="tm-end" type="date" value="'+(t.end_date||"")+'"></div>'
+          +'<div class="field full"><label>Status</label><select id="tm-status"><option value="upcoming"'+(t.status==="upcoming"?" selected":"")+'>upcoming</option><option value="active"'+(t.status==="active"?" selected":"")+'>active</option><option value="closed"'+(t.status==="closed"?" selected":"")+'>closed</option></select></div>'
+          +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+        m.q("#c").onclick=m.close;
+        m.q("#s").onclick=async function(){
+          var rec={ school_id:schoolId, academic_year_id:academicYearId, name:m.q("#tm-name").value.trim(), sort:Number(m.q("#tm-sort").value)||0,
+            start_date:m.q("#tm-start").value||null, end_date:m.q("#tm-end").value||null, status:m.q("#tm-status").value };
+          if(!rec.name){ toast("Name is required."); return; }
+          var r=t.id? await sb.from("terms").update(rec).eq("id",t.id) : await sb.from("terms").insert(rec);
+          if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That term already exists for this year.":("Error: "+r.error.message)); return; }
+          m.close(); toast("Saved"); yearsTermsTab();
+        };
+      }
+
+      // ----- assessment types -----
+      async function assessmentTypesTab(){
+        var cb=document.getElementById("cbc-body");
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The assessment types teachers can record marks against (CAT 1, Project, End Term Exam…), each with a weight toward the final subject score.</span><button class="btn-primary" id="add-assess">+ Add assessment type</button></div><div id="assess-table"></div>';
+        var r=await sb.from("assessment_types").select("*").eq("school_id",schoolId).order("name");
+        var list=r.data||[]; var t=document.getElementById("assess-table");
+        if(!list.length){ t.innerHTML='<div class="empty">No assessment types yet.</div>'; }
+        else {
+          var html='<table class="data"><thead><tr><th>Name</th><th style="text-align:right;">Max marks</th><th style="text-align:right;">Weight</th><th>Counts to final</th><th>Grades</th><th></th></tr></thead><tbody>';
+          list.forEach(function(a){
+            html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(a.name)+(a.is_system?' <span class="pill gray">default</span>':'')+'</td>'
+              +'<td style="text-align:right;">'+a.max_marks+'</td><td style="text-align:right;">'+a.weight_percent+'%</td>'
+              +'<td>'+(a.contributes_to_final?'<span class="pill green">Yes</span>':'<span class="pill gray">No</span>')+'</td>'
+              +'<td>'+(a.applicable_grades&&a.applicable_grades.length?esc(a.applicable_grades.join(", ")):'<span class="muted">All</span>')+'</td>'
+              +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+a.id+'">Edit</button> <button class="btn-sm danger" data-del="'+a.id+'">Delete</button></td></tr>';
+          });
+          html+='</tbody></table>'; t.innerHTML=html;
+          t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ assessmentForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+          t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this assessment type?"))return; var r=await sb.from("assessment_types").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); assessmentTypesTab(); }; });
+        }
+        document.getElementById("add-assess").onclick=function(){ assessmentForm(); };
+      }
+      function assessmentForm(a){
+        a=a||{};
+        var m=modal('<h3>'+(a.id?"Edit":"Add")+' assessment type</h3><div class="grid2">'
+          +'<div class="field full"><label>Name</label><input id="as-name" value="'+esc(a.name||"")+'" placeholder="CAT 1"></div>'
+          +'<div class="field"><label>Max marks</label><input id="as-max" type="number" value="'+(a.max_marks||100)+'"></div>'
+          +'<div class="field"><label>Weight toward final (%)</label><input id="as-weight" type="number" value="'+(a.weight_percent!=null?a.weight_percent:100)+'"></div>'
+          +'<div class="field"><label>Counts toward final score</label><select id="as-contrib"><option value="true"'+(a.contributes_to_final!==false?" selected":"")+'>Yes</option><option value="false"'+(a.contributes_to_final===false?" selected":"")+'>No</option></select></div>'
+          +'<div class="field"><label>Applicable grades (comma separated, blank = all)</label><input id="as-grades" value="'+esc((a.applicable_grades||[]).join(", "))+'" placeholder="Grade 1, Grade 2"></div>'
+          +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+        m.q("#c").onclick=m.close;
+        m.q("#s").onclick=async function(){
+          var gradesRaw=m.q("#as-grades").value.trim();
+          var rec={ school_id:schoolId, name:m.q("#as-name").value.trim(), max_marks:Number(m.q("#as-max").value)||100,
+            weight_percent:Number(m.q("#as-weight").value)||0, contributes_to_final:m.q("#as-contrib").value==="true",
+            applicable_grades: gradesRaw ? gradesRaw.split(",").map(function(s){return s.trim();}).filter(Boolean) : null };
+          if(!rec.name){ toast("Name is required."); return; }
+          var r=a.id? await sb.from("assessment_types").update(rec).eq("id",a.id) : await sb.from("assessment_types").insert(rec);
+          if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That assessment type already exists.":("Error: "+r.error.message)); return; }
+          m.close(); toast("Saved"); assessmentTypesTab();
+        };
+      }
+
+      // ----- grading schemes -----
+      async function gradingSchemesTab(){
+        var cb=document.getElementById("cbc-body");
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Score bands used to turn a percentage into a grade/competency on report cards.</span><button class="btn-primary" id="add-scheme">+ Add grading scheme</button></div><div id="scheme-list"></div>';
+        var r=await sb.from("grading_schemes").select("*, grading_levels(*)").eq("school_id",schoolId).order("name");
+        var list=r.data||[]; var wrap=document.getElementById("scheme-list");
+        if(!list.length){ wrap.innerHTML='<div class="empty">No grading schemes yet.</div>'; }
+        else {
+          wrap.innerHTML=list.map(function(s){
+            var levels=(s.grading_levels||[]).slice().sort(function(a,b){return a.sort-b.sort;});
+            return '<div class="panel" style="margin-bottom:12px;"><div style="display:flex;align-items:center;justify-content:space-between;">'
+              +'<strong style="font-size:14px;">'+esc(s.name)+(s.is_default?' <span class="pill green">default</span>':'')+'</strong>'
+              +'<div style="display:flex;gap:8px;"><button class="btn-sm" data-add-level="'+s.id+'">+ Band</button> <button class="btn-sm" data-edit-scheme="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del-scheme="'+s.id+'">Delete</button></div></div>'
+              +(levels.length?'<table class="data" style="margin-top:10px;"><thead><tr><th>Range</th><th>Grade</th><th>Competency</th><th>Remark</th><th></th></tr></thead><tbody>'
+                + levels.map(function(l){ return '<tr><td>'+l.min_score+'–'+l.max_score+'</td><td style="font-weight:600;">'+esc(l.grade_label||"—")+'</td>'
+                  +'<td>'+(l.competency_code?esc(l.competency_code)+' — '+esc(l.competency_label||""):'<span class="muted">—</span>')+'</td>'
+                  +'<td>'+esc(l.remark||"—")+'</td>'
+                  +'<td style="text-align:right;"><button class="btn-sm" data-edit-level="'+l.id+'">Edit</button> <button class="btn-sm danger" data-del-level="'+l.id+'">Delete</button></td></tr>'; }).join("")
+                +'</tbody></table>' : '<div class="empty" style="margin-top:10px;">No bands yet — add one, e.g. 80–100 = A / EE.</div>')
+              +'</div>';
+          }).join("");
+          wrap.querySelectorAll("[data-add-level]").forEach(function(b){ b.onclick=function(){ levelForm(b.getAttribute("data-add-level"), null); }; });
+          wrap.querySelectorAll("[data-edit-scheme]").forEach(function(b){ b.onclick=function(){ schemeForm(list.find(function(x){return x.id===b.getAttribute("data-edit-scheme");})); }; });
+          wrap.querySelectorAll("[data-del-scheme]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this grading scheme and all its bands?"))return; var r=await sb.from("grading_schemes").delete().eq("id",b.getAttribute("data-del-scheme")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); gradingSchemesTab(); }; });
+          wrap.querySelectorAll("[data-edit-level]").forEach(function(b){ b.onclick=function(){ var lvl=null; list.some(function(s){ lvl=(s.grading_levels||[]).find(function(l){return l.id===b.getAttribute("data-edit-level");}); return lvl; }); if(lvl) levelForm(lvl.scheme_id, lvl); }; });
+          wrap.querySelectorAll("[data-del-level]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this band?"))return; var r=await sb.from("grading_levels").delete().eq("id",b.getAttribute("data-del-level")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); gradingSchemesTab(); }; });
+        }
+        document.getElementById("add-scheme").onclick=function(){ schemeForm(); };
+      }
+      function schemeForm(s){
+        s=s||{};
+        var m=modal('<h3>'+(s.id?"Edit":"Add")+' grading scheme</h3><div class="grid2">'
+          +'<div class="field full"><label>Name</label><input id="gs-name" value="'+esc(s.name||"")+'" placeholder="CBC Standard Scheme"></div>'
+          +'<div class="field"><label>Default scheme</label><select id="gs-default"><option value="false"'+(!s.is_default?" selected":"")+'>No</option><option value="true"'+(s.is_default?" selected":"")+'>Yes</option></select></div>'
+          +'<div class="field"><label>Applicable grades (comma separated, blank = all)</label><input id="gs-grades" value="'+esc((s.applicable_grades||[]).join(", "))+'" placeholder="Grade 1, Grade 2"></div>'
+          +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>', true);
+        m.q("#c").onclick=m.close;
+        m.q("#sv").onclick=async function(){
+          var gradesRaw=m.q("#gs-grades").value.trim();
+          var rec={ school_id:schoolId, name:m.q("#gs-name").value.trim(), is_default:m.q("#gs-default").value==="true",
+            applicable_grades: gradesRaw ? gradesRaw.split(",").map(function(x){return x.trim();}).filter(Boolean) : null };
+          if(!rec.name){ toast("Name is required."); return; }
+          var r=s.id? await sb.from("grading_schemes").update(rec).eq("id",s.id) : await sb.from("grading_schemes").insert(rec);
+          if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That scheme already exists.":("Error: "+r.error.message)); return; }
+          m.close(); toast("Saved"); gradingSchemesTab();
+        };
+      }
+      function levelForm(schemeId, l){
+        l=l||{};
+        var m=modal('<h3>'+(l.id?"Edit":"Add")+' grading band</h3><div class="grid2">'
+          +'<div class="field"><label>Min score</label><input id="lv-min" type="number" value="'+(l.min_score!=null?l.min_score:0)+'"></div>'
+          +'<div class="field"><label>Max score</label><input id="lv-max" type="number" value="'+(l.max_score!=null?l.max_score:100)+'"></div>'
+          +'<div class="field"><label>Grade letter (optional)</label><input id="lv-grade" value="'+esc(l.grade_label||"")+'" placeholder="A"></div>'
+          +'<div class="field"><label>Competency code (optional)</label><input id="lv-code" value="'+esc(l.competency_code||"")+'" placeholder="EE"></div>'
+          +'<div class="field full"><label>Competency label (optional)</label><input id="lv-label" value="'+esc(l.competency_label||"")+'" placeholder="Exceeding Expectation"></div>'
+          +'<div class="field full"><label>Remark (optional)</label><input id="lv-remark" value="'+esc(l.remark||"")+'" placeholder="Excellent"></div>'
+          +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+        m.q("#c").onclick=m.close;
+        m.q("#s").onclick=async function(){
+          var minS=Number(m.q("#lv-min").value), maxS=Number(m.q("#lv-max").value);
+          if(maxS<minS){ toast("Max score must be at least the min score."); return; }
+          var rec={ scheme_id:schemeId, min_score:minS, max_score:maxS, grade_label:m.q("#lv-grade").value.trim()||null,
+            competency_code:m.q("#lv-code").value.trim()||null, competency_label:m.q("#lv-label").value.trim()||null, remark:m.q("#lv-remark").value.trim()||null };
+          var r=l.id? await sb.from("grading_levels").update(rec).eq("id",l.id) : await sb.from("grading_levels").insert(rec);
+          if(r.error){ toast("Error: "+r.error.message); return; }
+          m.close(); toast("Saved"); gradingSchemesTab();
+        };
+      }
+
+      draw();
     }
 
     // ----- dormitories -----
