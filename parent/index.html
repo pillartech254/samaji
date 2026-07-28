@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>(function(){try{var t=localStorage.getItem("samaji-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <title>Samaji — Parent Portal</title>
 <link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -731,7 +732,8 @@
       (function(child){
         var sid = child.id;
         var grade = child.grade || "";
-        childFeeData[sid] = { billed: 0, paid: 0, balance: 0, items: [], transportPaid: 0 };
+        var openingBalance = Number(child.opening_balance) || 0;
+        childFeeData[sid] = { billed: openingBalance, paid: 0, balance: 0, items: [], transportPaid: 0, openingBalance: openingBalance };
 
         sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(fsRes){
           var structures = fsRes.data || [];
@@ -747,7 +749,7 @@
             for (var k = 0; k < items.length; k++) {
               total += Number(items[k].amount) || 0;
             }
-            childFeeData[sid].billed = total;
+            childFeeData[sid].billed = total + openingBalance;
             childFeeData[sid].items = items;
             loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
           }).catch(function(){ loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); }); });
@@ -909,6 +911,9 @@
 
     if (fd.transportPaid > 0) {
       html += '<div class="fee-item-row"><span class="fi-name">Transport paid (separate)</span><span class="fi-amt">' + fmtMoney(fd.transportPaid) + '</span></div>';
+    }
+    if (fd.openingBalance > 0) {
+      html += '<div class="fee-item-row"><span class="fi-name">Includes balance brought forward</span><span class="fi-amt">' + fmtMoney(fd.openingBalance) + '</span></div>';
     }
 
     // Fee breakdown
