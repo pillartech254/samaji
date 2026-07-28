@@ -133,8 +133,8 @@ table.data tbody tr:hover td{background:#FAFBFC;}
 .score-input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(14,147,132,.10);}
 
 /* ===== modal (animated) ===== */
-.overlay{position:fixed;inset:0;background:rgba(16,24,40,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px;animation:ovrIn .2s ease both;}
-.modal{background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh-3);width:100%;max-width:460px;padding:26px;animation:modalIn .3s cubic-bezier(.34,1.4,.5,1) both;}
+.overlay{position:fixed;inset:0;background:rgba(16,24,40,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px;animation:ovrIn .2s ease both;overflow-y:auto;}
+.modal{background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh-3);width:100%;max-width:460px;max-height:88vh;padding:26px;animation:modalIn .3s cubic-bezier(.34,1.4,.5,1) both;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 .modal.wide{max-width:700px;}
 .modal h3{margin:0 0 4px;font-size:18px;font-weight:700;letter-spacing:-.01em;}
 .modal .grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:14px;}
@@ -145,7 +145,7 @@ table.data tbody tr:hover td{background:#FAFBFC;}
 .modal textarea{width:100%;font-size:13.5px;border:1.5px solid var(--line);border-radius:var(--r-sm);padding:9px 11px;outline:none;font-family:inherit;resize:vertical;min-height:58px;transition:border-color var(--fast);}
 .modal textarea:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(14,147,132,.10);}
 .modal-body{max-height:68vh;overflow:auto;margin:0 -6px;padding:0 6px;}
-.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:22px;}
+.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin:22px -26px -26px;padding:14px 26px;position:sticky;bottom:-26px;background:#fff;box-shadow:0 -6px 12px -8px rgba(16,24,40,.12);z-index:2;border-radius:0 0 var(--r-lg) var(--r-lg);}
 
 /* progress bar */
 .bar{height:7px;border-radius:20px;background:#EDF0F3;overflow:hidden;}
@@ -302,10 +302,11 @@ table.data tbody tr:hover td{background:#FAFBFC;}
   .statgrid{grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
   .stat .val{font-size:20px;}
   .tiles{grid-template-columns:1fr!important;}
-  .modal{max-width:96vw;padding:18px;margin:10px;}
+  .modal{max-width:96vw;max-height:92vh;padding:18px;margin:10px;}
   .modal .grid2{grid-template-columns:1fr;}
   .modal .grid3{grid-template-columns:1fr;}
   .modal-body{max-height:60vh;}
+  .modal-actions{margin:16px -18px -18px;padding:12px 18px;bottom:-18px;}
   .overlay{padding:10px;}
   .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;gap:0;flex-wrap:nowrap;}
   .tabs button{white-space:nowrap;padding:10px 12px;font-size:12px;}
