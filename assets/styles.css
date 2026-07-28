@@ -134,7 +134,7 @@ table.data tbody tr:hover td{background:#FAFBFC;}
 
 /* ===== modal (animated) ===== */
 .overlay{position:fixed;inset:0;background:rgba(16,24,40,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px;animation:ovrIn .2s ease both;overflow-y:auto;}
-.modal{background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh-3);width:100%;max-width:460px;max-height:88vh;padding:26px;animation:modalIn .3s cubic-bezier(.34,1.4,.5,1) both;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.modal{background:#fff;border-radius:var(--r-lg);box-shadow:var(--sh-3);width:100%;max-width:460px;max-height:88vh;max-height:88dvh;padding:26px;animation:modalIn .3s cubic-bezier(.34,1.4,.5,1) both;overflow-y:auto;-webkit-overflow-scrolling:touch;}
 .modal.wide{max-width:700px;}
 .modal h3{margin:0 0 4px;font-size:18px;font-weight:700;letter-spacing:-.01em;}
 .modal .grid2{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin-top:14px;}
@@ -302,12 +302,16 @@ table.data tbody tr:hover td{background:#FAFBFC;}
   .statgrid{grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
   .stat .val{font-size:20px;}
   .tiles{grid-template-columns:1fr!important;}
-  .modal{max-width:96vw;max-height:92vh;padding:18px;margin:10px;}
-  .modal .grid2{grid-template-columns:1fr;}
-  .modal .grid3{grid-template-columns:1fr;}
-  .modal-body{max-height:60vh;}
-  .modal-actions{margin:16px -18px -18px;padding:12px 18px;bottom:-18px;}
-  .overlay{padding:10px;}
+  .modal{max-width:96vw;max-height:92vh;max-height:92dvh;padding:14px;margin:8px;}
+  .modal h3{font-size:16px;}
+  .modal .grid2,.modal .grid3{grid-template-columns:1fr 1fr;gap:9px;margin-top:10px;}
+  .modal .full{grid-column:1 / -1;}
+  .modal .field{gap:3px;}
+  .modal .field label{font-size:10.5px;}
+  .modal .field input,.modal .field select{padding:8px 9px;font-size:13px;}
+  .modal-body{max-height:60vh;max-height:60dvh;margin:0;padding:0;}
+  .modal-actions{margin:14px -14px -14px;padding:10px 14px;bottom:-14px;gap:8px;}
+  .overlay{padding:8px;}
   .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;gap:0;flex-wrap:nowrap;}
   .tabs button{white-space:nowrap;padding:10px 12px;font-size:12px;}
   .rcpt{width:100%;}
@@ -329,6 +333,9 @@ table.data tbody tr:hover td{background:#FAFBFC;}
   .statgrid{grid-template-columns:1fr;}
   .kpis{grid-template-columns:1fr;}
   main{padding:12px 10px 50px!important;}
+}
+@media (max-width:340px){
+  .modal .grid2,.modal .grid3{grid-template-columns:1fr;}
 }
 
 @media print{
