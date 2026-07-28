@@ -9,9 +9,21 @@
     cfg.SUPABASE_URL.indexOf("YOUR-PROJECT") === -1 &&
     cfg.SUPABASE_ANON_KEY.indexOf("YOUR-ANON") === -1;
 
+  // Each portal (school/parent/teacher/admin) gets its own isolated auth
+  // session. Supabase's default storage key is the same for every client
+  // pointed at the same project, so without this, all four portals share
+  // ONE browser-wide session on samaji.app — sign in as a school admin,
+  // then open /admin/, and it silently logs you in there too. Scoping the
+  // storageKey by the first path segment keeps each portal's login
+  // completely separate, even in the same browser.
   window.getSB = function () {
     if (!window.SAMAJI_CONFIGURED || !window.supabase) return null;
-    if (!window.__sb) window.__sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    if (!window.__sb) {
+      var portal = (location.pathname.split("/").filter(Boolean)[0] || "app").toLowerCase();
+      window.__sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
+        auth: { storageKey: "sb-samaji-" + portal + "-auth" }
+      });
+    }
     return window.__sb;
   };
 
@@ -111,18 +123,12 @@
     };
   };
 
-  // ---- Dynamic copyright year (fetched from server, fallback to local) ----
+  // ---- Copyright year ----
+  // Previously fetched from worldtimeapi.org on every single page load,
+  // across all four portals — an external network round-trip for a footer
+  // year that the device's own clock already gives us for free.
   window.samajiYear = function(cb) {
-    var fallback = Math.max(2025, new Date().getFullYear());
-    try {
-      fetch("https://worldtimeapi.org/api/timezone/Africa/Nairobi")
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          var yr = d && d.datetime ? new Date(d.datetime).getFullYear() : fallback;
-          cb(yr);
-        })
-        .catch(function() { cb(fallback); });
-    } catch(e) { cb(fallback); }
+    cb(Math.max(2025, new Date().getFullYear()));
   };
   window.samajiYear(function(yr) {
     ["yr", "year", "year-b"].forEach(function(id) {
