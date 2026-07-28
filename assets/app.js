@@ -130,4 +130,31 @@
       if (el) el.textContent = yr;
     });
   });
+
+  // ---- Theme toggle (light/dark) ----
+  // The initial data-theme attribute is already set by a small inline
+  // script in <head> (before paint, to avoid a flash of the wrong theme).
+  // This just wires up the floating toggle button.
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  }
+  function applyTheme(t) {
+    document.documentElement.setAttribute("data-theme", t);
+    try { localStorage.setItem("samaji-theme", t); } catch (e) {}
+    var btn = document.getElementById("samaji-theme-toggle");
+    if (btn) btn.textContent = t === "dark" ? "☀" : "☾";
+  }
+  function initThemeToggle() {
+    if (document.getElementById("samaji-theme-toggle")) return;
+    var btn = document.createElement("button");
+    btn.id = "samaji-theme-toggle";
+    btn.className = "theme-toggle";
+    btn.type = "button";
+    btn.setAttribute("aria-label", "Toggle dark mode");
+    btn.textContent = currentTheme() === "dark" ? "☀" : "☾";
+    btn.onclick = function () { applyTheme(currentTheme() === "dark" ? "light" : "dark"); };
+    document.body.appendChild(btn);
+  }
+  if (document.body) initThemeToggle();
+  else document.addEventListener("DOMContentLoaded", initThemeToggle);
 })();
