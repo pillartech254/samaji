@@ -1305,11 +1305,30 @@
         var terms=["Term 1","Term 2","Term 3"];
         function termBilled(grade,term){ var t=0; structures.forEach(function(s){ if(s.level===grade && s.term===term) t+=(s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); }); return t; }
         function termPaid(sid,term){ var t=0; payments.forEach(function(p){ if(p.student_id===sid && p.term===term) t+=tuitionOf(p); }); return t; }
+        // An opening balance lands on the first term (in order) that has
+        // no fee structure of its own — that's the only slot with nothing
+        // else billed to it. If every term already has a real structure,
+        // there's no slot to carry it into.
+        function obTermFor(grade){ for(var k=0;k<terms.length;k++){ if(termBilled(grade,terms[k])===0) return terms[k]; } return null; }
+        // Billed for a specific student's term = the structural amount,
+        // plus their opening balance if this is that carried-forward term.
+        // Using this (instead of the raw grade-wide termBilled) everywhere
+        // a payment gets applied means the existing spillover mechanism
+        // already does the right thing: a payment against the carried-
+        // forward term is capped at the balance owed, and any excess
+        // spills into the next term per its real fee structure.
+        function effectiveTermBilled(stu,term){
+          var b=termBilled(stu.grade,term);
+          var ob=Number(stu&&stu.opening_balance)||0;
+          if(ob>0 && term===obTermFor(stu.grade)) b+=ob;
+          return b;
+        }
         function termInfo(sid){
           var s=students.find(function(x){return x.id===sid;}); if(!s) return {terms:[],s:null};
+          var obTerm=Number(s.opening_balance)>0?obTermFor(s.grade):null;
           var info=[]; terms.forEach(function(t){
-            var billed=termBilled(s.grade,t), paid=termPaid(sid,t), bal=Math.max(0,billed-paid);
-            info.push({term:t, billed:billed, paid:paid, bal:bal, cleared:billed>0&&paid>=billed});
+            var billed=effectiveTermBilled(s,t), paid=termPaid(sid,t), bal=Math.max(0,billed-paid);
+            info.push({term:t, billed:billed, paid:paid, bal:bal, cleared:billed>0&&paid>=billed, carriedForward:t===obTerm});
           });
           return {terms:info, s:s};
         }
@@ -1333,13 +1352,22 @@
           var ti=termInfo(sid);
           var termSel=m.q("#p-term");
           var html=''; var autoTerm=null;
-          if(s0 && Number(s0.opening_balance)>0){
+          var hasCarriedTerm=ti.terms.some(function(t){return t.carriedForward;});
+          // Only shown as a standalone chip when every term already has its
+          // own structure — i.e. there's no term slot to carry it into.
+          if(s0 && Number(s0.opening_balance)>0 && !hasCarriedTerm){
             html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:#FFF6ED;color:#C2410C;font-weight:600;">Balance b/f: '+money(s0.opening_balance)+(s0.opening_balance_note?' — '+esc(s0.opening_balance_note):'')+'</span>';
           }
           ti.terms.forEach(function(t,i){
-            var color=t.cleared?"#067647":(t.paid>0?"#D97706":"#6B7280");
-            var label=t.cleared?"✓ Cleared":(t.paid>0?"Partial "+money(t.paid)+"/"+money(t.billed):(t.billed>0?"Unpaid "+money(t.billed):"No structure"));
-            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(t.cleared?"#ECFDF3":"#F8FAFB")+';color:'+color+';font-weight:600;">'+esc(t.term)+': '+label+'</span>';
+            var color,label;
+            if(t.carriedForward){
+              color="#C2410C";
+              label="Balance carried forward "+money(t.billed)+(t.paid>0?" (paid "+money(t.paid)+")":"")+(s0.opening_balance_note?" — "+esc(s0.opening_balance_note):"");
+            } else {
+              color=t.cleared?"#067647":(t.paid>0?"#D97706":"#6B7280");
+              label=t.cleared?"✓ Cleared":(t.paid>0?"Partial "+money(t.paid)+"/"+money(t.billed):(t.billed>0?"Unpaid "+money(t.billed):"No structure"));
+            }
+            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(t.carriedForward?"#FEF1F0":(t.cleared?"#ECFDF3":"#F8FAFB"))+';color:'+color+';font-weight:600;">'+esc(t.term)+': '+label+'</span>';
             if(!autoTerm && !t.cleared && t.billed>0) autoTerm=t.term;
           });
           m.q("#p-term-info").innerHTML=html;
@@ -1375,7 +1403,7 @@
           var amt=Number(m.q("#p-amt").value)||0;
           var s=students.find(function(x){return x.id===sid;});
           if(!s){ m.q("#p-spill").style.display="none"; return; }
-          var tb=termBilled(s.grade,selectedTerm), tp=termPaid(sid,selectedTerm);
+          var tb=effectiveTermBilled(s,selectedTerm), tp=termPaid(sid,selectedTerm);
           var termBal=Math.max(0,tb-tp);
           var spillEl=m.q("#p-spill");
           if(amt>termBal && termBal>0){
@@ -1418,11 +1446,12 @@
           try{
             var selectedTerm=m.q("#p-term").value;
             var s=students.find(function(x){return x.id===sid;});
-            var tb=s?termBilled(s.grade,selectedTerm):0, tp=termPaid(sid,selectedTerm);
+            var tb=s?effectiveTermBilled(s,selectedTerm):0, tp=termPaid(sid,selectedTerm);
             // Same rule as the dropdown's disabled options: don't let a
-            // payment land against a term with no fee structure when
-            // another term for this grade actually has one.
-            if(tb===0 && s && terms.some(function(tm){return termBilled(s.grade,tm)>0;})){
+            // payment land against a term with no fee structure — and no
+            // carried-forward balance either — when another term for this
+            // grade actually has one to bill against.
+            if(tb===0 && s && terms.some(function(tm){return effectiveTermBilled(s,tm)>0;})){
               toast(selectedTerm+" has no fee structure for "+(s.grade||"this class")+" — pick a term that does.");
               submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
             }
