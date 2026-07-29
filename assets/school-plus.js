@@ -181,9 +181,37 @@
       +'<button data-t="dorms">Dormitories</button>'
       +'<button data-t="fees">Fee Structures</button>'
       +'<button data-t="cbc">CBC Assessment</button>'
+      +'<button data-t="activity">Activity Log</button>'
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else cbcSetup(); }
+    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
+
+    // ---------- Activity Log: read-only trail of who changed what ----
+    // (audit_log is populated entirely by DB triggers — see
+    // setup-modules-26.sql — nothing in this app writes to it directly)
+    var actPage=1;
+    async function activityLog(pg){
+      if(typeof pg==="number") actPage=pg; else actPage=1;
+      var body=document.getElementById("set-body");
+      body.innerHTML='<div class="skel" style="height:200px;"></div>';
+      var r=await sb.from("audit_log").select("*").eq("school_id",schoolId).order("created_at",{ascending:false}).limit(500);
+      if(r.error){ body.innerHTML='<div class="empty" style="color:#C2410C;">Could not load activity log: '+esc(r.error.message)+'</div>'; return; }
+      var rows=r.data||[];
+      if(!rows.length){ body.innerHTML='<div class="empty">No activity recorded yet.</div>'; return; }
+      var pgData=window.paginate(rows,actPage,25);
+      var actionColor={INSERT:"#067647",UPDATE:"#B54708",DELETE:"#C2410C"};
+      var html='<p class="muted" style="font-size:12.5px;margin:0 0 12px;">Every change to payments, fee structures, student records, account roles and M-Pesa configuration for this school — recorded automatically, cannot be edited from this app.</p>'
+        +'<table class="data"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Table</th><th>Record</th></tr></thead><tbody>';
+      pgData.rows.forEach(function(row){
+        html+='<tr><td style="white-space:nowrap;font-size:12px;">'+new Date(row.created_at).toLocaleString()+'</td>'
+          +'<td>'+esc(row.actor_email||"—")+(row.actor_id?'':' <span class="muted" style="font-size:11px;">(automated)</span>')+'</td>'
+          +'<td><span class="pill" style="color:'+(actionColor[row.action]||"#475467")+';background:'+(actionColor[row.action]||"#475467")+'1a;">'+esc(row.action)+'</span></td>'
+          +'<td class="mono" style="font-size:12px;">'+esc(row.table_name)+'</td>'
+          +'<td class="mono" style="font-size:11px;color:#98A2B3;">'+esc((row.record_id||"").slice(0,8))+'</td></tr>';
+      });
+      body.innerHTML=html+'</tbody></table>'+pgData.html;
+      pgData.onAttach(body,function(p){ activityLog(p); });
+    }
 
     // ----- school profile & logo -----
     async function profileTab(){
@@ -1315,10 +1343,20 @@
             if(!autoTerm && !t.cleared && t.billed>0) autoTerm=t.term;
           });
           m.q("#p-term-info").innerHTML=html;
+          // A term with no fee structure at all shouldn't be pickable —
+          // there's nothing to bill it against. Exception: if literally
+          // no term has a structure yet, leave them all selectable so a
+          // student who only has an opening balance can still be
+          // collected from before the school sets up this year's fees.
+          var anyBilled=ti.terms.some(function(t){return t.billed>0;});
           terms.forEach(function(t,i){
-            termSel.options[i].disabled=ti.terms[i].cleared;
+            termSel.options[i].disabled=ti.terms[i].cleared || (anyBilled && ti.terms[i].billed===0);
           });
           if(autoTerm) termSel.value=autoTerm;
+          else if(termSel.selectedOptions[0] && termSel.selectedOptions[0].disabled){
+            var firstEnabled=Array.prototype.filter.call(termSel.options,function(o){return !o.disabled;})[0];
+            if(firstEnabled) termSel.value=firstEnabled.value;
+          }
         }
         function refreshBal(){
           var sid=preId||m.q("#p-stu").value;
@@ -1381,6 +1419,13 @@
             var selectedTerm=m.q("#p-term").value;
             var s=students.find(function(x){return x.id===sid;});
             var tb=s?termBilled(s.grade,selectedTerm):0, tp=termPaid(sid,selectedTerm);
+            // Same rule as the dropdown's disabled options: don't let a
+            // payment land against a term with no fee structure when
+            // another term for this grade actually has one.
+            if(tb===0 && s && terms.some(function(tm){return termBilled(s.grade,tm)>0;})){
+              toast(selectedTerm+" has no fee structure for "+(s.grade||"this class")+" — pick a term that does.");
+              submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
+            }
             var termBal=Math.max(0,tb-tp);
             var spillAmt=(amt>termBal&&termBal>0)?(amt-termBal):0;
             var mainAmt=spillAmt>0?termBal:amt;

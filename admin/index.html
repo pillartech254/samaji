@@ -134,6 +134,7 @@
         <div class="nav-h">Operations</div>
         <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
         <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="database"></span>Database</button>
+        <button class="navitem" id="nav-audit"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reports"></span>Activity Log</button>
         <div style="flex:1;"></div>
         <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;" data-icon="settings"></span>Settings</button>
       </aside>
@@ -207,7 +208,7 @@
   }
 
   // ---- Nav ----
-  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","database","settings"];
+  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","database","audit","settings"];
   function setActive(key){
     NAV_KEYS.forEach(function(k){
       var el = $("nav-" + k);
@@ -221,6 +222,7 @@
   $("nav-users").onclick = function(){ showUsers(); };
   $("nav-mpesa").onclick = function(){ showMpesa(); };
   $("nav-database").onclick = function(){ showDatabase(); };
+  $("nav-audit").onclick = function(){ showAuditLog(); };
   $("nav-settings").onclick = function(){ showSettings(); };
 
   // ---- Auth ----
@@ -232,9 +234,44 @@
     try {
       var res = await sb.auth.signInWithPassword({ email: email, password: password });
       if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
+      // If this account has two-factor enabled, the session starts at
+      // aal1 even with a correct password — nextLevel tells us aal2 is
+      // required before treating this as a real sign-in.
+      var levels = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (!levels.error && levels.data && levels.data.nextLevel === "aal2" && levels.data.currentLevel !== "aal2") {
+        await showMfaChallenge();
+        return;
+      }
       enterApp();
     } catch (err) { showMsg(String(err), false); $("submit").disabled = false; }
   };
+
+  async function showMfaChallenge(){
+    var f = await sb.auth.mfa.listFactors();
+    var factor = f.data && f.data.totp && f.data.totp.filter(function(x){ return x.status === "verified"; })[0];
+    if (!factor) { enterApp(); return; }
+    var ch = await sb.auth.mfa.challenge({ factorId: factor.id });
+    if (ch.error) { showMsg(ch.error.message, false); $("submit").disabled = false; return; }
+    var challengeId = ch.data.id;
+    document.querySelector(".login-inner").innerHTML =
+      '<div class="eyebrow">Admin Console</div><h1>Verification code</h1>' +
+      '<p class="sub">Enter the 6-digit code from your authenticator app.</p>' +
+      '<input id="mfa-login-code" inputmode="numeric" maxlength="6" placeholder="000000" autofocus style="font-size:18px;letter-spacing:4px;text-align:center;margin:14px 0;">' +
+      '<button class="btn indigo" id="mfa-login-submit">Verify</button>' +
+      '<div class="msg" id="msg"></div>';
+    var codeInput = document.getElementById("mfa-login-code");
+    codeInput.focus();
+    function showCodeMsg(text){ var m = document.getElementById("msg"); m.className = "msg err"; m.textContent = text; }
+    async function submitCode(){
+      var code = codeInput.value.trim();
+      if (!/^\d{6}$/.test(code)) { showCodeMsg("Enter the 6-digit code."); return; }
+      var vr = await sb.auth.mfa.verify({ factorId: factor.id, challengeId: challengeId, code: code });
+      if (vr.error) { showCodeMsg(vr.error.message); return; }
+      enterApp();
+    }
+    document.getElementById("mfa-login-submit").onclick = submitCode;
+    codeInput.onkeydown = function(e){ if (e.key === "Enter") submitCode(); };
+  }
 
   async function enterApp(){
     var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
@@ -940,22 +977,15 @@
         bl.querySelectorAll("[data-restore]").forEach(function(btn){
           btn.onclick = async function(){
             if (!await confirmDialog("Restore this backup? This will overwrite current data in the backed-up tables.")) return;
-            var br = await sb.from("school_backups").select("backup_data").eq("id", btn.getAttribute("data-restore")).single();
-            if (br.error) { toast("Error loading backup: " + br.error.message); return; }
-            var data = br.data.backup_data;
-            var tables = Object.keys(data);
-            for (var i = 0; i < tables.length; i++) {
-              var tbl = tables[i];
-              var rows = data[tbl];
-              // Delete existing via RPC (bypasses RLS)
-              await sb.rpc("admin_reset_table", { p_school_id: schoolId, p_table: tbl });
-              // Insert backed up rows
-              if (rows && rows.length) {
-                var ins = await sb.from(tbl).insert(rows);
-                if (ins.error) { toast("Error restoring " + tbl + ": " + ins.error.message); }
-              }
-            }
+            btn.disabled = true; btn.textContent = "Restoring…";
+            // Single RPC call, run as one Postgres transaction server-side —
+            // either the whole restore applies or none of it does, instead
+            // of the previous table-by-table client-side loop that could
+            // leave a school half-restored if the connection dropped mid-way.
+            var r = await sb.rpc("admin_restore_backup", { p_backup_id: btn.getAttribute("data-restore") });
+            if (r.error) { toast("Restore failed: " + r.error.message); btn.disabled = false; btn.textContent = "Restore"; return; }
             toast("Backup restored.");
+            btn.disabled = false; btn.textContent = "Restore";
           };
         });
       }
@@ -1004,6 +1034,53 @@
   }
 
   // ====================================================
+  //  6b. ACTIVITY LOG (audit_log — see setup-modules-26.sql)
+  //  Read-only; populated entirely by DB triggers, so nothing in
+  //  this console (or any portal) can write to or edit it.
+  // ====================================================
+  var auditPage = 1;
+  async function showAuditLog(){
+    setActive("audit");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Activity Log</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Every change to payments, fee structures, student records, account roles and M-Pesa configuration, across every school.</p></div>' +
+      '<div class="row" style="gap:10px;margin-bottom:20px;"><span class="muted">School</span><select id="audit-school"><option value="">All schools</option></select></div>' +
+      '<div id="audit-content"></div>';
+    SCHOOLS.forEach(function(s){
+      var o = document.createElement("option"); o.value = s.id; o.textContent = s.name;
+      $("audit-school").appendChild(o);
+    });
+    $("audit-school").onchange = function(){ auditPage = 1; renderAuditLog($("audit-school").value); };
+    renderAuditLog("");
+  }
+
+  async function renderAuditLog(schoolId, pg){
+    if (typeof pg === "number") auditPage = pg;
+    var content = $("audit-content");
+    content.innerHTML = '<div class="skel" style="height:200px;"></div>';
+    var q = sb.from("audit_log").select("*, schools(name)").order("created_at", { ascending: false }).limit(500);
+    if (schoolId) q = q.eq("school_id", schoolId);
+    var r = await q;
+    if (r.error) { content.innerHTML = '<p class="muted" style="color:#B42318;">Could not load: ' + r.error.message + '</p>'; return; }
+    var rows = r.data || [];
+    if (!rows.length) { content.innerHTML = '<p class="muted">No activity recorded yet.</p>'; return; }
+    var pg2 = window.paginate(rows, auditPage, 25);
+    var actionColor = { INSERT: "#067647", UPDATE: "#B54708", DELETE: "#C2410C" };
+    var html = '<table class="data"><thead><tr><th>When</th><th>School</th><th>Who</th><th>Action</th><th>Table</th><th>Record</th></tr></thead><tbody>';
+    pg2.rows.forEach(function(row){
+      html += '<tr><td style="white-space:nowrap;font-size:12px;">' + esc(new Date(row.created_at).toLocaleString()) + '</td>' +
+        '<td>' + esc((row.schools && row.schools.name) || row.school_id || "—") + '</td>' +
+        '<td>' + esc(row.actor_email || "—") + (row.actor_id ? "" : ' <span class="muted" style="font-size:11px;">(automated)</span>') + '</td>' +
+        '<td><span class="pill" style="color:' + (actionColor[row.action] || "#475467") + ';background:' + (actionColor[row.action] || "#475467") + '1a;">' + esc(row.action) + '</span></td>' +
+        '<td class="mono" style="font-size:12px;">' + esc(row.table_name) + '</td>' +
+        '<td class="mono" style="font-size:11px;color:#98A2B3;">' + esc((row.record_id || "").slice(0, 8)) + '</td></tr>';
+    });
+    content.innerHTML = html + '</tbody></table>' + pg2.html;
+    pg2.onAttach(content, function(p){ renderAuditLog(schoolId, p); });
+  }
+
+  // ====================================================
   //  7. SETTINGS
   // ====================================================
   function showSettings(){
@@ -1012,11 +1089,75 @@
     el.innerHTML =
       '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Settings</h2>' +
       '<p class="muted" style="margin-top:4px;font-size:13.5px;">Admin console settings.</p></div>' +
-      '<div class="panel" style="max-width:400px;">' +
+      '<div class="panel" style="max-width:480px;">' +
       '<p style="font-size:14px;margin:0 0 16px;">Signed in as super admin.</p>' +
       '<button class="btn-primary btn-sm" id="settings-signout" style="background:#B42318;">Sign out</button>' +
+      '</div>' +
+      '<div class="panel" style="max-width:480px;margin-top:16px;">' +
+      '<p style="font-size:14px;font-weight:600;margin:0 0 4px;">Two-Factor Authentication</p>' +
+      '<p class="muted" style="font-size:12.5px;margin:0 0 14px;">Require a code from an authenticator app at sign-in, in addition to your password. Strongly recommended for this console — it has platform-wide access across every school.</p>' +
+      '<div id="mfa-status">Loading…</div>' +
       '</div>';
     document.getElementById("settings-signout").onclick = function(){ doSignOut(); };
+    loadMfaStatus();
+  }
+
+  async function loadMfaStatus(){
+    var statusEl = document.getElementById("mfa-status");
+    if (!statusEl) return;
+    var r = await sb.auth.mfa.listFactors();
+    if (r.error) { statusEl.innerHTML = '<p style="color:#B42318;font-size:12.5px;">' + esc(r.error.message) + '</p>'; return; }
+    var verified = (r.data.totp || []).filter(function(f){ return f.status === "verified"; });
+    if (verified.length) {
+      statusEl.innerHTML =
+        '<span class="pill green" style="margin-bottom:10px;display:inline-block;">Enabled</span>' +
+        '<p class="muted" style="font-size:12px;margin:4px 0 12px;">Enrolled ' + esc(new Date(verified[0].created_at).toLocaleDateString()) + '</p>' +
+        '<button class="ghost btn-sm" id="mfa-remove" style="color:#B42318;">Turn off</button>';
+      document.getElementById("mfa-remove").onclick = async function(){
+        if (!await confirmDialog("Turn off two-factor authentication for your account? Anyone with your password alone will then be able to sign in.")) return;
+        var un = await sb.auth.mfa.unenroll({ factorId: verified[0].id });
+        if (un.error) { toast("Error: " + un.error.message); return; }
+        toast("Two-factor authentication turned off.");
+        loadMfaStatus();
+      };
+    } else {
+      statusEl.innerHTML = '<button class="btn-primary btn-sm" id="mfa-enroll">Set up two-factor authentication</button><div id="mfa-enroll-panel" style="margin-top:14px;"></div>';
+      document.getElementById("mfa-enroll").onclick = startMfaEnroll;
+    }
+  }
+
+  async function startMfaEnroll(){
+    var panel = document.getElementById("mfa-enroll-panel");
+    panel.innerHTML = "Generating…";
+    // Clean up any unverified factor left over from an abandoned attempt —
+    // Supabase caps how many TOTP factors one account can hold.
+    var existing = await sb.auth.mfa.listFactors();
+    if (existing.data) {
+      var unverified = (existing.data.totp || []).filter(function(f){ return f.status !== "verified"; });
+      for (var i = 0; i < unverified.length; i++) { await sb.auth.mfa.unenroll({ factorId: unverified[i].id }); }
+    }
+    var r = await sb.auth.mfa.enroll({ factorType: "totp" });
+    if (r.error) { panel.innerHTML = '<p style="color:#B42318;font-size:12.5px;">' + esc(r.error.message) + '</p>'; return; }
+    var factorId = r.data.id;
+    panel.innerHTML =
+      '<p style="font-size:12.5px;margin:0 0 10px;">Scan this with Google Authenticator, Authy, or any TOTP app:</p>' +
+      '<div style="margin-bottom:10px;max-width:200px;">' + r.data.totp.qr_code + '</div>' +
+      '<p class="muted" style="font-size:11px;margin:0 0 14px;word-break:break-all;">Or enter this key manually: <span class="mono">' + esc(r.data.totp.secret) + '</span></p>' +
+      '<label style="font-size:12.5px;font-weight:600;display:block;margin-bottom:6px;">Enter the 6-digit code from your app</label>' +
+      '<input id="mfa-verify-code" inputmode="numeric" maxlength="6" placeholder="000000" style="width:120px;font-size:15px;letter-spacing:2px;text-align:center;margin-bottom:10px;">' +
+      '<button class="btn-primary btn-sm" id="mfa-confirm" style="display:block;">Confirm &amp; enable</button>' +
+      '<p id="mfa-enroll-msg" style="color:#B42318;font-size:12.5px;margin-top:8px;"></p>';
+    document.getElementById("mfa-confirm").onclick = async function(){
+      var code = document.getElementById("mfa-verify-code").value.trim();
+      var msgEl = document.getElementById("mfa-enroll-msg");
+      if (!/^\d{6}$/.test(code)) { msgEl.textContent = "Enter the 6-digit code."; return; }
+      var ch = await sb.auth.mfa.challenge({ factorId: factorId });
+      if (ch.error) { msgEl.textContent = ch.error.message; return; }
+      var vr = await sb.auth.mfa.verify({ factorId: factorId, challengeId: ch.data.id, code: code });
+      if (vr.error) { msgEl.textContent = vr.error.message; return; }
+      toast("Two-factor authentication enabled.");
+      loadMfaStatus();
+    };
   }
 
   // ---- Mobile sidebar toggle ----
