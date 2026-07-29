@@ -1366,12 +1366,20 @@
             html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(t.cleared?"#ECFDF3":"#F8FAFB")+';color:'+color+';font-weight:600;">'+esc(t.term)+': '+label+'</span>';
             if(!autoTerm && !t.cleared && t.billed>0) autoTerm=t.term;
           });
+          // Arrears come first: while a carried-forward balance is still
+          // owing, Term 1/2/3 stay blocked — this term's fee can't be
+          // recorded until the balance b/f reaches zero.
+          var obBlocking=!!(ti.ob && !ti.ob.cleared);
+          if(obBlocking){
+            html+='<div class="muted" style="width:100%;margin-top:6px;font-size:11.5px;">⚠ Clear the balance carried forward before collecting Term 1/2/3 fees.</div>';
+          }
           m.q("#p-term-info").innerHTML=html;
           // A term with no fee structure of its own shouldn't be pickable —
           // there's nothing to bill it against (Balance b/f is what's for
-          // collecting a carried-forward balance instead).
+          // collecting a carried-forward balance instead). Also blocked
+          // outright while arrears are outstanding — see obBlocking above.
           terms.forEach(function(t,i){
-            termSel.options[i].disabled=ti.terms[i].cleared || ti.terms[i].billed===0;
+            termSel.options[i].disabled=ti.terms[i].cleared || ti.terms[i].billed===0 || obBlocking;
           });
           // Set selectedIndex directly rather than relying only on
           // .value= — more reliably lands on the right <option> even
@@ -1453,11 +1461,16 @@
             var s=students.find(function(x){return x.id===sid;});
             var isOb=selectedTerm===OB_TERM;
             var tb=isOb?(Number(s&&s.opening_balance)||0):(s?termBilled(s.grade,selectedTerm):0), tp=termPaid(sid,selectedTerm);
-            // Same rule as the dropdown's disabled options: don't let a
+            // Same rules as the dropdown's disabled options: don't let a
             // payment land against a term with no fee structure when
-            // another term for this grade actually has one.
+            // another term for this grade actually has one, and don't let
+            // a real term be paid at all while arrears are still owing.
             if(!isOb && tb===0 && s && terms.some(function(tm){return termBilled(s.grade,tm)>0;})){
               toast(selectedTerm+" has no fee structure for "+(s.grade||"this class")+" — pick a term that does.");
+              submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
+            }
+            if(!isOb && s && Number(s.opening_balance)>termPaid(sid,OB_TERM)){
+              toast("Clear the balance carried forward ("+money(Number(s.opening_balance)-termPaid(sid,OB_TERM))+") before collecting "+selectedTerm+".");
               submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
             }
             var termBal=Math.max(0,tb-tp);
