@@ -327,7 +327,7 @@
   $("nav-settings").onclick = showSettings;
   $("nav-reports").onclick = showReports;
   // ---- session / idle-timeout security ----
-  var IDLE_MINUTES = 30;                 // auto sign-out after this much inactivity
+  var IDLE_MINUTES = 5;                  // auto sign-out after this much inactivity — this portal handles fee collection
   var IDLE_MS = IDLE_MINUTES * 60 * 1000;
   var ACT_KEY = "samaji_last_active";
   var idleTimer = null;
