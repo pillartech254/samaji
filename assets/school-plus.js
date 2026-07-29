@@ -1325,6 +1325,17 @@
           }
           return {terms:info, s:s, ob:ob};
         }
+        // The term an overpayment on Balance b/f should spill into: the
+        // first real term (in order) that actually has a fee structure
+        // and isn't already cleared — i.e. exactly the term that unlocks
+        // once the carried-forward balance reaches zero.
+        function nextEligibleTerm(sid,grade){
+          for(var k=0;k<terms.length;k++){
+            var billed=termBilled(grade,terms[k]), paid=termPaid(sid,terms[k]);
+            if(billed>0 && paid<billed) return terms[k];
+          }
+          return null;
+        }
         var m=modal('<h3>Collect payment</h3><div class="grid2">'
           +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':opts)+'</select></div>'
           +'<div class="field full"><div id="p-bal" style="background:#F8FAFB;border:1px solid #EEF0F2;border-radius:10px;padding:11px 13px;font-size:12.5px;"></div></div>'
@@ -1419,10 +1430,13 @@
           var spillEl=m.q("#p-spill");
           if(amt>termBal && termBal>0){
             var excess=amt-termBal;
-            // Balance b/f never spills into Term 1/2/3 — it's its own
-            // bucket, kept separate from the real fee structure.
+            // Overpaying Balance b/f spills into the next real term that's
+            // actually owed — the same one that unlocks once the carried-
+            // forward balance clears. A real term still only spills into
+            // the next one in order, same as always.
             var nextTerm=null;
-            if(!isOb){ var ti=terms.indexOf(selectedTerm); nextTerm=ti<2?terms[ti+1]:null; }
+            if(isOb){ nextTerm=nextEligibleTerm(sid,s.grade); }
+            else { var ti=terms.indexOf(selectedTerm); nextTerm=ti<2?terms[ti+1]:null; }
             spillEl.innerHTML=nextTerm?'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> will spill over to <strong>'+esc(nextTerm)+'</strong>.':'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> recorded as overpayment.';
             spillEl.style.display="";
           } else { spillEl.style.display="none"; }
@@ -1474,10 +1488,7 @@
               submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
             }
             var termBal=Math.max(0,tb-tp);
-            // Balance b/f has nowhere to spill excess into — record the
-            // full amount against it (as an overpayment past what's
-            // owed) rather than capping it and losing the difference.
-            var spillAmt=(!isOb && amt>termBal&&termBal>0)?(amt-termBal):0;
+            var spillAmt=(amt>termBal&&termBal>0)?(amt-termBal):0;
             var mainAmt=spillAmt>0?termBal:amt;
             var rn=await sb.rpc("next_receipt_no",{ p_school:schoolId });
             var receiptNo=rn.data||("RCT-"+Date.now());
@@ -1494,9 +1505,10 @@
             if(includesBus) busPaidByStudent[sid]=(busPaidByStudent[sid]||0)+transportFare;
             payments.push(r.data);
             var spillMsg="";
-            if(spillAmt>0 && !isOb){
-              var ti=terms.indexOf(selectedTerm);
-              var nextTerm=ti<2?terms[ti+1]:null;
+            if(spillAmt>0){
+              var nextTerm;
+              if(isOb){ nextTerm=nextEligibleTerm(sid,s.grade); }
+              else { var ti=terms.indexOf(selectedTerm); nextTerm=ti<2?terms[ti+1]:null; }
               if(nextTerm){
                 var rn2=await sb.rpc("next_receipt_no",{ p_school:schoolId });
                 var receiptNo2=rn2.data||("RCT-"+(Date.now()+1));
