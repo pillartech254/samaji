@@ -1334,7 +1334,7 @@
           +'<input type="checkbox" id="p-bus"> 🚌 <span id="p-bus-label">Include bus transport</span></label></div>'
           +'<div class="field"><label>Amount (KES)</label><input id="p-amt" type="number" placeholder="0"></div>'
           +'<div class="field"><label>Method</label><select id="p-method"><option>Cash</option><option>M-Pesa</option><option>Bank</option><option>Cheque</option><option>Card</option></select></div>'
-          +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option><option id="p-term-ob" value="Balance b/f" style="display:none;">Balance b/f</option></select></div>'
+          +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option><option id="p-term-ob" value="Balance b/f" hidden>Balance b/f</option></select></div>'
           +'<div class="field"><label>Reference (M-Pesa/Cheque)</label><input id="p-ref" placeholder="e.g. SLJ7XK2P"></div>'
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
           +'<div class="field full"><div id="p-spill" style="display:none;background:#FEF9C3;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"></div></div>'
@@ -1352,12 +1352,12 @@
             var obColor=ti.ob.cleared?"#067647":"#C2410C";
             var obLabel=ti.ob.cleared?"✓ Cleared":(ti.ob.paid>0?"Partial "+money(ti.ob.paid)+"/"+money(ti.ob.billed):money(ti.ob.billed));
             html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(ti.ob.cleared?"#ECFDF3":"#FEF1F0")+';color:'+obColor+';font-weight:600;">Balance carried forward: '+obLabel+(s0.opening_balance_note?' — '+esc(s0.opening_balance_note):'')+'</span>';
-            obOpt.style.display="";
+            obOpt.hidden=false;
             obOpt.textContent="Balance b/f ("+money(ti.ob.bal)+" owing)";
             obOpt.disabled=ti.ob.cleared;
             if(!ti.ob.cleared) autoTerm=OB_TERM;
           } else {
-            obOpt.style.display="none";
+            obOpt.hidden=true;
             obOpt.disabled=true;
           }
           ti.terms.forEach(function(t,i){
@@ -1373,10 +1373,19 @@
           terms.forEach(function(t,i){
             termSel.options[i].disabled=ti.terms[i].cleared || ti.terms[i].billed===0;
           });
-          if(autoTerm) termSel.value=autoTerm;
-          else if(termSel.selectedOptions[0] && termSel.selectedOptions[0].disabled){
-            var firstEnabled=Array.prototype.filter.call(termSel.options,function(o){return !o.disabled && o.style.display!=="none";})[0];
-            if(firstEnabled) termSel.value=firstEnabled.value;
+          // Set selectedIndex directly rather than relying only on
+          // .value= — more reliably lands on the right <option> even
+          // right after toggling its hidden/disabled state in the same
+          // tick, across browsers.
+          function selectByValue(val){
+            var idx=Array.prototype.findIndex.call(termSel.options,function(o){return o.value===val;});
+            if(idx>=0) termSel.selectedIndex=idx;
+          }
+          if(autoTerm){
+            selectByValue(autoTerm);
+          } else if(termSel.selectedOptions[0] && termSel.selectedOptions[0].disabled){
+            var firstEnabled=Array.prototype.filter.call(termSel.options,function(o){return !o.disabled && !o.hidden;})[0];
+            if(firstEnabled) selectByValue(firstEnabled.value);
           }
         }
         function refreshBal(){
