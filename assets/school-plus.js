@@ -1303,34 +1303,27 @@
         var transportFare=0;
         var curYear=new Date().getFullYear();
         var terms=["Term 1","Term 2","Term 3"];
+        // The opening balance is its own bucket — a fixed snapshot taken
+        // at migration, never part of any term's fee structure. Payments
+        // against it are tagged with this exact term string, kept
+        // completely separate from Term 1/2/3's own billed amounts (which
+        // must always read exactly what the fee structure says, nothing
+        // added or subtracted for the opening balance).
+        var OB_TERM="Balance b/f";
         function termBilled(grade,term){ var t=0; structures.forEach(function(s){ if(s.level===grade && s.term===term) t+=(s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); }); return t; }
         function termPaid(sid,term){ var t=0; payments.forEach(function(p){ if(p.student_id===sid && p.term===term) t+=tuitionOf(p); }); return t; }
-        // An opening balance lands on the first term (in order) that has
-        // no fee structure of its own — that's the only slot with nothing
-        // else billed to it. If every term already has a real structure,
-        // there's no slot to carry it into.
-        function obTermFor(grade){ for(var k=0;k<terms.length;k++){ if(termBilled(grade,terms[k])===0) return terms[k]; } return null; }
-        // Billed for a specific student's term = the structural amount,
-        // plus their opening balance if this is that carried-forward term.
-        // Using this (instead of the raw grade-wide termBilled) everywhere
-        // a payment gets applied means the existing spillover mechanism
-        // already does the right thing: a payment against the carried-
-        // forward term is capped at the balance owed, and any excess
-        // spills into the next term per its real fee structure.
-        function effectiveTermBilled(stu,term){
-          var b=termBilled(stu.grade,term);
-          var ob=Number(stu&&stu.opening_balance)||0;
-          if(ob>0 && term===obTermFor(stu.grade)) b+=ob;
-          return b;
-        }
         function termInfo(sid){
-          var s=students.find(function(x){return x.id===sid;}); if(!s) return {terms:[],s:null};
-          var obTerm=Number(s.opening_balance)>0?obTermFor(s.grade):null;
+          var s=students.find(function(x){return x.id===sid;}); if(!s) return {terms:[],s:null,ob:null};
           var info=[]; terms.forEach(function(t){
-            var billed=effectiveTermBilled(s,t), paid=termPaid(sid,t), bal=Math.max(0,billed-paid);
-            info.push({term:t, billed:billed, paid:paid, bal:bal, cleared:billed>0&&paid>=billed, carriedForward:t===obTerm});
+            var billed=termBilled(s.grade,t), paid=termPaid(sid,t), bal=Math.max(0,billed-paid);
+            info.push({term:t, billed:billed, paid:paid, bal:bal, cleared:billed>0&&paid>=billed});
           });
-          return {terms:info, s:s};
+          var ob=null;
+          if(s && Number(s.opening_balance)>0){
+            var obBilled=Number(s.opening_balance), obPaid=termPaid(sid,OB_TERM);
+            ob={term:OB_TERM, billed:obBilled, paid:obPaid, bal:Math.max(0,obBilled-obPaid), cleared:obPaid>=obBilled};
+          }
+          return {terms:info, s:s, ob:ob};
         }
         var m=modal('<h3>Collect payment</h3><div class="grid2">'
           +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':opts)+'</select></div>'
@@ -1341,7 +1334,7 @@
           +'<input type="checkbox" id="p-bus"> 🚌 <span id="p-bus-label">Include bus transport</span></label></div>'
           +'<div class="field"><label>Amount (KES)</label><input id="p-amt" type="number" placeholder="0"></div>'
           +'<div class="field"><label>Method</label><select id="p-method"><option>Cash</option><option>M-Pesa</option><option>Bank</option><option>Cheque</option><option>Card</option></select></div>'
-          +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+          +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option><option id="p-term-ob" value="Balance b/f" style="display:none;">Balance b/f</option></select></div>'
           +'<div class="field"><label>Reference (M-Pesa/Cheque)</label><input id="p-ref" placeholder="e.g. SLJ7XK2P"></div>'
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
           +'<div class="field full"><div id="p-spill" style="display:none;background:#FEF9C3;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"></div></div>'
@@ -1352,37 +1345,37 @@
           var ti=termInfo(sid);
           var termSel=m.q("#p-term");
           var html=''; var autoTerm=null;
-          var hasCarriedTerm=ti.terms.some(function(t){return t.carriedForward;});
-          // Only shown as a standalone chip when every term already has its
-          // own structure — i.e. there's no term slot to carry it into.
-          if(s0 && Number(s0.opening_balance)>0 && !hasCarriedTerm){
-            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:#FFF6ED;color:#C2410C;font-weight:600;">Balance b/f: '+money(s0.opening_balance)+(s0.opening_balance_note?' — '+esc(s0.opening_balance_note):'')+'</span>';
+          // Balance b/f is its own bucket, entirely separate from Term
+          // 1/2/3's own fee structure — shown first, own chip, own option.
+          var obOpt=m.q("#p-term-ob");
+          if(ti.ob){
+            var obColor=ti.ob.cleared?"#067647":"#C2410C";
+            var obLabel=ti.ob.cleared?"✓ Cleared":(ti.ob.paid>0?"Partial "+money(ti.ob.paid)+"/"+money(ti.ob.billed):money(ti.ob.billed));
+            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(ti.ob.cleared?"#ECFDF3":"#FEF1F0")+';color:'+obColor+';font-weight:600;">Balance carried forward: '+obLabel+(s0.opening_balance_note?' — '+esc(s0.opening_balance_note):'')+'</span>';
+            obOpt.style.display="";
+            obOpt.textContent="Balance b/f ("+money(ti.ob.bal)+" owing)";
+            obOpt.disabled=ti.ob.cleared;
+            if(!ti.ob.cleared) autoTerm=OB_TERM;
+          } else {
+            obOpt.style.display="none";
+            obOpt.disabled=true;
           }
           ti.terms.forEach(function(t,i){
-            var color,label;
-            if(t.carriedForward){
-              color="#C2410C";
-              label="Balance carried forward "+money(t.billed)+(t.paid>0?" (paid "+money(t.paid)+")":"")+(s0.opening_balance_note?" — "+esc(s0.opening_balance_note):"");
-            } else {
-              color=t.cleared?"#067647":(t.paid>0?"#D97706":"#6B7280");
-              label=t.cleared?"✓ Cleared":(t.paid>0?"Partial "+money(t.paid)+"/"+money(t.billed):(t.billed>0?"Unpaid "+money(t.billed):"No structure"));
-            }
-            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(t.carriedForward?"#FEF1F0":(t.cleared?"#ECFDF3":"#F8FAFB"))+';color:'+color+';font-weight:600;">'+esc(t.term)+': '+label+'</span>';
+            var color=t.cleared?"#067647":(t.paid>0?"#D97706":"#6B7280");
+            var label=t.cleared?"✓ Cleared":(t.paid>0?"Partial "+money(t.paid)+"/"+money(t.billed):(t.billed>0?"Unpaid "+money(t.billed):"No structure"));
+            html+='<span style="display:inline-block;margin-right:14px;padding:4px 8px;border-radius:6px;background:'+(t.cleared?"#ECFDF3":"#F8FAFB")+';color:'+color+';font-weight:600;">'+esc(t.term)+': '+label+'</span>';
             if(!autoTerm && !t.cleared && t.billed>0) autoTerm=t.term;
           });
           m.q("#p-term-info").innerHTML=html;
-          // A term with no fee structure at all shouldn't be pickable —
-          // there's nothing to bill it against. Exception: if literally
-          // no term has a structure yet, leave them all selectable so a
-          // student who only has an opening balance can still be
-          // collected from before the school sets up this year's fees.
-          var anyBilled=ti.terms.some(function(t){return t.billed>0;});
+          // A term with no fee structure of its own shouldn't be pickable —
+          // there's nothing to bill it against (Balance b/f is what's for
+          // collecting a carried-forward balance instead).
           terms.forEach(function(t,i){
-            termSel.options[i].disabled=ti.terms[i].cleared || (anyBilled && ti.terms[i].billed===0);
+            termSel.options[i].disabled=ti.terms[i].cleared || ti.terms[i].billed===0;
           });
           if(autoTerm) termSel.value=autoTerm;
           else if(termSel.selectedOptions[0] && termSel.selectedOptions[0].disabled){
-            var firstEnabled=Array.prototype.filter.call(termSel.options,function(o){return !o.disabled;})[0];
+            var firstEnabled=Array.prototype.filter.call(termSel.options,function(o){return !o.disabled && o.style.display!=="none";})[0];
             if(firstEnabled) termSel.value=firstEnabled.value;
           }
         }
@@ -1403,13 +1396,16 @@
           var amt=Number(m.q("#p-amt").value)||0;
           var s=students.find(function(x){return x.id===sid;});
           if(!s){ m.q("#p-spill").style.display="none"; return; }
-          var tb=effectiveTermBilled(s,selectedTerm), tp=termPaid(sid,selectedTerm);
+          var isOb=selectedTerm===OB_TERM;
+          var tb=isOb?(Number(s.opening_balance)||0):termBilled(s.grade,selectedTerm), tp=termPaid(sid,selectedTerm);
           var termBal=Math.max(0,tb-tp);
           var spillEl=m.q("#p-spill");
           if(amt>termBal && termBal>0){
             var excess=amt-termBal;
-            var ti=terms.indexOf(selectedTerm);
-            var nextTerm=ti<2?terms[ti+1]:null;
+            // Balance b/f never spills into Term 1/2/3 — it's its own
+            // bucket, kept separate from the real fee structure.
+            var nextTerm=null;
+            if(!isOb){ var ti=terms.indexOf(selectedTerm); nextTerm=ti<2?terms[ti+1]:null; }
             spillEl.innerHTML=nextTerm?'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> will spill over to <strong>'+esc(nextTerm)+'</strong>.':'⚡ '+money(termBal)+' clears '+esc(selectedTerm)+'. Excess <strong>'+money(excess)+'</strong> recorded as overpayment.';
             spillEl.style.display="";
           } else { spillEl.style.display="none"; }
@@ -1446,17 +1442,20 @@
           try{
             var selectedTerm=m.q("#p-term").value;
             var s=students.find(function(x){return x.id===sid;});
-            var tb=s?effectiveTermBilled(s,selectedTerm):0, tp=termPaid(sid,selectedTerm);
+            var isOb=selectedTerm===OB_TERM;
+            var tb=isOb?(Number(s&&s.opening_balance)||0):(s?termBilled(s.grade,selectedTerm):0), tp=termPaid(sid,selectedTerm);
             // Same rule as the dropdown's disabled options: don't let a
-            // payment land against a term with no fee structure — and no
-            // carried-forward balance either — when another term for this
-            // grade actually has one to bill against.
-            if(tb===0 && s && terms.some(function(tm){return effectiveTermBilled(s,tm)>0;})){
+            // payment land against a term with no fee structure when
+            // another term for this grade actually has one.
+            if(!isOb && tb===0 && s && terms.some(function(tm){return termBilled(s.grade,tm)>0;})){
               toast(selectedTerm+" has no fee structure for "+(s.grade||"this class")+" — pick a term that does.");
               submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
             }
             var termBal=Math.max(0,tb-tp);
-            var spillAmt=(amt>termBal&&termBal>0)?(amt-termBal):0;
+            // Balance b/f has nowhere to spill excess into — record the
+            // full amount against it (as an overpayment past what's
+            // owed) rather than capping it and losing the difference.
+            var spillAmt=(!isOb && amt>termBal&&termBal>0)?(amt-termBal):0;
             var mainAmt=spillAmt>0?termBal:amt;
             var rn=await sb.rpc("next_receipt_no",{ p_school:schoolId });
             var receiptNo=rn.data||("RCT-"+Date.now());
@@ -1473,7 +1472,7 @@
             if(includesBus) busPaidByStudent[sid]=(busPaidByStudent[sid]||0)+transportFare;
             payments.push(r.data);
             var spillMsg="";
-            if(spillAmt>0){
+            if(spillAmt>0 && !isOb){
               var ti=terms.indexOf(selectedTerm);
               var nextTerm=ti<2?terms[ti+1]:null;
               if(nextTerm){
