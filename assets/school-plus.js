@@ -1343,10 +1343,20 @@
             if(!autoTerm && !t.cleared && t.billed>0) autoTerm=t.term;
           });
           m.q("#p-term-info").innerHTML=html;
+          // A term with no fee structure at all shouldn't be pickable —
+          // there's nothing to bill it against. Exception: if literally
+          // no term has a structure yet, leave them all selectable so a
+          // student who only has an opening balance can still be
+          // collected from before the school sets up this year's fees.
+          var anyBilled=ti.terms.some(function(t){return t.billed>0;});
           terms.forEach(function(t,i){
-            termSel.options[i].disabled=ti.terms[i].cleared;
+            termSel.options[i].disabled=ti.terms[i].cleared || (anyBilled && ti.terms[i].billed===0);
           });
           if(autoTerm) termSel.value=autoTerm;
+          else if(termSel.selectedOptions[0] && termSel.selectedOptions[0].disabled){
+            var firstEnabled=Array.prototype.filter.call(termSel.options,function(o){return !o.disabled;})[0];
+            if(firstEnabled) termSel.value=firstEnabled.value;
+          }
         }
         function refreshBal(){
           var sid=preId||m.q("#p-stu").value;
@@ -1409,6 +1419,13 @@
             var selectedTerm=m.q("#p-term").value;
             var s=students.find(function(x){return x.id===sid;});
             var tb=s?termBilled(s.grade,selectedTerm):0, tp=termPaid(sid,selectedTerm);
+            // Same rule as the dropdown's disabled options: don't let a
+            // payment land against a term with no fee structure when
+            // another term for this grade actually has one.
+            if(tb===0 && s && terms.some(function(tm){return termBilled(s.grade,tm)>0;})){
+              toast(selectedTerm+" has no fee structure for "+(s.grade||"this class")+" — pick a term that does.");
+              submitting=false; submitBtn.disabled=false; submitBtn.textContent=origLabel; return;
+            }
             var termBal=Math.max(0,tb-tp);
             var spillAmt=(amt>termBal&&termBal>0)?(amt-termBal):0;
             var mainAmt=spillAmt>0?termBal:amt;
