@@ -134,6 +134,7 @@
         <div class="nav-h">Operations</div>
         <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
         <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="database"></span>Database</button>
+        <button class="navitem" id="nav-audit"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reports"></span>Activity Log</button>
         <div style="flex:1;"></div>
         <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;" data-icon="settings"></span>Settings</button>
       </aside>
@@ -207,7 +208,7 @@
   }
 
   // ---- Nav ----
-  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","database","settings"];
+  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","database","audit","settings"];
   function setActive(key){
     NAV_KEYS.forEach(function(k){
       var el = $("nav-" + k);
@@ -221,6 +222,7 @@
   $("nav-users").onclick = function(){ showUsers(); };
   $("nav-mpesa").onclick = function(){ showMpesa(); };
   $("nav-database").onclick = function(){ showDatabase(); };
+  $("nav-audit").onclick = function(){ showAuditLog(); };
   $("nav-settings").onclick = function(){ showSettings(); };
 
   // ---- Auth ----
@@ -1001,6 +1003,53 @@
         toast("Reset complete. " + totalDeleted + " rows deleted.");
       };
     }
+  }
+
+  // ====================================================
+  //  6b. ACTIVITY LOG (audit_log — see setup-modules-26.sql)
+  //  Read-only; populated entirely by DB triggers, so nothing in
+  //  this console (or any portal) can write to or edit it.
+  // ====================================================
+  var auditPage = 1;
+  async function showAuditLog(){
+    setActive("audit");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Activity Log</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Every change to payments, fee structures, student records, account roles and M-Pesa configuration, across every school.</p></div>' +
+      '<div class="row" style="gap:10px;margin-bottom:20px;"><span class="muted">School</span><select id="audit-school"><option value="">All schools</option></select></div>' +
+      '<div id="audit-content"></div>';
+    SCHOOLS.forEach(function(s){
+      var o = document.createElement("option"); o.value = s.id; o.textContent = s.name;
+      $("audit-school").appendChild(o);
+    });
+    $("audit-school").onchange = function(){ auditPage = 1; renderAuditLog($("audit-school").value); };
+    renderAuditLog("");
+  }
+
+  async function renderAuditLog(schoolId, pg){
+    if (typeof pg === "number") auditPage = pg;
+    var content = $("audit-content");
+    content.innerHTML = '<div class="skel" style="height:200px;"></div>';
+    var q = sb.from("audit_log").select("*, schools(name)").order("created_at", { ascending: false }).limit(500);
+    if (schoolId) q = q.eq("school_id", schoolId);
+    var r = await q;
+    if (r.error) { content.innerHTML = '<p class="muted" style="color:#B42318;">Could not load: ' + r.error.message + '</p>'; return; }
+    var rows = r.data || [];
+    if (!rows.length) { content.innerHTML = '<p class="muted">No activity recorded yet.</p>'; return; }
+    var pg2 = window.paginate(rows, auditPage, 25);
+    var actionColor = { INSERT: "#067647", UPDATE: "#B54708", DELETE: "#C2410C" };
+    var html = '<table class="data"><thead><tr><th>When</th><th>School</th><th>Who</th><th>Action</th><th>Table</th><th>Record</th></tr></thead><tbody>';
+    pg2.rows.forEach(function(row){
+      html += '<tr><td style="white-space:nowrap;font-size:12px;">' + esc(new Date(row.created_at).toLocaleString()) + '</td>' +
+        '<td>' + esc((row.schools && row.schools.name) || row.school_id || "—") + '</td>' +
+        '<td>' + esc(row.actor_email || "—") + (row.actor_id ? "" : ' <span class="muted" style="font-size:11px;">(automated)</span>') + '</td>' +
+        '<td><span class="pill" style="color:' + (actionColor[row.action] || "#475467") + ';background:' + (actionColor[row.action] || "#475467") + '1a;">' + esc(row.action) + '</span></td>' +
+        '<td class="mono" style="font-size:12px;">' + esc(row.table_name) + '</td>' +
+        '<td class="mono" style="font-size:11px;color:#98A2B3;">' + esc((row.record_id || "").slice(0, 8)) + '</td></tr>';
+    });
+    content.innerHTML = html + '</tbody></table>' + pg2.html;
+    pg2.onAttach(content, function(p){ renderAuditLog(schoolId, p); });
   }
 
   // ====================================================
