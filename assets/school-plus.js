@@ -1472,11 +1472,14 @@
         var body=document.getElementById("fee-body");
         var levels=Array.from(new Set(feeClasses.map(function(c){return c.level;}))).sort();
         var levelOpts=levels.map(function(l){return '<option value="'+esc(l)+'">'+esc(l)+'</option>';}).join("");
-        body.innerHTML='<div class="chartcard"><div class="ch-head"><div><h3>Generate Fee Report</h3><div class="sub">Filter by class, stream, term — then print or identify students to send home.</div></div></div>'
+        body.innerHTML='<div class="chartcard"><div class="ch-head"><div><h3>Generate Fee Report</h3><div class="sub">Filter by class, stream, term or a payment date range — then print or identify students to send home.</div></div></div>'
           +'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;">'
           +'<div class="field"><label>Class</label><select id="fr-class"><option value="">All classes</option>'+levelOpts+'</select></div>'
           +'<div class="field"><label>Stream</label><select id="fr-stream"><option value="">All streams</option></select></div>'
           +'<div class="field"><label>Term</label><select id="fr-term"><option value="">All terms</option><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
+          +'<div class="field"><label>Payments from</label><input type="date" id="fr-from"></div>'
+          +'<div class="field"><label>Payments to</label><input type="date" id="fr-to"></div>'
+          +'<button class="btn-sm" id="fr-clear-dates">Clear dates</button>'
           +'<button class="btn-primary" id="fr-gen" style="height:38px;">Generate report</button>'
           +'</div>'
           +'<div style="margin-top:16px;padding:12px;background:#FEF9C3;border:1px solid #FDE68A;border-radius:10px;">'
@@ -1493,7 +1496,7 @@
           var streams=feeClasses.filter(function(c){return c.level===lv&&c.stream;}).map(function(c){return c.stream;});
           streamSel.innerHTML='<option value="">All streams</option>'+streams.map(function(s){return '<option>'+esc(s)+'</option>';}).join("");
         };
-        function getFiltered(termV,classV,streamV){
+        function getFiltered(termV,classV,streamV,fromV,toV){
           var filtered=students.slice();
           if(classV) filtered=filtered.filter(function(s){return s.grade===classV;});
           if(streamV){
@@ -1506,9 +1509,16 @@
                 t+=(st.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0);
             }); return t;
           };
+          // When a date range is set, only payments recorded within it
+          // count — so "Paid"/"Balance" reflect that window specifically,
+          // not the true running balance. renderReport() labels this.
           var termPaidFn=function(sid){
             var t=0; payments.forEach(function(p){
-              if(p.student_id===sid && (!termV||p.term===termV)) t+=tuitionOf(p);
+              if(p.student_id!==sid || (termV && p.term!==termV)) return;
+              var d=(p.paid_at||"").slice(0,10);
+              if(fromV && d<fromV) return;
+              if(toV && d>toV) return;
+              t+=tuitionOf(p);
             }); return t;
           };
           return filtered.map(function(s){
@@ -1516,7 +1526,7 @@
             return {s:s,billed:billed,paid:paid,bal:bal};
           });
         }
-        function renderReport(rows,title,subtitle){
+        function renderReport(rows,title,subtitle,dateNote){
           var totalBilled=0,totalPaid=0,totalBal=0,cleared=0;
           rows.forEach(function(r){totalBilled+=r.billed;totalPaid+=r.paid;totalBal+=r.bal;if(r.bal<=0&&r.billed>0)cleared++;});
           var logo=schoolLogo(school,48);
@@ -1538,6 +1548,7 @@
             +'<td style="width:4px;"></td>'
             +'<td style="background:#F1ECFE;border-radius:6px;padding:8px 10px;width:25%;"><div style="font-size:9px;text-transform:uppercase;color:#6D28D9;letter-spacing:.03em;">Cleared</div><div style="font-size:14px;font-weight:700;">'+cleared+' / '+rows.length+'</div></td>'
             +'</tr></table>'
+            +(dateNote?'<p style="font-size:10px;color:#92400E;background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:6px 10px;margin:0 0 10px;">'+esc(dateNote)+'</p>':'')
             +'<table class="data" style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">#</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Adm No</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Student name</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Class</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Billed</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Paid</th><th style="padding:6px 4px;text-align:right;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Balance</th><th style="padding:6px 4px;text-align:left;border-bottom:2px solid #1A1D26;font-size:9px;text-transform:uppercase;letter-spacing:.03em;">Status</th></tr></thead><tbody>';
           rows.forEach(function(r,i){
             var st=r.bal<=0&&r.billed>0?'Cleared':(r.paid>0?'Partial':'Unpaid');
@@ -1569,15 +1580,22 @@
             setTimeout(function(){ w.print(); }, 300);
           };
         }
+        document.getElementById("fr-clear-dates").onclick=function(){
+          document.getElementById("fr-from").value=""; document.getElementById("fr-to").value="";
+        };
         document.getElementById("fr-gen").onclick=function(){
           var termV=document.getElementById("fr-term").value;
           var classV=document.getElementById("fr-class").value;
           var streamV=document.getElementById("fr-stream").value;
-          var rows=getFiltered(termV,classV,streamV).sort(function(a,b){return b.bal-a.bal;});
+          var fromV=document.getElementById("fr-from").value;
+          var toV=document.getElementById("fr-to").value;
+          var rows=getFiltered(termV,classV,streamV,fromV,toV).sort(function(a,b){return b.bal-a.bal;});
           var title="Fee Payment & Balances Report";
           var parts=[]; if(classV) parts.push(classV); if(streamV) parts.push(streamV); if(termV) parts.push(termV);
+          if(fromV||toV) parts.push("Payments "+(fromV||"start")+" → "+(toV||"today"));
           var subtitle=parts.length?parts.join(" · "):"All classes · All terms";
-          renderReport(rows,title,subtitle);
+          var dateNote=(fromV||toV)?"Paid and Balance figures reflect only payments recorded between "+(fromV||"the start of records")+" and "+(toV||"today")+" — not the student's true current balance.":null;
+          renderReport(rows,title,subtitle,dateNote);
         };
         document.getElementById("fr-sendhome").onclick=function(){
           var threshold=Number(document.getElementById("fr-threshold").value)||0;
@@ -1585,6 +1603,9 @@
           var termV=document.getElementById("fr-term").value;
           var classV=document.getElementById("fr-class").value;
           var streamV=document.getElementById("fr-stream").value;
+          // Deliberately ignores the payment date range above — sending a
+          // student home has to be based on their true current balance,
+          // never a balance narrowed to only payments in some date window.
           var rows=getFiltered(termV,classV,streamV).filter(function(r){return r.bal>=threshold;}).sort(function(a,b){return b.bal-a.bal;});
           if(!rows.length){ toast("No students owe "+money(threshold)+" or more."); return; }
           var title="SEND HOME LIST — Balance ≥ "+money(threshold);
