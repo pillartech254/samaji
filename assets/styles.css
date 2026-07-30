@@ -271,7 +271,15 @@ table.data tbody tr:hover td{background:var(--surface-2);}
 .skel{background:linear-gradient(90deg,#EEF1F4 25%,#F6F8FA 37%,#EEF1F4 63%);background-size:200% 100%;animation:shimmer 1.3s infinite;border-radius:8px;}
 
 /* ===== Receipt ===== */
-.rcpt{width:430px;max-width:100%;background:#fff;border-radius:16px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--sh-3);}
+.rcpt{width:430px;max-width:100%;background:#fff;border-radius:16px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--sh-3);position:relative;}
+/* Faint school-logo watermark behind receipt/statement content — makes
+   photocopied or screenshotted forgeries easier to spot at a glance.
+   z-index:-1 puts it behind ALL of .rcpt's normal-flow children
+   regardless of their own stacking, since negative-z-index descendants
+   paint before non-positioned in-flow content in CSS painting order. */
+.rcpt .rc-wm,.statement .st-wm{position:absolute;inset:0;z-index:-1;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+.rcpt .rc-wm img{width:60%;max-width:220px;opacity:.06;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.statement .st-wm img{width:46%;max-width:300px;opacity:.05;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .rcpt .rc-top{background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;padding:22px 24px;position:relative;overflow:hidden;}
 .rcpt .rc-top::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.08);}
 .rcpt .rc-top .rc-logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;position:relative;z-index:1;}
@@ -289,7 +297,7 @@ table.data tbody tr:hover td{background:var(--surface-2);}
 .rcpt .rc-bal{display:flex;justify-content:space-between;font-size:12.5px;margin-top:11px;}
 
 /* ===== Printable statement (Reports, fee statements) ===== */
-.statement{width:760px;max-width:100%;background:#fff;border-radius:14px;border:1px solid var(--line);box-shadow:var(--sh-3);padding:30px 34px;font-size:13px;color:var(--ink);}
+.statement{width:760px;max-width:100%;background:#fff;border-radius:14px;border:1px solid var(--line);box-shadow:var(--sh-3);padding:30px 34px;font-size:13px;color:var(--ink);position:relative;overflow:hidden;}
 .statement h4{margin:24px 0 10px;font-size:13px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line-2);padding-bottom:6px;}
 .statement .st-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--ink);padding-bottom:14px;}
 .statement .st-school{display:flex;align-items:center;gap:12px;}

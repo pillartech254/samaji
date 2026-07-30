@@ -237,37 +237,33 @@
         +'</div></div></div>'
         +'<div class="modal-actions" style="margin-top:18px;"><button class="btn-primary" id="sp-save">Save profile</button></div>'
         +'</div>';
-      document.getElementById("sp-logo-file").onchange=function(e){
+      document.getElementById("sp-logo-file").onchange=async function(e){
         var file=e.target.files[0]; if(!file) return;
         if(file.size>500*1024){ toast("Logo must be under 500 KB."); return; }
-        var reader=new FileReader();
-        reader.onload=async function(){
-          var dataUrl=reader.result;
-          var r=await sb.from("schools").update({logo_url:dataUrl}).eq("id",schoolId);
-          if(r.error){
-            try{ localStorage.setItem("school_logo_"+schoolId, dataUrl); }catch(e2){}
-          }
-          toast("Logo saved"); profileTab();
-        };
-        reader.readAsDataURL(file);
+        var ext=(file.name.split(".").pop()||"png").toLowerCase().replace(/[^a-z0-9]/g,"")||"png";
+        var path=schoolId+"/logo."+ext;
+        var up=await sb.storage.from("school-logos").upload(path, file, {upsert:true, cacheControl:"3600", contentType:file.type||undefined});
+        if(up.error){ toast("Logo upload failed: "+up.error.message); return; }
+        var pub=sb.storage.from("school-logos").getPublicUrl(path);
+        var publicUrl=(pub.data&&pub.data.publicUrl)?pub.data.publicUrl+"?v="+Date.now():"";
+        var r=await sb.from("schools").update({logo_url:publicUrl}).eq("id",schoolId);
+        if(r.error){ toast("Logo uploaded but couldn't be saved to your profile: "+r.error.message); return; }
+        try{ localStorage.removeItem("school_logo_"+schoolId); }catch(e2){}
+        toast("Logo saved"); profileTab();
       };
       var rmBtn=document.getElementById("sp-logo-rm");
       if(rmBtn) rmBtn.onclick=async function(){
         var r=await sb.from("schools").update({logo_url:null}).eq("id",schoolId);
-        if(r.error) try{ localStorage.removeItem("school_logo_"+schoolId); }catch(e2){}
+        if(r.error){ toast("Couldn't remove logo: "+r.error.message); return; }
+        try{ localStorage.removeItem("school_logo_"+schoolId); }catch(e2){}
         toast("Logo removed"); profileTab();
       };
       document.getElementById("sp-save").onclick=async function(){
         var name=document.getElementById("sp-name").value.trim();
         if(!name){ toast("School name is required."); return; }
-        var fields={name:name, phone:document.getElementById("sp-phone").value.trim()||null, address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
-        var rec={name:name};
-        var keys=Object.keys(fields);
-        for(var i=0;i<keys.length;i++){
-          var test={}; Object.keys(rec).forEach(function(k){test[k]=rec[k];}); test[keys[i]]=fields[keys[i]];
-          var r=await sb.from("schools").update(test).eq("id",schoolId);
-          if(!r.error) rec=test;
-        }
+        var rec={name:name, phone:document.getElementById("sp-phone").value.trim()||null, address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
+        var r=await sb.from("schools").update(rec).eq("id",schoolId);
+        if(r.error){ toast("Couldn't save profile: "+r.error.message); return; }
         toast("Profile saved");
       };
     }
@@ -1731,6 +1727,7 @@
           var ov=document.createElement("div"); ov.className="overlay";
           ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
             +'<div id="print-area"><div class="rcpt">'
+            +(getLogoUrl(school)?'<div class="rc-wm"><img src="'+esc(getLogoUrl(school))+'"></div>':'')
             +'<div class="rc-top"><div class="rc-logo">'+(getLogoUrl(school)?'<img src="'+esc(getLogoUrl(school))+'" style="height:32px;object-fit:contain;">':('<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg>'))+'</div>'
             +'<div class="rc-school">'+esc(school.name||"School")+'</div><div class="rc-sub">Official Fee Receipt</div>'
             +'<div class="rc-stamp">'+status+'</div></div>'
@@ -1778,7 +1775,8 @@
       }).join("") || '<tr><td colspan="6" style="text-align:center;color:#888;">No payments recorded yet.</td></tr>';
       var paid=payments.reduce(function(a,p){return a+Number(p.amount);},0), bal=Math.max(0,billed-paid);
 
-      var body='<div class="st-head">'
+      var body=(getLogoUrl(school)?'<div class="st-wm"><img src="'+esc(getLogoUrl(school))+'"></div>':'')
+        +'<div class="st-head">'
         +'<div class="st-school">'+schoolLogo(school)+'<div><div class="st-name">'+esc(school.name||"School")+'</div><div class="st-addr">Official Fee Statement</div></div></div>'
         +'<div class="st-doc">FEE STATEMENT</div></div>'
         +'<table class="st-meta"><tr>'
@@ -1996,7 +1994,8 @@
         var pct=r.collected?Math.round(d.value/r.collected*100):0;
         return '<tr><td>'+esc(d.label)+'</td><td class="num">'+money(d.value)+'</td><td class="num">'+pct+'%</td></tr>';
       }).join("") : '<tr><td colspan="3" style="text-align:center;color:#888;">No payments recorded.</td></tr>';
-      var body='<div class="st-head">'
+      var body=(getLogoUrl(schoolInfo)?'<div class="st-wm"><img src="'+esc(getLogoUrl(schoolInfo))+'"></div>':'')
+        +'<div class="st-head">'
         +'<div class="st-school">'+schoolLogo(schoolInfo)+'<div><div class="st-name">'+esc(schoolInfo.name||"School")+'</div><div class="st-addr">'+esc(schoolInfo.address||"")+(schoolInfo.phone?' · '+esc(schoolInfo.phone):"")+'</div></div></div>'
         +'<div class="st-doc">FEE COLLECTION REPORT</div></div>'
         +'<table class="st-meta"><tr>'
