@@ -1187,8 +1187,11 @@
       var tab="ledger", query="", classFilter="";
       el.querySelectorAll("#fee-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#fee-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); renderTab(); }; });
       function renderTab(){ if(tab==="ledger") ledger(); else if(tab==="receipts") receipts(); else if(tab==="feereport") feeReport(); }
-      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); renderTab(); };
-      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); renderTab(); };
+      // On the Receipts tab, name/class filtering is folded into the
+      // explicit "Search receipts" query instead of refetching on every
+      // keystroke — so only Ledger/Fee reports live-update here.
+      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); if(tab!=="receipts") renderTab(); };
+      document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); if(tab!=="receipts") renderTab(); };
 
       function matches(name, adm, cls){
         if(classFilter && cls!==classFilter) return false;
@@ -1252,17 +1255,55 @@
         body.querySelectorAll("[data-pay]").forEach(function(b){ b.onclick=function(){ collectForm(b.getAttribute("data-pay")); }; });
         body.querySelectorAll("[data-stmt]").forEach(function(b){ b.onclick=function(){ showStatement(b.getAttribute("data-stmt")); }; });
       }
+      // Receipts are never bulk-fetched: the school's whole payment history
+      // could be thousands of rows over the years, so this tab always
+      // scopes the query to a date range (indexed on school_id+paid_at) and
+      // paginates on the server via .range(), and only re-queries when the
+      // filters are explicitly applied — never on every keystroke.
       var rcptPage=1;
-      async function receipts(pg){
-        if(typeof pg==="number") rcptPage=pg; else rcptPage=1;
+      function isoDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+      var rcptToday=new Date();
+      var rcptFrom=isoDate(new Date(rcptToday.getFullYear(),rcptToday.getMonth(),1));
+      var rcptTo=isoDate(rcptToday);
+      var rcptMethod="";
+      var RCPT_METHODS=["Cash","M-Pesa","Bank","Cheque","Card"];
+      function receipts(pg){
+        if(typeof pg==="number"){ rcptPage=pg; loadReceipts(pg); return; }
+        rcptPage=1;
         var body=document.getElementById("fee-body");
-        var r=await sb.from("fee_payments").select("*").eq("school_id",schoolId).order("paid_at",{ascending:false});
-        var rows=r.data||[]; var nameOf={}, admOf={}, gradeOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; admOf[s.id]=s.admission_no; gradeOf[s.id]=s.grade; });
-        if(!rows.length){ body.innerHTML='<div class="empty">No receipts issued yet.</div>'; return; }
-        rows=rows.filter(function(p){ return matches(nameOf[p.student_id], admOf[p.student_id], gradeOf[p.student_id]); });
-        if(!rows.length){ body.innerHTML='<div class="empty">No receipts match "'+esc(query)+'".</div>'; return; }
-        var pgData=window.paginate(rows,rcptPage);
-        var pageRows=pgData.rows;
+        body.innerHTML='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:12px;background:#F8FAFB;border:1px solid #EEF0F2;border-radius:10px;">'
+          +'<div><label style="display:block;font-size:11px;color:#667085;margin-bottom:4px;">From</label><input type="date" id="rc-from" value="'+rcptFrom+'" style="padding:8px 10px;border:1px solid #DDE1E6;border-radius:8px;font-size:13px;"></div>'
+          +'<div><label style="display:block;font-size:11px;color:#667085;margin-bottom:4px;">To</label><input type="date" id="rc-to" value="'+rcptTo+'" style="padding:8px 10px;border:1px solid #DDE1E6;border-radius:8px;font-size:13px;"></div>'
+          +'<div><label style="display:block;font-size:11px;color:#667085;margin-bottom:4px;">Method</label><select id="rc-method" style="padding:9px 12px;border:1px solid #DDE1E6;border-radius:9px;font-size:13px;"><option value="">All methods</option>'+RCPT_METHODS.map(function(mo){return '<option'+(rcptMethod===mo?' selected':'')+'>'+esc(mo)+'</option>';}).join("")+'</select></div>'
+          +'<button class="btn-primary" id="rc-apply" style="padding:9px 16px;font-size:13px;">Search receipts</button>'
+          +'</div><div id="receipts-rows"></div>';
+        document.getElementById("rc-apply").onclick=function(){
+          rcptFrom=document.getElementById("rc-from").value||rcptFrom;
+          rcptTo=document.getElementById("rc-to").value||rcptTo;
+          rcptMethod=document.getElementById("rc-method").value;
+          loadReceipts(1);
+        };
+        loadReceipts(1);
+      }
+      async function loadReceipts(pg){
+        var rows=document.getElementById("receipts-rows");
+        rows.innerHTML='<div class="empty">Loading…</div>';
+        var toExclusive=new Date(rcptTo+"T00:00:00"); toExclusive.setDate(toExclusive.getDate()+1);
+        var perPage=15, start=(pg-1)*perPage;
+        var q=sb.from("fee_payments").select("*",{count:"exact"}).eq("school_id",schoolId)
+          .gte("paid_at",rcptFrom+"T00:00:00").lt("paid_at",isoDate(toExclusive)+"T00:00:00");
+        if(rcptMethod) q=q.eq("method",rcptMethod);
+        if(query||classFilter){
+          var ids=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); }).map(function(s){return s.id;});
+          if(!ids.length){ rows.innerHTML='<div class="empty">No receipts match "'+esc(query)+'".</div>'; return; }
+          q=q.in("student_id",ids);
+        }
+        var r=await q.order("paid_at",{ascending:false}).range(start,start+perPage-1);
+        if(r.error){ rows.innerHTML='<div class="empty">Error loading receipts: '+esc(r.error.message)+'</div>'; return; }
+        var pageRows=r.data||[], total=r.count||0;
+        var nameOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; });
+        if(!total){ rows.innerHTML='<div class="empty">No receipts in this range'+(rcptMethod?" for "+esc(rcptMethod):"")+'.</div>'; return; }
+        var pgData=window.paginate(pageRows,pg,perPage,total);
         var html='<table class="data"><thead><tr><th>Receipt no</th><th>Student</th><th>Amount</th><th>Method</th><th>Date</th><th></th></tr></thead><tbody>';
         pageRows.forEach(function(p){
           html+='<tr><td class="mono" style="font-size:12px;font-weight:600;">'+esc(p.receipt_no)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(nameOf[p.student_id]||"—")+'</td>'
@@ -1270,10 +1311,10 @@
             +'<td class="muted" style="font-size:12px;">'+new Date(p.paid_at).toLocaleDateString()+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-r="'+p.id+'">View receipt</button> <button class="btn-sm" style="color:#C2410C;" data-revoke="'+p.id+'">Revoke</button></td></tr>';
         });
-        body.innerHTML=html+'</tbody></table>'+pgData.html;
-        pgData.onAttach(body,function(p){ rcptPage=p; receipts(p); });
-        body.querySelectorAll("[data-r]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-r");}); showReceipt(p, students.find(function(s){return s.id===p.student_id;})); }; });
-        body.querySelectorAll("[data-revoke]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-revoke");}); revokePayment(p); }; });
+        rows.innerHTML=html+'</tbody></table>'+pgData.html;
+        pgData.onAttach(rows,function(p){ receipts(p); });
+        rows.querySelectorAll("[data-r]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-r");}); showReceipt(p, students.find(function(s){return s.id===p.student_id;})); }; });
+        rows.querySelectorAll("[data-revoke]").forEach(function(b){ b.onclick=function(){ var p=pageRows.find(function(x){return x.id===b.getAttribute("data-revoke");}); revokePayment(p); }; });
       }
 
       // Reverses an accidental/disapproved payment: deletes the fee_payments

@@ -60,14 +60,19 @@
   //   // append pg.html to get prev/next controls
   //   // pg.onAttach(container, function(newPage){ ... }) wires click handlers
   var PG_SIZES = [15, 25, 50, 100];
-  window.paginate = function (allRows, page, perPage) {
+  // serverTotal: pass this when allRows is already just the current page
+  // (e.g. fetched via .range() from the server) instead of the full list —
+  // rows are used as-is and total/paging math uses serverTotal instead of
+  // allRows.length.
+  window.paginate = function (allRows, page, perPage, serverTotal) {
     perPage = perPage || 15;
-    var total = allRows.length;
+    var serverMode = typeof serverTotal === "number";
+    var total = serverMode ? serverTotal : allRows.length;
     var totalPages = Math.max(1, Math.ceil(total / perPage));
     if (page < 1) page = 1;
     if (page > totalPages) page = totalPages;
     var start = (page - 1) * perPage;
-    var rows = allRows.slice(start, start + perPage);
+    var rows = serverMode ? allRows : allRows.slice(start, start + perPage);
 
     var html = "";
     if (total > PG_SIZES[0]) {
