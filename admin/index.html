@@ -131,6 +131,7 @@
         <button class="navitem" id="nav-schools"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="schools"></span>Schools</button>
         <button class="navitem" id="nav-licensing"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="licensing"></span>Licensing</button>
         <button class="navitem" id="nav-users"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="users"></span>Users</button>
+        <button class="navitem" id="nav-rights"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="licensing"></span>Rights</button>
         <div class="nav-h">Operations</div>
         <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
         <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="database"></span>Database</button>
@@ -208,7 +209,7 @@
   }
 
   // ---- Nav ----
-  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","database","audit","settings"];
+  var NAV_KEYS = ["dashboard","schools","licensing","users","rights","mpesa","database","audit","settings"];
   function setActive(key){
     NAV_KEYS.forEach(function(k){
       var el = $("nav-" + k);
@@ -220,6 +221,7 @@
   $("nav-schools").onclick = function(){ showSchools(); };
   $("nav-licensing").onclick = function(){ showLicensing(); };
   $("nav-users").onclick = function(){ showUsers(); };
+  $("nav-rights").onclick = function(){ showRights(); };
   $("nav-mpesa").onclick = function(){ showMpesa(); };
   $("nav-database").onclick = function(){ showDatabase(); };
   $("nav-audit").onclick = function(){ showAuditLog(); };
@@ -856,6 +858,60 @@
         toast("User created."); m.close(); loadUsers(curSchool);
       };
     };
+  }
+
+  // ====================================================
+  //  4b. RIGHTS  (per-school access-rights catalog)
+  // ====================================================
+  var RIGHTS_CATALOG = null;
+
+  async function showRights(){
+    setActive("rights");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">' +
+      '<div><h2 style="margin:0;font-size:21px;">Access Rights</h2><p class="muted" style="margin-top:4px;font-size:13.5px;">Tick which rights a school is allowed to delegate to staff accounts. The school\'s admin then assigns these to individual staff from their School Portal.</p></div>' +
+      '<div class="row" style="gap:10px;"><span class="muted">School</span><select id="rt-school"></select></div></div>' +
+      '<div id="rt-list" class="panel"></div>';
+
+    if (!RIGHTS_CATALOG) {
+      var r = await sb.from("rights_catalog").select("*").order("sort_order");
+      RIGHTS_CATALOG = r.data || [];
+    }
+
+    schoolSelector("rt-school", function(val){ if (val) loadRights(val); });
+    var sel = document.getElementById("rt-school");
+    if (SCHOOLS.length) { sel.value = SCHOOLS[0].id; loadRights(SCHOOLS[0].id); }
+  }
+
+  async function loadRights(schoolId){
+    var box = document.getElementById("rt-list");
+    box.innerHTML = '<p class="muted">Loading...</p>';
+    var r = await sb.from("school_rights").select("right_key, enabled").eq("school_id", schoolId);
+    if (r.error) { box.innerHTML = '<p class="muted">' + esc(r.error.message) + '</p>'; return; }
+    var enabledSet = {};
+    (r.data || []).forEach(function(row){ if (row.enabled) enabledSet[row.right_key] = true; });
+
+    box.innerHTML = "";
+    RIGHTS_CATALOG.forEach(function(right){
+      var row = document.createElement("label");
+      row.className = "flag";
+      row.style.cursor = "pointer";
+      row.innerHTML =
+        '<span style="min-width:0;"><div style="font-size:13.5px;font-weight:600;">' + esc(right.label) + '</div>' +
+        (right.description ? '<div class="muted" style="font-size:12px;margin-top:2px;">' + esc(right.description) + '</div>' : '') + '</span>' +
+        '<input type="checkbox" data-right="' + esc(right.key) + '" ' + (enabledSet[right.key] ? "checked" : "") + ' style="width:18px;height:18px;flex:none;">';
+      box.appendChild(row);
+    });
+
+    box.querySelectorAll("input[data-right]").forEach(function(cb){
+      cb.onchange = async function(){
+        var key = cb.getAttribute("data-right");
+        var res = await sb.from("school_rights").upsert({ school_id: schoolId, right_key: key, enabled: cb.checked, updated_at: new Date().toISOString() }, { onConflict: "school_id,right_key" });
+        if (res.error) { toast("Error: " + res.error.message); cb.checked = !cb.checked; return; }
+        toast((cb.checked ? "Enabled " : "Disabled ") + key + " for this school.");
+      };
+    });
   }
 
   // ====================================================

@@ -46,11 +46,30 @@
   .login-inner .secure{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;color:#98A2B3;margin-top:18px;}
   .login-inner .pfoot{text-align:center;font-size:12px;color:#B0B5BE;margin-top:28px;padding-top:18px;border-top:1px solid #F0F1F4;}
   .login-inner .pfoot strong{color:#667085;font-weight:600;}
-  .login-inner .toggle-mode{background:none;border:none;color:#0E9384;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;padding:0;margin-top:14px;}
   @media (max-width:840px){
     .login-brand{display:none;}
     .login-form{flex:1;width:auto;}
   }
+
+  /* ===== forced password-change gate ===== */
+  .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px;}
+  .modal-box{background:#fff;border-radius:16px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;padding:28px 24px;}
+  .modal-box h2{font-size:20px;font-weight:700;margin:0 0 6px;color:#15171E;}
+  .modal-box .modal-sub{font-size:13.5px;color:#667085;margin:0 0 20px;}
+  .modal-box label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:14px 0 6px;}
+  .modal-box input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;box-sizing:border-box;}
+  .modal-box input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  .modal-box .modal-btn{width:100%;padding:13px;background:#0E9384;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:18px;min-height:44px;}
+  .modal-box .modal-btn:hover{background:#0B7A6E;}
+  .modal-box .modal-btn:disabled{opacity:.6;cursor:default;}
+  .modal-msg{text-align:center;font-size:13px;margin-top:10px;min-height:18px;}
+  .modal-msg.err{color:#D92D20;}
+  .modal-msg.ok{color:#0E9384;}
+  .pw-rules{list-style:none;padding:0;margin:10px 0 0;font-size:12.5px;}
+  .pw-rules li{padding:3px 0;color:#98A2B3;display:flex;align-items:center;gap:6px;}
+  .pw-rules li.pass{color:#0E9384;}
+  .pw-rules li .dot{width:6px;height:6px;border-radius:50%;background:#DDE1E6;flex:none;}
+  .pw-rules li.pass .dot{background:#0E9384;}
 </style>
 </head>
 <body>
@@ -90,7 +109,7 @@
         <input id="password" type="password" placeholder="Enter your password" autocomplete="current-password">
         <button class="signin" id="submit">Sign in securely</button>
         <div class="msg" id="msg"></div>
-        <button class="toggle-mode" id="toggle-mode" type="button">First time here? Create your password →</button>
+        <p class="hint" style="font-size:12.5px;color:#98A2B3;margin:14px 0 0;">First time here? Use the password your school admin gave you — you'll be asked to set your own right after signing in.</p>
         <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
         <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span></div>
       </div>
@@ -119,6 +138,26 @@
     </div>
   </div>
 
+  <!-- FORCE PASSWORD CHANGE (accounts created by a school_admin, or after a reset) -->
+  <div id="pw-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <h2>Set a new password</h2>
+      <p class="modal-sub">For your security, set your own password before continuing.</p>
+      <label for="pw-new">New password</label>
+      <input id="pw-new" type="password" placeholder="Enter new password">
+      <label for="pw-confirm">Confirm password</label>
+      <input id="pw-confirm" type="password" placeholder="Re-enter new password">
+      <ul class="pw-rules">
+        <li id="rule-len"><span class="dot"></span>Minimum 8 characters</li>
+        <li id="rule-upper"><span class="dot"></span>At least 1 uppercase letter</li>
+        <li id="rule-num"><span class="dot"></span>At least 1 number</li>
+        <li id="rule-special"><span class="dot"></span>At least 1 special character</li>
+      </ul>
+      <button class="modal-btn" id="pw-submit" disabled>Update password</button>
+      <div class="modal-msg" id="pw-msg"></div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -135,38 +174,25 @@
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
   var CTX = { schoolId:null, school:null, teacher:null, flags:{} };
-  var mode = "signin";
   var _yr=new Date().getFullYear(); ["year","year-b"].forEach(function(id){ var e=document.getElementById(id); if(e) e.textContent=_yr; });
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
-
-  $("toggle-mode").onclick = function(){
-    mode = mode === "signin" ? "signup" : "signin";
-    $("auth-h1").textContent = mode === "signin" ? "Welcome back" : "Create your password";
-    $("auth-sub").textContent = mode === "signin" ? "Sign in with the email your school added you with." : "Use the exact email your school admin entered for you in Settings → Teachers.";
-    $("submit").textContent = mode === "signin" ? "Sign in securely" : "Create account";
-    $("toggle-mode").textContent = mode === "signin" ? "First time here? Create your password →" : "Already have a password? Sign in →";
-    $("msg").className = "msg"; $("msg").textContent = "";
-  };
 
   $("submit").onclick = async function(){
     if (!sb) { showMsg("Supabase keys not set — edit assets/config.js.", false); return; }
     var email = $("email").value.trim(), password = $("password").value;
     if (!email || !password) { showMsg("Enter an email and password.", false); return; }
     $("submit").disabled = true;
-    var res = mode === "signin"
-      ? await sb.auth.signInWithPassword({ email: email, password: password })
-      : await sb.auth.signUp({ email: email, password: password });
+    var res = await sb.auth.signInWithPassword({ email: email, password: password });
     if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
-    if (mode === "signup" && !res.data.session) { showMsg("Account created. Confirm email (if required), then sign in.", true); $("submit").disabled = false; return; }
     enterApp();
   };
 
   async function enterApp(){
     var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
-    var pr = await sb.from("profiles").select("role, school_id").eq("id", user.id).single();
+    var pr = await sb.from("profiles").select("role, school_id, must_change_password").eq("id", user.id).single();
     var prof = pr.data;
     if (!prof || prof.role !== "teacher" || !prof.school_id) {
-      showMsg("This account isn't registered as a teacher. Ask your school admin to add your email in Settings → Teachers, then sign up here with that exact email.", false);
+      showMsg("This account isn't registered as a teacher. Ask your school admin to add you in Settings → Teachers and create your login.", false);
       $("submit").disabled = false; await sb.auth.signOut(); showLogin(); return;
     }
     CTX.schoolId = prof.school_id;
@@ -178,8 +204,19 @@
     }
     CTX.teacher = tr.data;
 
+    if (prof.must_change_password || tr.data.must_change_password) {
+      $("boot").style.display = "none";
+      $("auth").style.display = "none";
+      $("pw-modal").style.display = "flex";
+      return;
+    }
+
+    await finishEnterApp();
+  }
+
+  async function finishEnterApp(){
     $("boot").style.display = "none";
-    $("auth").style.display = "none"; $("app").style.display = "block";
+    $("auth").style.display = "none"; $("pw-modal").style.display = "none"; $("app").style.display = "block";
     startIdleWatch();
 
     var sc = await sb.from("schools").select("*").eq("id", CTX.schoolId).single();
@@ -198,6 +235,38 @@
 
     showTab("dashboard");
   }
+
+  // ---- FORCE PASSWORD CHANGE ----
+  function checkPwRules(pw) {
+    var rules = {
+      len: pw.length >= 8,
+      upper: /[A-Z]/.test(pw),
+      num: /[0-9]/.test(pw),
+      special: /[^A-Za-z0-9]/.test(pw)
+    };
+    $("rule-len").className = rules.len ? "pass" : "";
+    $("rule-upper").className = rules.upper ? "pass" : "";
+    $("rule-num").className = rules.num ? "pass" : "";
+    $("rule-special").className = rules.special ? "pass" : "";
+    return rules.len && rules.upper && rules.num && rules.special;
+  }
+  function pwFieldsValid(){
+    var valid = checkPwRules($("pw-new").value);
+    var match = $("pw-new").value === $("pw-confirm").value && $("pw-confirm").value.length > 0;
+    $("pw-submit").disabled = !(valid && match);
+  }
+  $("pw-new").addEventListener("input", pwFieldsValid);
+  $("pw-confirm").addEventListener("input", pwFieldsValid);
+  $("pw-submit").onclick = async function(){
+    var pw = $("pw-new").value, confirmPw = $("pw-confirm").value;
+    if (pw !== confirmPw) { $("pw-msg").textContent = "Passwords do not match."; $("pw-msg").className = "modal-msg err"; return; }
+    if (!checkPwRules(pw)) { $("pw-msg").textContent = "Password does not meet the requirements."; $("pw-msg").className = "modal-msg err"; return; }
+    $("pw-submit").disabled = true; $("pw-msg").textContent = "";
+    var res = await sb.rpc("my_change_password", { p_new_password: pw });
+    if (res.error) { $("pw-msg").textContent = res.error.message || "Failed to change password."; $("pw-msg").className = "modal-msg err"; $("pw-submit").disabled = false; return; }
+    $("pw-msg").textContent = "Password updated successfully!"; $("pw-msg").className = "modal-msg ok";
+    setTimeout(finishEnterApp, 700);
+  };
 
   function setActive(key){
     document.querySelectorAll(".navitem").forEach(function(b){ b.classList.remove("active"); });

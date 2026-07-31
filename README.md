@@ -77,12 +77,19 @@ webapp/
     (principal/deputy_principal/dos — a title, not a login role) and
     `school_classes.class_teacher_id`. Manage all of it from **Settings → CBC Assessment** in the
     School Portal. Purely additive — doesn't touch `exams`/`exam_results`/`grades` yet.
-18. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
+18. Run the remaining `setup-modules-16.sql` through `setup-modules-29.sql`, in order (each is
+    additive/idempotent — see the "Try the full loop" and per-module notes below).
+19. **New query** again, paste **`setup-modules-30.sql`**, **Run** — access rights + school-admin
+    managed logins: a fixed `rights_catalog`, per-school `school_rights` (ticked by super_admin in
+    the Admin Console → **Rights**), per-user `user_rights`, and RPCs so a school_admin can create
+    teacher/staff logins and reset passwords for their own school without needing super_admin —
+    see "Delegated access & staff logins" below.
+20. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
     (`supabase functions deploy admin-users` / `mpesa-stk`) and set their secrets
     (`SUPABASE_SERVICE_ROLE_KEY`, M-Pesa Daraja credentials) in Project Settings → Edge Functions.
-19. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
+21. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
     "Confirm email" (re-enable for production).
-20. **Project Settings → API**: copy your **Project URL** and **anon public key**.
+22. **Project Settings → API**: copy your **Project URL** and **anon public key**.
 
 > Tip: you can also paste all the `setup*.sql` files into one query in order and run once.
 
@@ -153,6 +160,21 @@ where id = 'PASTE-USER-UID-HERE';                     -- from Authentication →
 ```
 Open `/school/`, sign in as that user → you see Greenwood's license-gated workspace.
 Change its license from the admin side (or via SQL) and refresh — the school UI follows.
+
+### Delegated access & staff logins (setup-modules-30.sql)
+Two things changed once this migration is applied:
+
+- **Teachers no longer self-sign-up.** A school_admin adds a teacher in **Settings → Teachers**,
+  then clicks **Create login**, which generates a temporary password to hand to the teacher. The
+  teacher signs in at `/teacher/` with that password and is immediately prompted to set their own.
+  **Reset password** re-arms the same forced-change flow.
+- **A school_admin can delegate parts of the School Portal to other staff** (e.g. a bursar who
+  should only see Fees). First, a `super_admin` picks which rights a school is even allowed to
+  delegate — **Admin Console → Rights** → pick the school → tick e.g. *Manage Fees & Payments*.
+  Then in `/school/` → **Settings → Users & Access**, the school_admin ("owner") adds a staff
+  account (same temp-password + forced-change flow) and ticks which of the school's *enabled*
+  rights that person gets. That account only sees the modules its granted rights map to; the
+  original owner account is never restricted.
 
 ---
 

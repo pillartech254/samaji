@@ -59,6 +59,23 @@
     .login-brand{display:none;}
     .login-form{flex:1;width:auto;}
   }
+
+  /* ===== forced password-change gate ===== */
+  #pw-modal .modal-sub{font-size:13.5px;color:#667085;margin:0 0 20px;}
+  #pw-modal label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:14px 0 6px;}
+  #pw-modal input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;box-sizing:border-box;}
+  #pw-modal input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  #pw-modal .pw-btn{width:100%;padding:13px;background:#0E9384;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:18px;}
+  #pw-modal .pw-btn:hover{background:#0B7A6E;}
+  #pw-modal .pw-btn:disabled{opacity:.6;cursor:default;}
+  .pw-rules{list-style:none;padding:0;margin:10px 0 0;font-size:12.5px;}
+  .pw-rules li{padding:3px 0;color:#98A2B3;display:flex;align-items:center;gap:6px;}
+  .pw-rules li.pass{color:#0E9384;}
+  .pw-rules li .dot{width:6px;height:6px;border-radius:50%;background:#DDE1E6;flex:none;}
+  .pw-rules li.pass .dot{background:#0E9384;}
+  .modal-msg{text-align:center;font-size:13px;margin-top:10px;min-height:18px;}
+  .modal-msg.err{color:#D92D20;}
+  .modal-msg.ok{color:#0E9384;}
 </style>
 </head>
 <body>
@@ -127,6 +144,26 @@
     </div>
   </div>
 
+  <!-- FORCE PASSWORD CHANGE (accounts created by a school_admin, or after a reset) -->
+  <div id="pw-modal" class="overlay" style="display:none;">
+    <div class="modal">
+      <h3>Set a new password</h3>
+      <p class="modal-sub">For your security, set your own password before continuing.</p>
+      <label for="pw-new">New password</label>
+      <input id="pw-new" type="password" placeholder="Enter new password">
+      <label for="pw-confirm">Confirm password</label>
+      <input id="pw-confirm" type="password" placeholder="Re-enter new password">
+      <ul class="pw-rules">
+        <li id="rule-len"><span class="dot"></span>Minimum 8 characters</li>
+        <li id="rule-upper"><span class="dot"></span>At least 1 uppercase letter</li>
+        <li id="rule-num"><span class="dot"></span>At least 1 number</li>
+        <li id="rule-special"><span class="dot"></span>At least 1 special character</li>
+      </ul>
+      <button class="pw-btn" id="pw-submit" disabled>Update password</button>
+      <div class="modal-msg" id="pw-msg"></div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -142,7 +179,25 @@
   if (window.SamajiIcons) window.SamajiIcons.fill();
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
-  var SCHOOL=null, FLAGS={};
+  var SCHOOL=null, FLAGS={}, RIGHTS=null, SCHOOL_ROLE="owner";
+  // Which right a restricted "staff" account needs to see a given module flag.
+  // Owners (RIGHTS === null) are never filtered — this only applies to staff
+  // accounts created from Settings → Users & Access.
+  var RIGHT_FOR_MODULE = {
+    "module.students":"manage_students", "module.attendance":"manage_attendance",
+    "module.academics":"manage_exams", "module.exams":"manage_exams",
+    "module.finance":"manage_fees", "module.library":"manage_library",
+    "module.timetable":"manage_timetable", "module.messaging":"manage_communications",
+    "module.sms":"manage_communications", "module.transport":"manage_transport",
+    "module.payroll":"manage_payroll", "module.biometric":"manage_settings",
+    "module.api":"manage_settings", "module.analytics":"view_reports"
+  };
+  function allowedByRights(flagKey){
+    if (RIGHTS === null) return true;
+    var need = RIGHT_FOR_MODULE[flagKey];
+    return need ? RIGHTS.indexOf(need) >= 0 : true;
+  }
+  function visibleFlagKeys(){ return Object.keys(FLAGS).filter(allowedByRights); }
   // year set by app.js samajiYear()
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
 
@@ -158,12 +213,25 @@
 
   async function enterApp(){
     var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
-    var pr = await sb.from("profiles").select("role, school_id").eq("id", user.id).single();
+    var pr = await sb.from("profiles").select("role, school_id, school_role, must_change_password").eq("id", user.id).single();
     var prof = pr.data;
     if (!prof || !prof.school_id) { showMsg("This account isn't linked to a school. Set profiles.school_id.", false); $("submit").disabled = false; showLogin(); return; }
     SCHOOL = prof.school_id;
+    SCHOOL_ROLE = prof.school_role || "owner";
+
+    if (prof.must_change_password) {
+      $("boot").style.display = "none";
+      $("auth").style.display = "none";
+      $("pw-modal").style.display = "flex";
+      return;
+    }
+
+    await finishEnterApp();
+  }
+
+  async function finishEnterApp(){
     $("boot").style.display = "none";
-    $("auth").style.display = "none"; $("app").style.display = "block";
+    $("auth").style.display = "none"; $("pw-modal").style.display = "none"; $("app").style.display = "block";
     startIdleWatch();
 
     var sc = await sb.from("schools").select("*").eq("id", SCHOOL).single();
@@ -177,10 +245,49 @@
 
     var r = await sb.rpc("resolve_flags", { p_school: SCHOOL });
     FLAGS = r.data || {};
+
+    RIGHTS = null;
+    if (SCHOOL_ROLE === "staff") {
+      var rr = await sb.rpc("my_rights");
+      RIGHTS = rr.data || [];
+    }
+
     if (window.SamajiCache) window.SamajiCache.preload(sb, SCHOOL); // warm cache for instant page switches
     buildNav();
     showDashboard();
   }
+
+  // ---- FORCE PASSWORD CHANGE ----
+  function checkPwRules(pw) {
+    var rules = {
+      len: pw.length >= 8,
+      upper: /[A-Z]/.test(pw),
+      num: /[0-9]/.test(pw),
+      special: /[^A-Za-z0-9]/.test(pw)
+    };
+    $("rule-len").className = rules.len ? "pass" : "";
+    $("rule-upper").className = rules.upper ? "pass" : "";
+    $("rule-num").className = rules.num ? "pass" : "";
+    $("rule-special").className = rules.special ? "pass" : "";
+    return rules.len && rules.upper && rules.num && rules.special;
+  }
+  function pwFieldsValid(){
+    var valid = checkPwRules($("pw-new").value);
+    var match = $("pw-new").value === $("pw-confirm").value && $("pw-confirm").value.length > 0;
+    $("pw-submit").disabled = !(valid && match);
+  }
+  $("pw-new").addEventListener("input", pwFieldsValid);
+  $("pw-confirm").addEventListener("input", pwFieldsValid);
+  $("pw-submit").onclick = async function(){
+    var pw = $("pw-new").value, confirmPw = $("pw-confirm").value;
+    if (pw !== confirmPw) { $("pw-msg").textContent = "Passwords do not match."; $("pw-msg").className = "modal-msg err"; return; }
+    if (!checkPwRules(pw)) { $("pw-msg").textContent = "Password does not meet the requirements."; $("pw-msg").className = "modal-msg err"; return; }
+    $("pw-submit").disabled = true; $("pw-msg").textContent = "";
+    var res = await sb.rpc("my_change_password", { p_new_password: pw });
+    if (res.error) { $("pw-msg").textContent = res.error.message || "Failed to change password."; $("pw-msg").className = "modal-msg err"; $("pw-submit").disabled = false; return; }
+    $("pw-msg").textContent = "Password updated successfully!"; $("pw-msg").className = "modal-msg ok";
+    setTimeout(finishEnterApp, 700);
+  };
 
   function setActive(key){
     document.querySelectorAll(".navitem").forEach(function(b){ b.classList.remove("active"); });
@@ -191,12 +298,25 @@
     if (el) el.classList.add("active");
   }
 
-  function showSettings(){ setActive("settings"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.settings(sb, SCHOOL, el); }
-  function showReports(){ setActive("reports"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.reports(sb, SCHOOL, el); }
+  function canSeeReports(){ return RIGHTS === null || RIGHTS.indexOf("view_reports") >= 0; }
+  function canSeeSettings(){ return RIGHTS === null || RIGHTS.indexOf("manage_settings") >= 0 || RIGHTS.indexOf("manage_users") >= 0; }
+
+  function showSettings(){
+    if (!canSeeSettings()) { window.SM_toast && window.SM_toast("You don't have access to Settings."); return; }
+    setActive("settings"); var el=$("view"); el.innerHTML="";
+    window.SamajiPlus.settings(sb, SCHOOL, el, { schoolRole: SCHOOL_ROLE, rights: RIGHTS });
+  }
+  function showReports(){
+    if (!canSeeReports()) { window.SM_toast && window.SM_toast("You don't have access to Reports."); return; }
+    setActive("reports"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.reports(sb, SCHOOL, el);
+  }
 
   function buildNav(){
-    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
-    var locked  = Object.keys(FLAGS).filter(function(k){ return !FLAGS[k]; });
+    $("nav-reports").style.display = canSeeReports() ? "" : "none";
+    $("nav-settings").style.display = canSeeSettings() ? "" : "none";
+    var visible = visibleFlagKeys();
+    var granted = visible.filter(function(k){ return FLAGS[k]; });
+    var locked  = visible.filter(function(k){ return !FLAGS[k]; });
     var live = $("nav-live"); live.innerHTML = "";
     granted.forEach(function(k){
       var m = window.metaFor(k), b = document.createElement("button");
@@ -218,6 +338,7 @@
 
   function openModule(flag){
     if (!FLAGS[flag]) { window.SM_toast("That module isn't licensed."); return; }
+    if (!allowedByRights(flag)) { window.SM_toast("You don't have access to that module."); return; }
     setActive(flag);
     var fn = window.SchoolModules[flag];
     var el = $("view"); el.innerHTML = "";
@@ -228,9 +349,11 @@
   async function showDashboard(){
     setActive("dashboard");
     var el = $("view");
-    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
+    var granted = visibleFlagKeys().filter(function(k){ return FLAGS[k]; });
+    var hasStudents = FLAGS["module.students"] && allowedByRights("module.students");
+    var hasFinance = FLAGS["module.finance"] && allowedByRights("module.finance");
     el.innerHTML = '<div class="mod-head"><div><h2>Dashboard</h2><p>Live overview of '+($("school-name").textContent)+'.</p></div>'
-      + (FLAGS["module.students"]?'<div class="field"><label>Class</label><select id="dash-class"><option value="">All classes</option></select></div>':'')
+      + (hasStudents?'<div class="field"><label>Class</label><select id="dash-class"><option value="">All classes</option></select></div>':'')
       + '</div>'
       + '<div class="statgrid" id="dash-stats"></div>'
       + '<div class="cardrow c2" id="dash-charts" style="margin-top:18px;"></div>'
@@ -246,13 +369,13 @@
     // gather data (cached → instant on repeat visits)
     var allStudents=[], allPays=[], C=window.SamajiCharts;
     var cache=window.SamajiCache;
-    if (FLAGS["module.students"]) {
+    if (hasStudents) {
       allStudents = cache ? await cache.get(sb, SCHOOL, "students", "*") : ((await sb.from("students").select("*").eq("school_id", SCHOOL)).data||[]);
       var classLevels=Array.from(new Set(allStudents.map(function(s){return s.grade;}).filter(Boolean))).sort();
       $("dash-class").innerHTML='<option value="">All classes</option>'+classLevels.map(function(g){return '<option value="'+g.replace(/"/g,"&quot;")+'">'+g+'</option>';}).join("");
       $("dash-class").onchange=function(e){ draw(e.target.value); };
     }
-    if (FLAGS["module.finance"]) {
+    if (hasFinance) {
       allPays = cache ? await cache.get(sb, SCHOOL, "fee_payments", "*") : ((await sb.from("fee_payments").select("*").eq("school_id", SCHOOL)).data||[]);
     }
 
@@ -263,14 +386,14 @@
       var studentIds=null; if(classFilter){ studentIds={}; students.forEach(function(s){studentIds[s.id]=true;}); }
       var pays = studentIds ? allPays.filter(function(p){return studentIds[p.student_id];}) : allPays;
       var stats=[];
-      if (FLAGS["module.students"]) {
+      if (hasStudents) {
         var active=students.filter(function(s){return s.status!=="inactive";}).length;
         var boarders=students.filter(function(s){return s.residence==="Boarder";}).length;
         stats.push(statCard("Total students",students.length,"#EEF0FF","#4F46E5",icP,"students"));
         stats.push(statCard("Active",active,"#ECFDF3","#067647",icCk));
         stats.push(statCard("Boarders",boarders,"#F1ECFE","#6D28D9",icB));
       }
-      if (FLAGS["module.finance"]) {
+      if (hasFinance) {
         var collected=(pays||[]).reduce(function(a,p){return a+Number(p.amount);},0);
         stats.push(statCard("Fees collected",("KES "+collected.toLocaleString()),"#FFF6ED","#C2410C",icM,"finance"));
       }

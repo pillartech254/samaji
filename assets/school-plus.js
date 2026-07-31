@@ -170,21 +170,33 @@
   // ====================================================
   //  SETTINGS  (admin academic setup)
   // ====================================================
-  async function renderSettings(sb, schoolId, el){
-    var tab="classes";
+  async function renderSettings(sb, schoolId, el, ctx){
+    ctx = ctx || {};
+    var isStaff = ctx.schoolRole === "staff";
+    var myRights = ctx.rights || [];
+    function has(right){ return !isStaff || myRights.indexOf(right) >= 0; }
+    var canGeneral = has("manage_settings"), canUsers = has("manage_users");
+
+    var allTabs=[
+      {t:"profile",   label:"School Profile",     need:canGeneral},
+      {t:"classes",   label:"Classes &amp; Streams", need:canGeneral},
+      {t:"subjects",  label:"Subjects",            need:canGeneral},
+      {t:"teachers",  label:"Teachers",            need:canGeneral},
+      {t:"users",     label:"Users &amp; Access",  need:canUsers},
+      {t:"dorms",     label:"Dormitories",         need:canGeneral},
+      {t:"fees",      label:"Fee Structures",      need:canGeneral},
+      {t:"cbc",       label:"CBC Assessment",      need:canGeneral},
+      {t:"activity",  label:"Activity Log",        need:canGeneral}
+    ].filter(function(x){ return x.need; });
+
+    var tab = allTabs.length ? allTabs[0].t : null;
     el.innerHTML='<div class="mod-head"><div><h2>School Settings</h2><p>Configure classes, streams, boarding and fee structures. Set these once — they power registration and billing.</p></div></div>'
       +'<div class="tabs" id="set-tabs">'
-      +'<button data-t="profile">School Profile</button>'
-      +'<button data-t="classes" class="on">Classes &amp; Streams</button>'
-      +'<button data-t="subjects">Subjects</button>'
-      +'<button data-t="teachers">Teachers</button>'
-      +'<button data-t="dorms">Dormitories</button>'
-      +'<button data-t="fees">Fee Structures</button>'
-      +'<button data-t="cbc">CBC Assessment</button>'
-      +'<button data-t="activity">Activity Log</button>'
+      +allTabs.map(function(x,i){ return '<button data-t="'+x.t+'"'+(i===0?' class="on"':'')+'>'+x.label+'</button>'; }).join("")
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
+    if (!allTabs.length) { document.getElementById("set-body").innerHTML='<div class="empty">You don\'t have access to any settings yet. Ask your school admin.</div>'; return; }
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
+    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="users") usersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
 
     // ---------- Activity Log: read-only trail of who changed what ----
     // (audit_log is populated entirely by DB triggers — see
@@ -404,15 +416,71 @@
       else {
         var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Portal login</th><th></th></tr></thead><tbody>';
         list.forEach(function(s){
+          var loginPill = s.auth_user_id
+            ? '<span class="pill green">active</span>' + (s.must_change_password ? ' <span class="pill gray" style="font-size:10px;">pending 1st login</span>' : '')
+            : '<span class="pill gray">no login</span>';
+          var loginBtn = s.auth_user_id
+            ? '<button class="btn-sm" data-reset="'+s.id+'">Reset password</button>'
+            : '<button class="btn-sm" data-login="'+s.id+'"'+(s.email?'':' disabled title="Add an email first"')+'>Create login</button>';
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.email?esc(s.email):'<span class="muted">—</span>')+'</td><td>'+(s.phone?esc(s.phone):'<span class="muted">—</span>')+'</td>'
-            +'<td>'+(s.auth_user_id?'<span class="pill green">active</span>':'<span class="pill gray">not signed up</span>')+'</td>'
-            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
+            +'<td>'+loginPill+'</td>'
+            +'<td style="text-align:right;white-space:nowrap;">'+loginBtn+' <button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
         t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ teacherForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
         t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this teacher? They will be unassigned from any classes/subjects and lose portal access."))return; var r=await sb.from("teachers").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); teachersTab(); }; });
+        t.querySelectorAll("[data-login]").forEach(function(b){ b.onclick=function(){ teacherLoginForm(list.find(function(x){return x.id===b.getAttribute("data-login");})); }; });
+        t.querySelectorAll("[data-reset]").forEach(function(b){ b.onclick=function(){ resetPasswordForm(list.find(function(x){return x.id===b.getAttribute("data-reset");}).auth_user_id, teachersTab); }; });
       }
       document.getElementById("add-teacher").onclick=function(){ teacherForm(null); };
+    }
+    // Issue a portal login (temp password) for an existing teacher directory row.
+    function teacherLoginForm(t){
+      var pw = genTempPassword();
+      var m=modal('<h3>Create login for '+esc(t.name)+'</h3>'
+        +'<p class="muted" style="font-size:12.5px;margin:0 0 10px;">They sign in at <span class="mono">/teacher/</span> with <strong>'+esc(t.email)+'</strong> and this password, then set their own on first login.</p>'
+        +'<div class="field"><label>Temporary password</label><input id="tl-pw" value="'+esc(pw)+'"></div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Create login</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#sv").onclick=async function(){
+        var pass=m.q("#tl-pw").value;
+        if(!pass || pass.length<6){ toast("Password must be at least 6 characters."); return; }
+        var r=await sb.rpc("school_create_teacher_login",{ p_teacher_id:t.id, p_password:pass });
+        if(r.error){ toast("Error: "+r.error.message); return; }
+        m.close();
+        showCredentialsModal(t.email, pass, "Share this password with "+t.name+". They'll be asked to set their own on first sign-in.");
+        teachersTab();
+      };
+    }
+    function resetPasswordForm(userId, onDone){
+      var pw = genTempPassword();
+      var m=modal('<h3>Reset password</h3>'
+        +'<p class="muted" style="font-size:12.5px;margin:0 0 10px;">A new temporary password — the user must set their own again on next sign-in.</p>'
+        +'<div class="field"><label>New temporary password</label><input id="rp-pw" value="'+esc(pw)+'"></div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Reset password</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#sv").onclick=async function(){
+        var pass=m.q("#rp-pw").value;
+        if(!pass || pass.length<6){ toast("Password must be at least 6 characters."); return; }
+        var r=await sb.rpc("school_reset_password",{ p_user_id:userId, p_new_password:pass });
+        if(r.error){ toast("Error: "+r.error.message); return; }
+        m.close();
+        showCredentialsModal(null, pass, "Share this password. They'll be asked to set their own on next sign-in.");
+        if(onDone) onDone();
+      };
+    }
+    function genTempPassword(){
+      var chars="ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
+      var pw=""; for(var i=0;i<10;i++) pw+=chars.charAt(Math.floor(Math.random()*chars.length));
+      return pw;
+    }
+    function showCredentialsModal(email, password, note){
+      var m=modal('<h3>Password set</h3>'
+        +(email?'<div class="field"><label>Email</label><input readonly value="'+esc(email)+'"></div>':'')
+        +'<div class="field"><label>Password</label><input readonly value="'+esc(password)+'"></div>'
+        +'<p class="muted" style="font-size:12.5px;margin:10px 0 0;">'+esc(note)+'</p>'
+        +'<div class="modal-actions"><button class="btn-primary" id="ok">Done</button></div>');
+      m.q("#ok").onclick=m.close;
     }
     function teacherForm(s){
       s=s||{};
@@ -429,6 +497,98 @@
         if(r.error){ toast("Error: "+r.error.message); return; }
         m.close(); toast("Saved"); teachersTab();
       };
+    }
+
+    // ----- Users & Access: delegated school-portal staff accounts -----
+    async function usersTab(){
+      var body=document.getElementById("set-body");
+      body.innerHTML='<div class="skel" style="height:120px;"></div>';
+      var loads=await Promise.all([
+        sb.from("rights_catalog").select("*").order("sort_order"),
+        sb.from("school_rights").select("right_key,enabled").eq("school_id",schoolId),
+        sb.rpc("school_list_staff")
+      ]);
+      var catalog=loads[0].data||[];
+      var enabledSet={}; (loads[1].data||[]).forEach(function(r){ if(r.enabled) enabledSet[r.right_key]=true; });
+      var enabledRights=catalog.filter(function(r){ return enabledSet[r.key]; });
+      var staffErr=loads[2].error;
+      var staff=loads[2].data||[]; if(typeof staff==="string"){ try{staff=JSON.parse(staff);}catch(e){staff=[];} }
+
+      var html='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Delegate parts of your School Portal to other staff (e.g. a bursar who only sees Fees). Each account only sees what you tick below, limited to the rights Samaji has enabled for your school.</span>'
+        +'<button class="btn-primary" id="add-staff"'+(enabledRights.length?"":" disabled")+'>+ Add staff</button></div>';
+      if(!enabledRights.length){
+        html+='<div class="empty">No delegated rights are enabled for your school yet. Ask Samaji to enable specific rights (Fees, Students, Attendance, etc.) for you from the Admin Console.</div>';
+        body.innerHTML=html; return;
+      }
+      if(staffErr){ body.innerHTML=html+'<div class="empty" style="color:#C2410C;">Could not load staff: '+esc(staffErr.message)+'</div>'; return; }
+      if(!staff.length){ html+='<div class="empty">No staff accounts yet.</div>'; }
+      else {
+        html+='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Rights</th><th>Login</th><th></th></tr></thead><tbody>';
+        staff.forEach(function(s){
+          var rightsLabel=(s.rights||[]).map(function(k){ var f=catalog.find(function(c){return c.key===k;}); return f?f.label:k; });
+          html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.full_name||"—")+'</td><td>'+esc(s.email)+'</td>'
+            +'<td style="font-size:12px;">'+(rightsLabel.length?esc(rightsLabel.join(", ")):'<span class="muted">None</span>')+'</td>'
+            +'<td>'+(s.must_change_password?'<span class="pill gray" style="font-size:10px;">pending 1st login</span>':'<span class="pill green">active</span>')+'</td>'
+            +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-rights="'+s.user_id+'">Rights</button> <button class="btn-sm" data-reset="'+s.user_id+'">Reset password</button> <button class="btn-sm danger" data-remove="'+s.user_id+'">Remove</button></td></tr>';
+        });
+        html+='</tbody></table>';
+      }
+      body.innerHTML=html;
+
+      document.getElementById("add-staff").onclick=function(){ staffForm(enabledRights); };
+      body.querySelectorAll("[data-rights]").forEach(function(b){ b.onclick=function(){
+        var uid=b.getAttribute("data-rights");
+        var s=staff.find(function(x){return x.user_id===uid;});
+        staffRightsForm(uid, s.full_name||s.email, enabledRights, s.rights||[]);
+      }; });
+      body.querySelectorAll("[data-reset]").forEach(function(b){ b.onclick=function(){ resetPasswordForm(b.getAttribute("data-reset"), usersTab); }; });
+      body.querySelectorAll("[data-remove]").forEach(function(b){ b.onclick=async function(){
+        if(!await window.SM_confirm("Remove this staff account? They will lose access immediately.")) return;
+        var r=await sb.rpc("school_revoke_user",{ p_user_id:b.getAttribute("data-remove") });
+        if(r.error){ toast("Error: "+r.error.message); return; }
+        toast("Removed"); usersTab();
+      }; });
+    }
+
+    function staffForm(enabledRights){
+      var pw=genTempPassword();
+      var m=modal('<h3>Add staff</h3><div class="grid2">'
+        +'<div class="field full"><label>Full name</label><input id="s-name" placeholder="Jane Wambui"></div>'
+        +'<div class="field"><label>Email</label><input id="s-email" type="email" placeholder="jane@school.ac.ke"></div>'
+        +'<div class="field"><label>Phone</label><input id="s-phone" placeholder="07XX XXX XXX"></div>'
+        +'<div class="field full"><label>Temporary password</label><input id="s-pw" value="'+esc(pw)+'"></div>'
+        +'</div><p class="muted" style="font-size:12px;margin:10px 0 0;">Tick their rights after creating the account.</p>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Add staff</button></div>');
+      m.q("#c").onclick=m.close;
+      m.q("#sv").onclick=async function(){
+        var email=m.q("#s-email").value.trim(), name=m.q("#s-name").value.trim(), phone=m.q("#s-phone").value.trim(), pass=m.q("#s-pw").value;
+        if(!email){ toast("Email is required."); return; }
+        if(!pass || pass.length<6){ toast("Password must be at least 6 characters."); return; }
+        var r=await sb.rpc("school_create_staff",{ p_email:email, p_password:pass, p_full_name:name||null, p_phone:phone||null });
+        if(r.error){ toast("Error: "+r.error.message); return; }
+        m.close();
+        showCredentialsModal(email, pass, "Share this password with "+(name||email)+". They'll be asked to set their own on first sign-in.");
+        usersTab();
+      };
+    }
+
+    function staffRightsForm(userId, label, enabledRights, granted){
+      var grantedSet={}; granted.forEach(function(k){ grantedSet[k]=true; });
+      var m=modal('<h3>Rights for '+esc(label)+'</h3><div id="sr-list">'
+        +enabledRights.map(function(r){
+          return '<label class="flag" style="cursor:pointer;"><span>'+esc(r.label)+'</span><input type="checkbox" data-r="'+esc(r.key)+'"'+(grantedSet[r.key]?" checked":"")+' style="width:18px;height:18px;flex:none;"></label>';
+        }).join("")
+        +'</div><div class="modal-actions"><button class="btn-primary" id="ok">Done</button></div>');
+      m.qa("#sr-list input[data-r]").forEach(function(cb){
+        cb.onchange=async function(){
+          var key=cb.getAttribute("data-r");
+          var r = cb.checked
+            ? await sb.from("user_rights").upsert({ user_id:userId, right_key:key })
+            : await sb.from("user_rights").delete().eq("user_id",userId).eq("right_key",key);
+          if(r.error){ toast("Error: "+r.error.message); cb.checked=!cb.checked; return; }
+        };
+      });
+      m.q("#ok").onclick=function(){ m.close(); usersTab(); };
     }
 
     // ----- CBC assessment setup (academic years/terms, assessment types, grading schemes) -----
