@@ -872,6 +872,7 @@
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">' +
       '<div><h2 style="margin:0;font-size:21px;">Access Rights</h2><p class="muted" style="margin-top:4px;font-size:13.5px;">Tick which rights a school is allowed to delegate to staff accounts. The school\'s admin then assigns these to individual staff from their School Portal.</p></div>' +
       '<div class="row" style="gap:10px;"><span class="muted">School</span><select id="rt-school"></select></div></div>' +
+      '<div id="rt-restrict-panel" class="panel" style="margin-bottom:16px;"></div>' +
       '<div id="rt-list" class="panel"></div>';
 
     if (!RIGHTS_CATALOG) {
@@ -885,12 +886,33 @@
   }
 
   async function loadRights(schoolId){
+    var restrictBox = document.getElementById("rt-restrict-panel");
     var box = document.getElementById("rt-list");
     box.innerHTML = '<p class="muted">Loading...</p>';
-    var r = await sb.from("school_rights").select("right_key, enabled").eq("school_id", schoolId);
-    if (r.error) { box.innerHTML = '<p class="muted">' + esc(r.error.message) + '</p>'; return; }
+    restrictBox.innerHTML = '<p class="muted">Loading...</p>';
+
+    var loads = await Promise.all([
+      sb.from("school_rights").select("right_key, enabled").eq("school_id", schoolId),
+      sb.from("schools").select("restrict_admin").eq("id", schoolId).single()
+    ]);
+    var r = loads[0];
+    if (r.error) { box.innerHTML = '<p class="muted">' + esc(r.error.message) + '</p>'; restrictBox.innerHTML = ""; return; }
     var enabledSet = {};
     (r.data || []).forEach(function(row){ if (row.enabled) enabledSet[row.right_key] = true; });
+
+    var restricted = !!(loads[1].data && loads[1].data.restrict_admin);
+    restrictBox.innerHTML =
+      '<label class="flag" style="cursor:pointer;">' +
+      '<span style="min-width:0;"><div style="font-size:13.5px;font-weight:600;">Restrict this school\'s admin</div>' +
+      '<div class="muted" style="font-size:12px;margin-top:2px;">Off (default): this school\'s admin sees everything, same as today. On: the admin (not just staff they invite) is limited to exactly the rights ticked below — e.g. tick nothing but Manage Fees and they lose access to Settings and every other module until you enable more here.</div></span>' +
+      '<input type="checkbox" id="rt-restrict-toggle" ' + (restricted ? "checked" : "") + ' style="width:18px;height:18px;flex:none;">' +
+      '</label>';
+    document.getElementById("rt-restrict-toggle").onchange = async function(){
+      var checked = this.checked;
+      var res = await sb.from("schools").update({ restrict_admin: checked }).eq("id", schoolId);
+      if (res.error) { toast("Error: " + res.error.message); this.checked = !checked; return; }
+      toast(checked ? "This school's admin is now restricted to the ticked rights." : "This school's admin is unrestricted again.");
+    };
 
     box.innerHTML = "";
     RIGHTS_CATALOG.forEach(function(right){

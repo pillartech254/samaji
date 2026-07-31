@@ -172,9 +172,13 @@
   // ====================================================
   async function renderSettings(sb, schoolId, el, ctx){
     ctx = ctx || {};
-    var isStaff = ctx.schoolRole === "staff";
+    // rights is an array whenever this account is limited — either a
+    // delegated staff account, or the school's own admin after super_admin
+    // has restricted them (Admin Console → Rights → "Restrict this school's
+    // admin"). null means unrestricted, the default for an owner account.
+    var restricted = Array.isArray(ctx.rights);
     var myRights = ctx.rights || [];
-    function has(right){ return !isStaff || myRights.indexOf(right) >= 0; }
+    function has(right){ return !restricted || myRights.indexOf(right) >= 0; }
     var canGeneral = has("manage_settings"), canUsers = has("manage_users");
 
     var allTabs=[
@@ -194,7 +198,7 @@
       +'<div class="tabs" id="set-tabs">'
       +allTabs.map(function(x,i){ return '<button data-t="'+x.t+'"'+(i===0?' class="on"':'')+'>'+x.label+'</button>'; }).join("")
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
-    if (!allTabs.length) { document.getElementById("set-body").innerHTML='<div class="empty">You don\'t have access to any settings yet. Ask your school admin.</div>'; return; }
+    if (!allTabs.length) { document.getElementById("set-body").innerHTML='<div class="empty">You don\'t have access to any settings yet. Ask Samaji to enable rights for your school, or your school admin to grant you some.</div>'; return; }
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
     function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="users") usersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
 

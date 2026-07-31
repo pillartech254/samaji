@@ -84,12 +84,16 @@ webapp/
     the Admin Console → **Rights**), per-user `user_rights`, and RPCs so a school_admin can create
     teacher/staff logins and reset passwords for their own school without needing super_admin —
     see "Delegated access & staff logins" below.
-20. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
+20. **New query** again, paste **`setup-modules-31.sql`**, **Run** — lets super_admin restrict a
+    school's own admin ("owner"), not just staff it invites: `schools.restrict_admin`, off by
+    default (unrestricted, unchanged behavior). Toggle it on from Admin Console → **Rights** to cap
+    that school's admin to exactly the rights ticked there.
+21. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
     (`supabase functions deploy admin-users` / `mpesa-stk`) and set their secrets
     (`SUPABASE_SERVICE_ROLE_KEY`, M-Pesa Daraja credentials) in Project Settings → Edge Functions.
-21. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
+22. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
     "Confirm email" (re-enable for production).
-22. **Project Settings → API**: copy your **Project URL** and **anon public key**.
+23. **Project Settings → API**: copy your **Project URL** and **anon public key**.
 
 > Tip: you can also paste all the `setup*.sql` files into one query in order and run once.
 
@@ -173,8 +177,15 @@ Two things changed once this migration is applied:
   delegate — **Admin Console → Rights** → pick the school → tick e.g. *Manage Fees & Payments*.
   Then in `/school/` → **Settings → Users & Access**, the school_admin ("owner") adds a staff
   account (same temp-password + forced-change flow) and ticks which of the school's *enabled*
-  rights that person gets. That account only sees the modules its granted rights map to; the
-  original owner account is never restricted.
+  rights that person gets. That account only sees the modules its granted rights map to.
+
+### Restricting a school's own admin (setup-modules-31.sql)
+By default the owner account is unrestricted, same as before — the rights above only cap what it
+can hand to staff. To also lock the owner itself down, go to **Admin Console → Rights** → pick the
+school → toggle **"Restrict this school's admin"** on. Their School Portal then shows only the
+modules, Reports and Settings sub-tabs matching the rights ticked on that same page — e.g. tick
+only *Manage Fees & Payments* and they lose Settings, Reports, and every other module until you
+enable more. Only `super_admin` can flip this switch; the owner can't unlock themselves.
 
 ---
 

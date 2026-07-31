@@ -250,6 +250,12 @@
     if (SCHOOL_ROLE === "staff") {
       var rr = await sb.rpc("my_rights");
       RIGHTS = rr.data || [];
+    } else if (school && school.restrict_admin) {
+      // Superadmin has locked this school's own admin down to exactly the
+      // rights ticked in Admin Console → Rights (not just what's delegatable
+      // to staff) — reuse the same enabled-rights set as the ceiling.
+      var srr = await sb.from("school_rights").select("right_key").eq("school_id", SCHOOL).eq("enabled", true);
+      RIGHTS = (srr.data || []).map(function(row){ return row.right_key; });
     }
 
     if (window.SamajiCache) window.SamajiCache.preload(sb, SCHOOL); // warm cache for instant page switches
