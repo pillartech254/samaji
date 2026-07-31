@@ -4,8 +4,15 @@
 # day after a bug is fixed and deployed, with no way to tell except a
 # hard refresh. must-revalidate makes the browser check on every load
 # instead: cheap (a 304) when nothing changed, instant when it did.
+# The /*.html and /* rules below apply the same fix to the portal pages
+# themselves (admin/, school/, teacher/, parent/ are single HTML files
+# with the app logic inline) — without this, a page load could keep
+# serving a pre-fix version with no way to tell besides a hard refresh.
 /assets/*
   Cache-Control: public, max-age=0, must-revalidate
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
 /*
+  Cache-Control: public, max-age=0, must-revalidate
   X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin
