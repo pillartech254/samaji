@@ -118,6 +118,19 @@ set search_path = public as $$
 $$;
 grant execute on function can_manage_school_users() to authenticated;
 
+-- profiles' own RLS only lets a user see their own row (id = auth.uid()),
+-- so a raw "exists (select 1 from profiles where id = <someone else>)"
+-- inside another table's policy silently returns no rows for anyone but
+-- that person — it doesn't error, it just always evaluates false. This
+-- wrapper is SECURITY DEFINER so it bypasses that and actually resolves
+-- the target user's school, the same way my_school() does for the caller.
+create or replace function profile_school_id(p_user_id uuid)
+returns text language sql stable security definer
+set search_path = public as $$
+  select school_id from profiles where id = p_user_id;
+$$;
+grant execute on function profile_school_id(uuid) to authenticated;
+
 -- ---------- 7. RLS -----------------------------------------------
 alter table rights_catalog enable row level security;
 alter table school_rights  enable row level security;
@@ -145,11 +158,11 @@ drop policy if exists p_user_rights_school_admin on user_rights;
 create policy p_user_rights_school_admin on user_rights for all to authenticated
   using (
     can_manage_school_users()
-    and exists (select 1 from profiles p where p.id = user_rights.user_id and p.school_id = my_school())
+    and profile_school_id(user_rights.user_id) = my_school()
   )
   with check (
     can_manage_school_users()
-    and exists (select 1 from profiles p where p.id = user_rights.user_id and p.school_id = my_school())
+    and profile_school_id(user_rights.user_id) = my_school()
     and exists (select 1 from school_rights sr where sr.school_id = my_school() and sr.right_key = user_rights.right_key and sr.enabled = true)
   );
 
