@@ -509,9 +509,10 @@
         var list=r.data||[]; var t=document.getElementById("assess-table");
         if(!list.length){ t.innerHTML='<div class="empty">No assessment types yet.</div>'; }
         else {
-          var html='<table class="data"><thead><tr><th>Name</th><th style="text-align:right;">Max marks</th><th style="text-align:right;">Weight</th><th>Counts to final</th><th>Grades</th><th></th></tr></thead><tbody>';
+          list=list.slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
+          var html='<table class="data"><thead><tr><th style="text-align:right;">Order</th><th>Name</th><th style="text-align:right;">Max marks</th><th style="text-align:right;">Weight</th><th>Counts to final</th><th>Grades</th><th></th></tr></thead><tbody>';
           list.forEach(function(a){
-            html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(a.name)+(a.is_system?' <span class="pill gray">default</span>':'')+'</td>'
+            html+='<tr><td style="text-align:right;color:#98A2B3;">'+(a.sort||0)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(a.name)+(a.is_system?' <span class="pill gray">default</span>':'')+'</td>'
               +'<td style="text-align:right;">'+a.max_marks+'</td><td style="text-align:right;">'+a.weight_percent+'%</td>'
               +'<td>'+(a.contributes_to_final?'<span class="pill green">Yes</span>':'<span class="pill gray">No</span>')+'</td>'
               +'<td>'+(a.applicable_grades&&a.applicable_grades.length?esc(a.applicable_grades.join(", ")):'<span class="muted">All</span>')+'</td>'
@@ -530,6 +531,7 @@
           +'<div class="field"><label>Max marks</label><input id="as-max" type="number" value="'+(a.max_marks||100)+'"></div>'
           +'<div class="field"><label>Weight toward final (%)</label><input id="as-weight" type="number" value="'+(a.weight_percent!=null?a.weight_percent:100)+'"></div>'
           +'<div class="field"><label>Counts toward final score</label><select id="as-contrib"><option value="true"'+(a.contributes_to_final!==false?" selected":"")+'>Yes</option><option value="false"'+(a.contributes_to_final===false?" selected":"")+'>No</option></select></div>'
+          +'<div class="field"><label>Test order (sets First/Second/Third Test on the report card)</label><input id="as-sort" type="number" value="'+(a.sort||0)+'"></div>'
           +'<div class="field"><label>Applicable grades (comma separated, blank = all)</label><input id="as-grades" value="'+esc((a.applicable_grades||[]).join(", "))+'" placeholder="Grade 1, Grade 2"></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
         m.q("#c").onclick=m.close;
@@ -537,6 +539,7 @@
           var gradesRaw=m.q("#as-grades").value.trim();
           var rec={ school_id:schoolId, name:m.q("#as-name").value.trim(), max_marks:Number(m.q("#as-max").value)||100,
             weight_percent:Number(m.q("#as-weight").value)||0, contributes_to_final:m.q("#as-contrib").value==="true",
+            sort:Number(m.q("#as-sort").value)||0,
             applicable_grades: gradesRaw ? gradesRaw.split(",").map(function(s){return s.trim();}).filter(Boolean) : null };
           if(!rec.name){ toast("Name is required."); return; }
           var r=a.id? await sb.from("assessment_types").update(rec).eq("id",a.id) : await sb.from("assessment_types").insert(rec);

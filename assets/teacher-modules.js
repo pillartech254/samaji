@@ -64,9 +64,14 @@
   // "Generate Report Cards" action, so both compute grades exactly the same
   // way. onlyPublished=true restricts to mark sheets a Principal/Deputy has
   // actually published — used when freezing an official snapshot.
+  //
+  // The report card is a single-term "summative" grid (Ministry of
+  // Education format): rows are subjects, columns are the term's tests
+  // (assessment types that contribute to the final score, in `sort`
+  // order) — not a multi-term trend like the old design. `percentFor`
+  // returns one student's raw percentage on one subject+test, which
+  // report-card.js bands into an EE/ME/AE/BE checkmark.
   async function fetchClassReportData(sb, ctx, cls, year, term, allTypes, schemes, onlyPublished){
-    var termsUpTo = year.terms.filter(function(x){ return x.sort<=term.sort; });
-
     var csr = await sb.from("class_subjects").select("subjects(id,name)").eq("class_id",cls.id);
     var subjects = (csr.data||[]).map(function(x){ return x.subjects; }).filter(Boolean).sort(function(a,b){ return a.name<b.name?-1:1; });
 
@@ -74,34 +79,41 @@
     var students = sr.data||[];
     var studentIds = students.map(function(s){ return s.id; });
 
-    var types = window.SamajiGrading.typesForGrade(allTypes, cls.level);
+    var types = window.SamajiGrading.typesForGrade(allTypes, cls.level).filter(function(t){ return t.contributes_to_final; })
+      .slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
     var scheme = window.SamajiGrading.schemeForGrade(schemes, cls.level);
     var levels = scheme ? (scheme.grading_levels||[]) : [];
 
-    var msQ = sb.from("mark_sheets").select("*").eq("class_id",cls.id).eq("academic_year_id",year.id);
+    var msQ = sb.from("mark_sheets").select("*").eq("class_id",cls.id).eq("term_id",term.id).eq("academic_year_id",year.id);
     if (onlyPublished) msQ = msQ.eq("status","published");
     var msRes = await msQ;
     var markSheets = msRes.data||[];
-    var msByKey = {}; markSheets.forEach(function(m){ msByKey[m.subject_id+"|"+m.term_id]=m.id; });
+    var msBySubject = {}; markSheets.forEach(function(m){ msBySubject[m.subject_id]=m.id; });
     var msIds = markSheets.map(function(m){ return m.id; });
 
-    var examsByMs = {}, typeByExam = {};
+    var examsByMs = {};
     if (msIds.length){
       var exRes = await sb.from("exams").select("id,mark_sheet_id,assessment_type_id").in("mark_sheet_id",msIds);
-      (exRes.data||[]).forEach(function(e){ (examsByMs[e.mark_sheet_id]=examsByMs[e.mark_sheet_id]||[]).push(e); typeByExam[e.id]=e.assessment_type_id; });
+      (exRes.data||[]).forEach(function(e){ (examsByMs[e.mark_sheet_id]=examsByMs[e.mark_sheet_id]||[]).push(e); });
     }
     var resultsByExam = {};
-    var allExamIds = Object.keys(typeByExam);
+    var allExamIds = [];
+    Object.keys(examsByMs).forEach(function(k){ examsByMs[k].forEach(function(e){ allExamIds.push(e.id); }); });
     if (allExamIds.length && studentIds.length){
       var resRes = await sb.from("exam_results").select("exam_id,student_id,score").in("exam_id",allExamIds).in("student_id",studentIds);
       (resRes.data||[]).forEach(function(r){ (resultsByExam[r.exam_id]=resultsByExam[r.exam_id]||{})[r.student_id]=r.score; });
     }
-    function termScoreFor(subjectId, termId2, studentId){
-      var msId = msByKey[subjectId+"|"+termId2];
+    // One student's percentage on one subject's one test, or null if not recorded.
+    function percentFor(subjectId, typeId, studentId){
+      var msId = msBySubject[subjectId];
       if (!msId) return null;
-      var exams = examsByMs[msId]||[];
-      var scoreArr = exams.map(function(e){ return { assessment_type_id:e.assessment_type_id, score:(resultsByExam[e.id]||{})[studentId] }; });
-      return window.SamajiGrading.weightedTotal(scoreArr, types);
+      var exam = (examsByMs[msId]||[]).find(function(e){ return e.assessment_type_id===typeId; });
+      if (!exam) return null;
+      var score = (resultsByExam[exam.id]||{})[studentId];
+      if (score==null) return null;
+      var type = allTypes.find(function(t){ return t.id===typeId; });
+      var max = type ? (Number(type.max_marks)||100) : 100;
+      return Math.round((Number(score)/max)*1000)/10;
     }
 
     var ratingsByStudent = {};
@@ -131,25 +143,48 @@
       });
     }
 
-    return { cls:cls, year:year, term:term, termsUpTo:termsUpTo, subjects:subjects, students:students, types:types, scheme:scheme, levels:levels,
-      termScoreFor:termScoreFor, ratingsByStudent:ratingsByStudent, remarksByStudent:remarksByStudent, attByStudent:attByStudent };
+    return { cls:cls, year:year, term:term, subjects:subjects, students:students, types:types, scheme:scheme, levels:levels,
+      percentFor:percentFor, ratingsByStudent:ratingsByStudent, remarksByStudent:remarksByStudent, attByStudent:attByStudent };
   }
 
-  // Pure: turns one student's per-term scores into the subjectRows shape
-  // assets/report-card.js expects (also used to build a frozen snapshot).
+  // Pure: turns one student's per-test scores into the subjectRows shape
+  // assets/report-card.js expects — one row per subject, one EE/ME/AE/BE
+  // competency code per test (also used to build a frozen snapshot).
   function computeSubjectRows(data, studentId){
     return data.subjects.map(function(sub){
-      var termScores = data.termsUpTo.map(function(t){ return data.termScoreFor(sub.id, t.id, studentId); });
-      var valid = termScores.filter(function(v){ return v!=null; });
-      var average = valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
-      var lvl = average==null ? null : window.SamajiGrading.levelFor(data.levels, average);
-      return { name:sub.name, termScores:termScores, termNames:data.termsUpTo.map(function(t){ return t.name; }),
-        average:average, gradeLabel: lvl && lvl.grade_label, competencyCode: lvl && lvl.competency_code, remark: lvl && lvl.remark };
+      var tests = data.types.map(function(t){
+        var pct = data.percentFor(sub.id, t.id, studentId);
+        if (pct==null) return null;
+        var lvl = window.SamajiGrading.levelFor(data.levels, pct);
+        return lvl ? lvl.competency_code : null;
+      });
+      return { name:sub.name, tests:tests };
     });
   }
-  function overallAverageOf(rows){
-    var valid = rows.map(function(r){ return r.average; }).filter(function(v){ return v!=null; });
-    return valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
+  // Quick on-screen indicator (not printed): one subject's mean % across
+  // whichever tests it actually has scores for.
+  function subjectAvgPercent(data, sub, studentId){
+    var vals = data.types.map(function(t){ return data.percentFor(sub.id, t.id, studentId); }).filter(function(v){ return v!=null; });
+    return vals.length ? Math.round((vals.reduce(function(a,b){ return a+b; },0)/vals.length)*10)/10 : null;
+  }
+  // The report card's "Total Percentage" / "Average Score" footer rows:
+  // per test, the mean % across all subjects that have a score for it,
+  // banded into the matching EE/ME/AE/BE checkmark.
+  function testSummaryFor(data, studentId){
+    var totalPercentPerTest = [], averageCodePerTest = [];
+    data.types.forEach(function(t){
+      var vals = data.subjects.map(function(sub){ return data.percentFor(sub.id, t.id, studentId); }).filter(function(v){ return v!=null; });
+      if (!vals.length){ totalPercentPerTest.push(null); averageCodePerTest.push(null); return; }
+      var avg = Math.round((vals.reduce(function(a,b){ return a+b; },0)/vals.length)*10)/10;
+      var lvl = window.SamajiGrading.levelFor(data.levels, avg);
+      totalPercentPerTest.push(avg);
+      averageCodePerTest.push(lvl ? lvl.competency_code : null);
+    });
+    return { totalPercentPerTest:totalPercentPerTest, averageCodePerTest:averageCodePerTest };
+  }
+  function overallFromSummary(summary){
+    var vals = (summary.totalPercentPerTest||[]).filter(function(v){ return v!=null; });
+    return vals.length ? Math.round((vals.reduce(function(a,b){ return a+b; },0)/vals.length)*10)/10 : null;
   }
 
   // ====================================================
@@ -418,8 +453,8 @@
   }
 
   // ====================================================
-  //  REPORT BOOKS  (real KICD-style colored report cards, built from
-  //  Marks & Grading's weighted totals + learner ratings/remarks)
+  //  REPORT BOOKS  (Ministry of Education-style summative report cards,
+  //  built directly from Marks & Grading's per-test scores)
   // ====================================================
   async function renderReportBooks(sb, ctx, el){
     var assignments = await loadMyAssignments(sb, ctx);
@@ -460,8 +495,8 @@
     }
     populateTerms();
 
-    var current = { cls:null, year:null, term:null, termsUpTo:[], students:[], subjects:[], types:[], scheme:null, levels:[],
-      termScoreFor:function(){ return null; }, ratingsByStudent:{}, remarksByStudent:{}, attByStudent:{}, isClassTeacher:false, isPublisher:false };
+    var current = { cls:null, year:null, term:null, students:[], subjects:[], types:[], scheme:null, levels:[],
+      percentFor:function(){ return null; }, ratingsByStudent:{}, remarksByStudent:{}, attByStudent:{}, isClassTeacher:false, isPublisher:false };
 
     async function load(){
       var classId = document.getElementById("rb-class").value;
@@ -473,8 +508,8 @@
       if (!term){ t.innerHTML='<div class="empty">This academic year has no terms yet.</div>'; return; }
 
       var data = await fetchClassReportData(sb, ctx, cls, year, term, allTypes, schemes, false);
-      current = { cls:cls, year:year, term:term, termsUpTo:data.termsUpTo, subjects:data.subjects, students:data.students, types:data.types,
-        scheme:data.scheme, levels:data.levels, termScoreFor:data.termScoreFor, ratingsByStudent:data.ratingsByStudent,
+      current = { cls:cls, year:year, term:term, subjects:data.subjects, students:data.students, types:data.types,
+        scheme:data.scheme, levels:data.levels, percentFor:data.percentFor, ratingsByStudent:data.ratingsByStudent,
         remarksByStudent:data.remarksByStudent, attByStudent:data.attByStudent,
         isClassTeacher: cls.class_teacher_id===ctx.teacher.id, isPublisher: isPublisherRole };
       draw();
@@ -486,14 +521,13 @@
       var t=document.getElementById("rb-table");
       if (!current.students.length){ t.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
       if (!current.subjects.length){ t.innerHTML='<div class="empty">No subjects assigned to this class yet — set them in Settings → Classes.</div>'; return; }
-      var html='<table class="data"><thead><tr><th>Name</th>'+current.subjects.map(function(s){ return '<th style="text-align:right;">'+esc(s.name)+'</th>'; }).join("")+'<th style="text-align:right;">Overall Avg</th><th></th></tr></thead><tbody>';
+      var html='<table class="data"><thead><tr><th>Name</th>'+current.subjects.map(function(s){ return '<th style="text-align:right;">'+esc(s.name)+'</th>'; }).join("")+'<th style="text-align:right;">Overall %</th><th></th></tr></thead><tbody>';
       current.students.forEach(function(s){
-        var rows = subjectRowsFor(s.id);
-        var valid = rows.map(function(r){ return r.average; }).filter(function(v){ return v!=null; });
-        var overall = valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
+        var summary = testSummaryFor(current, s.id);
+        var overall = overallFromSummary(summary);
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
-          + rows.map(function(r){ return '<td style="text-align:right;">'+(r.average==null?'<span class="muted">—</span>':r.average)+'</td>'; }).join("")
-          + '<td style="text-align:right;font-weight:700;">'+(overall==null?'<span class="muted">—</span>':overall)+'</td>'
+          + current.subjects.map(function(sub){ var v=subjectAvgPercent(current, sub, s.id); return '<td style="text-align:right;">'+(v==null?'<span class="muted">—</span>':v+"%")+'</td>'; }).join("")
+          + '<td style="text-align:right;font-weight:700;">'+(overall==null?'<span class="muted">—</span>':overall+"%")+'</td>'
           + '<td style="text-align:right;white-space:nowrap;">'+((current.isClassTeacher||current.isPublisher)?'<button class="btn-sm" data-rate="'+s.id+'">Ratings &amp; Remarks</button> ':'')+'<button class="btn-sm" data-print="'+s.id+'">Print</button></td></tr>';
       });
       html+='</tbody></table>';
@@ -542,18 +576,25 @@
     }
 
     function reportOpts(s){
-      return { school:ctx.school, student:s, classLabel:classLabel(current.cls), classTeacherName: teacherNameById[current.cls.class_teacher_id]||"—",
-        term:current.term, academicYear:current.year, subjectRows:subjectRowsFor(s.id), levels:current.levels, attendance:current.attByStudent[s.id],
-        ratings:current.ratingsByStudent[s.id]||{}, teacherRemark:(current.remarksByStudent[s.id]||{}).teacher_remark, principalRemark:(current.remarksByStudent[s.id]||{}).principal_remark,
+      var summary = testSummaryFor(current, s.id);
+      return { school:ctx.school, student:s, cls:current.cls, term:current.term, academicYear:current.year,
+        facilitatorName: teacherNameById[current.cls.class_teacher_id]||"—",
+        facilitatorRemark: (current.remarksByStudent[s.id]||{}).teacher_remark||"",
+        subjectRows:subjectRowsFor(s.id), levels:current.levels,
+        totalPercentPerTest:summary.totalPercentPerTest, averageCodePerTest:summary.averageCodePerTest,
         published:false };
     }
     // If Principal/Deputy has already generated (frozen) this student's report for this
     // term, print exactly that snapshot — never the live marks — so a reprint always
     // matches what was originally issued even if marks changed afterwards.
     function snapshotOpts(d, s){
-      return { school:ctx.school, student:s, classLabel:d.class_label||classLabel(current.cls), classTeacherName:d.class_teacher_name||"—",
-        term:current.term, academicYear:current.year, subjectRows:d.subject_rows||[], levels:current.levels,
-        attendance:d.attendance, ratings:d.ratings||{}, teacherRemark:d.teacher_remark, principalRemark:d.principal_remark,
+      var sr = d.subject_rows||{};
+      return { school:ctx.school, student:s,
+        cls:{ level: sr.classLevel || current.cls.level, stream: sr.classStream || current.cls.stream },
+        term:current.term, academicYear:current.year,
+        facilitatorName: d.class_teacher_name||"—", facilitatorRemark: d.teacher_remark||"",
+        subjectRows: sr.subjects||[], levels:current.levels,
+        totalPercentPerTest: sr.totalPercentPerTest||[], averageCodePerTest: sr.averageCodePerTest||[],
         published:true, publishedAt:d.published_at };
     }
     async function printOne(s){
@@ -695,11 +736,14 @@
       if (!data.students.length){ status.textContent="No active students in this class."; return; }
       var rows = data.students.map(function(s){
         var subjectRows = computeSubjectRows(data, s.id);
+        var summary = testSummaryFor(data, s.id);
         var remark = data.remarksByStudent[s.id]||{};
         return { school_id:ctx.schoolId, student_id:s.id, class_id:cls.id, term_id:term.id, academic_year_id:year.id,
           class_label: classLabel(cls), class_teacher_name: teacherNameById[cls.class_teacher_id]||null,
-          subject_rows: subjectRows, attendance: data.attByStudent[s.id]||null, ratings: data.ratingsByStudent[s.id]||null,
-          overall_average: overallAverageOf(subjectRows), teacher_remark: remark.teacher_remark||null, principal_remark: remark.principal_remark||null,
+          subject_rows: { subjects:subjectRows, totalPercentPerTest:summary.totalPercentPerTest, averageCodePerTest:summary.averageCodePerTest,
+            classLevel:cls.level, classStream:cls.stream||null },
+          attendance: data.attByStudent[s.id]||null, ratings: data.ratingsByStudent[s.id]||null,
+          overall_average: overallFromSummary(summary), teacher_remark: remark.teacher_remark||null, principal_remark: remark.principal_remark||null,
           published_at: new Date().toISOString(), published_by: ctx.teacher.id };
       });
       var res = await sb.from("report_cards").upsert(rows, { onConflict:"student_id,term_id,academic_year_id" });
