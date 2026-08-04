@@ -459,9 +459,9 @@
     async function cbcSetup(){
       var body=document.getElementById("set-body");
       var sub="years";
-      body.innerHTML='<div class="toolbar" style="margin-top:0;"><div class="seg" id="cbc-tabs"><button data-s="years" class="on-present">Years &amp; Terms</button><button data-s="assess">Assessment Types</button><button data-s="grading">Grading Schemes</button></div></div><div id="cbc-body" style="margin-top:14px;"></div>';
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><div class="seg" id="cbc-tabs"><button data-s="years" class="on-present">Years &amp; Terms</button><button data-s="assess">Assessment Types</button><button data-s="grading">Grading Schemes</button><button data-s="competency">Competency Levels</button></div></div><div id="cbc-body" style="margin-top:14px;"></div>';
       body.querySelectorAll("#cbc-tabs button").forEach(function(b){ b.onclick=function(){ sub=b.getAttribute("data-s"); body.querySelectorAll("#cbc-tabs button").forEach(function(x){x.className="";}); b.className="on-present"; draw(); }; });
-      function draw(){ if(sub==="years") yearsTermsTab(); else if(sub==="assess") assessmentTypesTab(); else gradingSchemesTab(); }
+      function draw(){ if(sub==="years") yearsTermsTab(); else if(sub==="assess") assessmentTypesTab(); else if(sub==="grading") gradingSchemesTab(); else competencyLevelsTab(); }
 
       // ----- years & terms -----
       async function yearsTermsTab(){
@@ -528,17 +528,21 @@
       // ----- assessment types -----
       async function assessmentTypesTab(){
         var cb=document.getElementById("cbc-body");
-        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The assessment types teachers can record marks against (CAT 1, Project, End Term Exam…), each with a weight toward the final subject score.</span><button class="btn-primary" id="add-assess">+ Add assessment type</button></div><div id="assess-table"></div>';
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The assessment types teachers can record marks against (CAT 1, Project, End Term Exam…), each with a weight toward the final subject score.</span><button class="btn-primary" id="add-assess">+ Add assessment type</button></div><div id="assess-weight" style="margin:8px 0;"></div><div id="assess-table"></div>';
         var r=await sb.from("assessment_types").select("*").eq("school_id",schoolId).order("name");
         var list=r.data||[]; var t=document.getElementById("assess-table");
+        var totalWeight=list.reduce(function(sum,a){ return sum+(Number(a.weight_percent)||0); },0);
+        var wEl=document.getElementById("assess-weight");
+        wEl.innerHTML='<span class="pill '+(totalWeight===100?"green":"amber")+'">Total weight: '+totalWeight+'%'+(totalWeight===100?"":" — should add up to 100%")+'</span>';
         if(!list.length){ t.innerHTML='<div class="empty">No assessment types yet.</div>'; }
         else {
           list=list.slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
-          var html='<table class="data"><thead><tr><th style="text-align:right;">Order</th><th>Name</th><th style="text-align:right;">Max marks</th><th style="text-align:right;">Weight</th><th>Counts to final</th><th>Grades</th><th></th></tr></thead><tbody>';
+          var html='<table class="data"><thead><tr><th style="text-align:right;">Order</th><th>Name</th><th style="text-align:right;">Max marks</th><th style="text-align:right;">Weight</th><th>Counts to final</th><th>On report card</th><th>Grades</th><th></th></tr></thead><tbody>';
           list.forEach(function(a){
             html+='<tr><td style="text-align:right;color:#98A2B3;">'+(a.sort||0)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(a.name)+(a.is_system?' <span class="pill gray">default</span>':'')+'</td>'
               +'<td style="text-align:right;">'+a.max_marks+'</td><td style="text-align:right;">'+a.weight_percent+'%</td>'
               +'<td>'+(a.contributes_to_final?'<span class="pill green">Yes</span>':'<span class="pill gray">No</span>')+'</td>'
+              +'<td>'+(a.show_on_report_card!==false?'<span class="pill green">Yes</span>':'<span class="pill gray">No</span>')+'</td>'
               +'<td>'+(a.applicable_grades&&a.applicable_grades.length?esc(a.applicable_grades.join(", ")):'<span class="muted">All</span>')+'</td>'
               +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+a.id+'">Edit</button> <button class="btn-sm danger" data-del="'+a.id+'">Delete</button></td></tr>';
           });
@@ -548,26 +552,46 @@
         }
         document.getElementById("add-assess").onclick=function(){ assessmentForm(); };
       }
-      function assessmentForm(a){
+      async function assessmentForm(a){
         a=a||{};
+        var sr=await sb.from("subjects").select("id,name").eq("school_id",schoolId).order("name"); var allSubjects=sr.data||[];
+        var assignedSubjectIds=[];
+        if(a.id){ var asr=await sb.from("assessment_type_subjects").select("subject_id").eq("assessment_type_id",a.id); assignedSubjectIds=(asr.data||[]).map(function(x){return x.subject_id;}); }
+        var subjectRows=allSubjects.length? allSubjects.map(function(s){
+          var checked=assignedSubjectIds.indexOf(s.id)>=0;
+          return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer;"><input type="checkbox" class="as-subj-chk" value="'+s.id+'"'+(checked?" checked":"")+'> '+esc(s.name)+'</label>';
+        }).join("") : '<div class="muted" style="font-size:12.5px;">No subjects set up yet — leave blank to apply to all subjects.</div>';
         var m=modal('<h3>'+(a.id?"Edit":"Add")+' assessment type</h3><div class="grid2">'
           +'<div class="field full"><label>Name</label><input id="as-name" value="'+esc(a.name||"")+'" placeholder="CAT 1"></div>'
           +'<div class="field"><label>Max marks</label><input id="as-max" type="number" value="'+(a.max_marks||100)+'"></div>'
           +'<div class="field"><label>Weight toward final (%)</label><input id="as-weight" type="number" value="'+(a.weight_percent!=null?a.weight_percent:100)+'"></div>'
           +'<div class="field"><label>Counts toward final score</label><select id="as-contrib"><option value="true"'+(a.contributes_to_final!==false?" selected":"")+'>Yes</option><option value="false"'+(a.contributes_to_final===false?" selected":"")+'>No</option></select></div>'
+          +'<div class="field"><label>Show on report card</label><select id="as-report"><option value="true"'+(a.show_on_report_card!==false?" selected":"")+'>Yes</option><option value="false"'+(a.show_on_report_card===false?" selected":"")+'>No</option></select></div>'
           +'<div class="field"><label>Test order (sets First/Second/Third Test on the report card)</label><input id="as-sort" type="number" value="'+(a.sort||0)+'"></div>'
-          +'<div class="field"><label>Applicable grades (comma separated, blank = all)</label><input id="as-grades" value="'+esc((a.applicable_grades||[]).join(", "))+'" placeholder="Grade 1, Grade 2"></div>'
+          +'<div class="field full"><label>Applicable grades (comma separated, blank = all)</label><input id="as-grades" value="'+esc((a.applicable_grades||[]).join(", "))+'" placeholder="Grade 1, Grade 2"></div>'
+          +'<div class="field full"><label>Applicable subjects (blank = all)</label><div style="max-height:180px;overflow:auto;border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;">'+subjectRows+'</div></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
         m.q("#c").onclick=m.close;
         m.q("#s").onclick=async function(){
           var gradesRaw=m.q("#as-grades").value.trim();
           var rec={ school_id:schoolId, name:m.q("#as-name").value.trim(), max_marks:Number(m.q("#as-max").value)||100,
             weight_percent:Number(m.q("#as-weight").value)||0, contributes_to_final:m.q("#as-contrib").value==="true",
+            show_on_report_card:m.q("#as-report").value==="true",
             sort:Number(m.q("#as-sort").value)||0,
             applicable_grades: gradesRaw ? gradesRaw.split(",").map(function(s){return s.trim();}).filter(Boolean) : null };
           if(!rec.name){ toast("Name is required."); return; }
-          var r=a.id? await sb.from("assessment_types").update(rec).eq("id",a.id) : await sb.from("assessment_types").insert(rec);
+          var r=a.id? await sb.from("assessment_types").update(rec).eq("id",a.id) : await sb.from("assessment_types").insert(rec).select().single();
           if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That assessment type already exists.":("Error: "+r.error.message)); return; }
+          var typeId=a.id||(r.data&&r.data.id);
+          var checkedSubjIds=[]; m.el.querySelectorAll(".as-subj-chk").forEach(function(chk){ if(chk.checked) checkedSubjIds.push(chk.value); });
+          if(typeId){
+            var delS=await sb.from("assessment_type_subjects").delete().eq("assessment_type_id",typeId);
+            if(delS.error){ toast("Error: "+delS.error.message); return; }
+            if(checkedSubjIds.length){
+              var insS=await sb.from("assessment_type_subjects").insert(checkedSubjIds.map(function(sid){ return { assessment_type_id:typeId, subject_id:sid }; }));
+              if(insS.error){ toast("Error: "+insS.error.message); return; }
+            }
+          }
           m.close(); toast("Saved"); assessmentTypesTab();
         };
       }
@@ -620,8 +644,10 @@
           m.close(); toast("Saved"); gradingSchemesTab();
         };
       }
-      function levelForm(schemeId, l){
+      async function levelForm(schemeId, l){
         l=l||{};
+        var clr=await sb.from("competency_levels").select("id,code,label").eq("school_id",schoolId).order("sort"); var allLevels=clr.data||[];
+        var levelOpts='<option value="">— none —</option>'+allLevels.map(function(c){ return '<option value="'+c.id+'"'+(l.competency_level_id===c.id?" selected":"")+'>'+esc(c.code)+' — '+esc(c.label)+'</option>'; }).join("");
         var m=modal('<h3>'+(l.id?"Edit":"Add")+' grading band</h3><div class="grid2">'
           +'<div class="field"><label>Min score</label><input id="lv-min" type="number" value="'+(l.min_score!=null?l.min_score:0)+'"></div>'
           +'<div class="field"><label>Max score</label><input id="lv-max" type="number" value="'+(l.max_score!=null?l.max_score:100)+'"></div>'
@@ -629,6 +655,7 @@
           +'<div class="field"><label>Competency code (optional)</label><input id="lv-code" value="'+esc(l.competency_code||"")+'" placeholder="EE1"></div>'
           +'<div class="field"><label>Points (optional)</label><input id="lv-points" type="number" step="0.5" value="'+(l.points!=null?l.points:"")+'" placeholder="4.0"></div>'
           +'<div class="field full"><label>Competency label (optional)</label><input id="lv-label" value="'+esc(l.competency_label||"")+'" placeholder="Exceeding Expectation"></div>'
+          +'<div class="field full"><label>Competency level catalog link (optional)</label><select id="lv-catlevel">'+levelOpts+'</select></div>'
           +'<div class="field"><label>Remark (optional)</label><input id="lv-remark" value="'+esc(l.remark||"")+'" placeholder="Excellent"></div>'
           +'<div class="field"><label>Badge color</label><input id="lv-color" type="color" value="'+esc(l.color||"#0E9384")+'" style="height:38px;padding:4px;"></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
@@ -639,10 +666,52 @@
           var pointsRaw=m.q("#lv-points").value.trim();
           var rec={ scheme_id:schemeId, min_score:minS, max_score:maxS, grade_label:m.q("#lv-grade").value.trim()||null,
             competency_code:m.q("#lv-code").value.trim()||null, competency_label:m.q("#lv-label").value.trim()||null, remark:m.q("#lv-remark").value.trim()||null,
-            points: pointsRaw?Number(pointsRaw):null, color:m.q("#lv-color").value||null };
+            points: pointsRaw?Number(pointsRaw):null, color:m.q("#lv-color").value||null,
+            competency_level_id: m.q("#lv-catlevel").value||null };
           var r=l.id? await sb.from("grading_levels").update(rec).eq("id",l.id) : await sb.from("grading_levels").insert(rec);
           if(r.error){ toast("Error: "+r.error.message); return; }
           m.close(); toast("Saved"); gradingSchemesTab();
+        };
+      }
+
+      // ----- competency levels catalog -----
+      async function competencyLevelsTab(){
+        var cb=document.getElementById("cbc-body");
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">A reusable, school-wide catalog of competency levels (e.g. EE, ME, AE, BE). Link grading bands to these from Grading Schemes.</span><button class="btn-primary" id="add-complvl">+ Add competency level</button></div><div id="complvl-table"></div>';
+        var r=await sb.from("competency_levels").select("*").eq("school_id",schoolId).order("sort");
+        var list=r.data||[]; var t=document.getElementById("complvl-table");
+        if(!list.length){ t.innerHTML='<div class="empty">No competency levels yet. Click <strong>+ Add competency level</strong>.</div>'; }
+        else {
+          var html='<table class="data"><thead><tr><th style="text-align:right;">Order</th><th>Code</th><th>Label</th><th>Description</th><th></th></tr></thead><tbody>';
+          list.forEach(function(c){
+            html+='<tr><td style="text-align:right;color:#98A2B3;">'+(c.sort||0)+'</td>'
+              +'<td style="font-weight:600;color:#1A1D26;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+esc(c.color||"#98A2B3")+';margin-right:6px;"></span>'+esc(c.code)+'</td>'
+              +'<td>'+esc(c.label)+'</td><td>'+esc(c.description||"—")+'</td>'
+              +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+c.id+'">Edit</button> <button class="btn-sm danger" data-del="'+c.id+'">Delete</button></td></tr>';
+          });
+          html+='</tbody></table>'; t.innerHTML=html;
+          t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ competencyLevelForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+          t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this competency level?"))return; var r=await sb.from("competency_levels").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); competencyLevelsTab(); }; });
+        }
+        document.getElementById("add-complvl").onclick=function(){ competencyLevelForm(); };
+      }
+      function competencyLevelForm(c){
+        c=c||{};
+        var m=modal('<h3>'+(c.id?"Edit":"Add")+' competency level</h3><div class="grid2">'
+          +'<div class="field"><label>Code</label><input id="cl-code" value="'+esc(c.code||"")+'" placeholder="EE"></div>'
+          +'<div class="field"><label>Sort order</label><input id="cl-sort" type="number" value="'+(c.sort||0)+'"></div>'
+          +'<div class="field full"><label>Label</label><input id="cl-label" value="'+esc(c.label||"")+'" placeholder="Exceeding Expectation"></div>'
+          +'<div class="field full"><label>Description (optional)</label><input id="cl-desc" value="'+esc(c.description||"")+'"></div>'
+          +'<div class="field"><label>Color</label><input id="cl-color" type="color" value="'+esc(c.color||"#0E9384")+'" style="height:38px;padding:4px;"></div>'
+          +'</div><div class="modal-actions"><button class="btn-sm" id="cn">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+        m.q("#cn").onclick=m.close;
+        m.q("#s").onclick=async function(){
+          var rec={ school_id:schoolId, code:m.q("#cl-code").value.trim(), label:m.q("#cl-label").value.trim(),
+            description:m.q("#cl-desc").value.trim()||null, sort:Number(m.q("#cl-sort").value)||0, color:m.q("#cl-color").value||null };
+          if(!rec.code||!rec.label){ toast("Code and label are required."); return; }
+          var r=c.id? await sb.from("competency_levels").update(rec).eq("id",c.id) : await sb.from("competency_levels").insert(rec);
+          if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That code already exists.":("Error: "+r.error.message)); return; }
+          m.close(); toast("Saved"); competencyLevelsTab();
         };
       }
 
