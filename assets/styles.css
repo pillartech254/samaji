@@ -151,6 +151,7 @@ table.data tbody tr:hover td{background:var(--surface-2);}
 .pill{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-block;}
 .pill.green{color:var(--green);background:var(--green-t);} .pill.amber{color:#B54708;background:#FFF6E8;}
 .pill.gray{color:var(--ink-2);background:#EFF1F5;} .pill.red{color:var(--red);background:var(--red-t);}
+.pill.indigo{color:#4F46E5;background:#EEF0FF;}
 .chk-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:5px 12px 5px 10px;cursor:pointer;}
 .chk-pill input{margin:0;}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;}

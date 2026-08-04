@@ -395,16 +395,22 @@
     }
 
     // ----- teacher directory -----
+    var POSITION_LABEL={ principal:"Principal", deputy_principal:"Deputy Principal", dos:"Director of Studies" };
     async function teachersTab(){
       var body=document.getElementById("set-body");
-      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Teaching staff directory — assign them to classes &amp; subjects from the Classes tab. A teacher signs up at <span class="mono">/teacher/</span> with the email below to get their own portal login.</span><button class="btn-primary" id="add-teacher">+ Add teacher</button></div><div id="tch-table"></div>';
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Teaching staff directory — assign them to subjects from the Classes tab, and to a class as class teacher below. A teacher signs up at <span class="mono">/teacher/</span> with the email below to get their own portal login.</span><button class="btn-primary" id="add-teacher">+ Add teacher</button></div><div id="tch-table"></div>';
       var r=await sb.from("teachers").select("*").eq("school_id",schoolId).order("name");
       var list=r.data||[], t=document.getElementById("tch-table");
+      var clsRes=await loadClasses(sb, schoolId);
+      var classTeacherOf={}; clsRes.forEach(function(c){ if(c.class_teacher_id) classTeacherOf[c.class_teacher_id]=c; });
       if(!list.length){ t.innerHTML='<div class="empty">No teachers yet. Add your teaching staff here.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Portal login</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Class teacher of</th><th>Portal login</th><th></th></tr></thead><tbody>';
         list.forEach(function(s){
+          var ct=classTeacherOf[s.id];
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.email?esc(s.email):'<span class="muted">—</span>')+'</td><td>'+(s.phone?esc(s.phone):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(s.school_position?'<span class="pill indigo">'+esc(POSITION_LABEL[s.school_position]||s.school_position)+'</span>':'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(ct?'<span class="pill green">'+esc(classLabel(ct))+'</span>':'<span class="muted">—</span>')+'</td>'
             +'<td>'+(s.auth_user_id?'<span class="pill green">active</span>':'<span class="pill gray">not signed up</span>')+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
         });
@@ -414,19 +420,58 @@
       }
       document.getElementById("add-teacher").onclick=function(){ teacherForm(null); };
     }
-    function teacherForm(s){
+    async function teacherForm(s){
       s=s||{};
+      var classes=await loadClasses(sb, schoolId);
+      var tNamesRes=await sb.from("teachers").select("id,name").eq("school_id",schoolId);
+      var teacherNameById={}; (tNamesRes.data||[]).forEach(function(t){ teacherNameById[t.id]=t.name; });
+      // Which class (if any) is this teacher currently the class teacher of —
+      // pre-selects the dropdown below when editing.
+      var currentClassId = s.id ? (classes.find(function(c){ return c.class_teacher_id===s.id; })||{}).id : "";
+      var classOpts = '<option value="">— Not a class teacher —</option>' + classes.map(function(c){
+        var taken = c.class_teacher_id && c.class_teacher_id!==s.id;
+        return '<option value="'+c.id+'"'+(c.id===currentClassId?" selected":"")+'>'+esc(classLabel(c))+(taken?' (currently: '+esc(teacherNameById[c.class_teacher_id]||"another teacher")+')':'')+'</option>';
+      }).join("");
       var m=modal('<h3>'+(s.id?"Edit teacher":"Add teacher")+'</h3><div class="grid2">'
         +'<div class="field full"><label>Full name</label><input id="t-name" value="'+esc(s.name||"")+'" placeholder="Jane Wambui"></div>'
         +'<div class="field"><label>Email (used to sign in at /teacher/)</label><input id="t-email" value="'+esc(s.email||"")+'" placeholder="jane@school.ac.ke"></div>'
         +'<div class="field"><label>Phone</label><input id="t-phone" value="'+esc(s.phone||"")+'" placeholder="07XX XXX XXX"></div>'
-        +'</div><p class="muted" style="font-size:12px;margin:12px 0 0;">KRA PIN, ID/payroll number and salary are set in <strong>Payroll → Staff</strong>, linked to this teacher.</p><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
+        +'<div class="field"><label>School position</label><select id="t-position">'
+          +'<option value=""'+(!s.school_position?" selected":"")+'>— Teacher —</option>'
+          +'<option value="principal"'+(s.school_position==="principal"?" selected":"")+'>Principal</option>'
+          +'<option value="deputy_principal"'+(s.school_position==="deputy_principal"?" selected":"")+'>Deputy Principal</option>'
+          +'<option value="dos"'+(s.school_position==="dos"?" selected":"")+'>Director of Studies</option>'
+        +'</select></div>'
+        +'<div class="field full"><label>Class teacher of</label><select id="t-classteacher">'+classOpts+'</select>'
+        +'<p class="muted" style="font-size:11.5px;margin:5px 0 0;">This is the name printed as "Facilitator" on that class\'s report cards, and who records core competencies/values &amp; the overall remark in Report Books.</p></div>'
+        +'</div><p class="muted" style="font-size:12px;margin:12px 0 0;">KRA PIN, ID/payroll number and salary are set in <strong>Payroll → Staff</strong>, linked to this teacher.</p><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>', true);
       m.q("#c").onclick=m.close;
       m.q("#sv").onclick=async function(){
-        var rec={ school_id:schoolId, name:m.q("#t-name").value.trim(), email:m.q("#t-email").value.trim()||null, phone:m.q("#t-phone").value.trim()||null };
+        var rec={ school_id:schoolId, name:m.q("#t-name").value.trim(), email:m.q("#t-email").value.trim()||null, phone:m.q("#t-phone").value.trim()||null,
+          school_position:m.q("#t-position").value||null };
         if(!rec.name){ toast("Name is required."); return; }
-        var r=s.id? await sb.from("teachers").update(rec).eq("id",s.id) : await sb.from("teachers").insert(rec);
+        var selectedClassId = m.q("#t-classteacher").value;
+        if (selectedClassId){
+          var target = classes.find(function(c){ return c.id===selectedClassId; });
+          if (target && target.class_teacher_id && target.class_teacher_id!==s.id){
+            if (!await window.SM_confirm(classLabel(target)+" already has a class teacher. Reassign to "+(rec.name||"this teacher")+"?")) return;
+          }
+        }
+        var r=s.id? await sb.from("teachers").update(rec).eq("id",s.id) : await sb.from("teachers").insert(rec).select().single();
         if(r.error){ toast("Error: "+r.error.message); return; }
+        var teacherId = s.id || (r.data && r.data.id);
+        // Clear this teacher from any OTHER class that previously had them as class
+        // teacher, then set the newly-chosen one (a class has at most one class teacher).
+        var clearFrom = classes.filter(function(c){ return c.class_teacher_id===teacherId && c.id!==selectedClassId; }).map(function(c){ return c.id; });
+        if (clearFrom.length){
+          var clr=await sb.from("school_classes").update({ class_teacher_id:null }).in("id",clearFrom);
+          if(clr.error){ toast("Saved teacher, but couldn't clear previous class-teacher assignment: "+clr.error.message); m.close(); teachersTab(); return; }
+        }
+        if (selectedClassId){
+          var setCt=await sb.from("school_classes").update({ class_teacher_id:teacherId }).eq("id",selectedClassId);
+          if(setCt.error){ toast("Saved teacher, but couldn't set class teacher: "+setCt.error.message); m.close(); teachersTab(); return; }
+        }
+        if (clearFrom.length || selectedClassId) SamajiCache.invalidate("school_classes");
         m.close(); toast("Saved"); teachersTab();
       };
     }
