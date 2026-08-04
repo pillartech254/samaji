@@ -33,7 +33,7 @@
   window.MODULE_META = {
     "module.students":   { name: "Students",         icon: "students",   tint: "#EEF1F5", ink: "#475467", kpi: { label: "Active students",  value: "842" } },
     "module.attendance": { name: "Attendance",       icon: "attendance", tint: "#EEF1F5", ink: "#475467", kpi: { label: "Attendance today", value: "96.4%" } },
-    "module.academics":  { name: "Academics",        icon: "academics",  tint: "#EEF1F5", ink: "#475467" },
+    "module.academics":  { name: "Report Cards",     icon: "academics",  tint: "#EEF1F5", ink: "#475467" },
     "module.messaging":  { name: "Communications",   icon: "messaging",  tint: "#EEF1F5", ink: "#475467" },
     "module.finance":    { name: "Fees & Invoicing", icon: "finance",    tint: "#EEF0FF", ink: "#4F46E5", kpi: { label: "Outstanding fees", value: "$48,200" } },
     "module.exams":      { name: "Exams",            icon: "exams",      tint: "#EEF0FF", ink: "#4F46E5" },

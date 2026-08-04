@@ -158,52 +158,6 @@
   }
 
   // ====================================================
-  //  GRADEBOOK
-  // ====================================================
-  async function renderGradebook(sb, schoolId, el){
-    el.innerHTML='<div class="mod-head"><div><h2>Gradebook</h2><p>Enter and save scores per subject and term.</p></div></div>'
-      +'<div class="toolbar">'
-      +'<div class="field"><label>Term</label><select id="gb-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
-      +'<div class="field"><label>Subject</label><input id="gb-subject" value="Mathematics"></div>'
-      +'<div style="flex:1;"></div><button class="btn-primary" id="gb-load">Load</button><button class="btn-primary indigo" id="gb-save">Save scores</button></div>'
-      +'<div id="gb-table"></div>';
-    var students=[];
-    var sr=await sb.from("students").select("*").eq("school_id",schoolId).eq("status","active").order("first_name");
-    students=sr.data||[];
-    async function load(){
-      var term=document.getElementById("gb-term").value, subj=document.getElementById("gb-subject").value.trim();
-      var existing={};
-      if(subj){
-        var r=await sb.from("grades").select("*").eq("school_id",schoolId).eq("term",term).eq("subject",subj);
-        (r.data||[]).forEach(function(g){ existing[g.student_id]=g.score; });
-      }
-      if(!students.length){ document.getElementById("gb-table").innerHTML='<div class="empty">No active students.</div>'; return; }
-      var html='<table class="data"><thead><tr><th>Name</th><th>Grade</th><th style="text-align:right;">Score / 100</th></tr></thead><tbody>';
-      students.forEach(function(s){
-        var v=existing[s.id]; v=(v==null?"":v);
-        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td><td>'+esc(s.grade||"—")+'</td>'
-          +'<td style="text-align:right;"><input class="score-input" type="number" min="0" max="100" data-stu="'+s.id+'" value="'+v+'"></td></tr>';
-      });
-      html+='</tbody></table>';
-      document.getElementById("gb-table").innerHTML=html;
-    }
-    document.getElementById("gb-load").onclick=load;
-    document.getElementById("gb-save").onclick=async function(){
-      var term=document.getElementById("gb-term").value, subj=document.getElementById("gb-subject").value.trim();
-      if(!subj){ toast("Enter a subject."); return; }
-      var payload=[];
-      document.querySelectorAll(".score-input").forEach(function(inp){
-        if(inp.value!==""){ payload.push({ school_id:schoolId, student_id:inp.getAttribute("data-stu"), subject:subj, term:term, score:Number(inp.value) }); }
-      });
-      if(!payload.length){ toast("Enter at least one score."); return; }
-      var r=await sb.from("grades").upsert(payload,{ onConflict:"student_id,subject,term" });
-      if(r.error){ toast("Error: "+r.error.message); return; }
-      toast("Saved "+payload.length+" scores for "+subj+" · "+term);
-    };
-    load();
-  }
-
-  // ====================================================
   //  FEES / INVOICING
   // ====================================================
   async function renderFees(sb, schoolId, el){
@@ -265,111 +219,6 @@
       };
     };
     load();
-  }
-
-  // ====================================================
-  //  EXAMS  (assessments → results → auto grade)
-  // ====================================================
-  function gradeLetter(pct){ if(pct>=80)return"A"; if(pct>=70)return"B"; if(pct>=60)return"C"; if(pct>=50)return"D"; if(pct>=40)return"E"; return"F"; }
-  function gradeColor(L){ return L==="A"||L==="B"?"green":(L==="C"||L==="D"?"amber":"red"); }
-
-  async function renderExams(sb, schoolId, el){
-    async function list(){
-      el.innerHTML='<div class="mod-head"><div><h2>Exams</h2><p>Create assessments and record results — grades compute automatically.</p></div>'
-        +'<button class="btn-primary" id="ex-new">+ New exam</button></div><div id="ex-table" style="margin-top:18px;"></div>';
-      document.getElementById("ex-new").onclick=function(){ form(); };
-      var r=await sb.from("exams").select("*").eq("school_id",schoolId).order("created_at",{ascending:false});
-      if(r.error){ document.getElementById("ex-table").innerHTML='<div class="empty">'+esc(r.error.message)+'</div>'; return; }
-      var exams=r.data||[];
-      // result counts
-      var counts={};
-      var cr=await sb.from("exam_results").select("exam_id").eq("school_id",schoolId);
-      (cr.data||[]).forEach(function(x){ counts[x.exam_id]=(counts[x.exam_id]||0)+1; });
-      if(!exams.length){ document.getElementById("ex-table").innerHTML='<div class="empty">No exams yet. Click <strong>+ New exam</strong>.</div>'; return; }
-      var html='<table class="data"><thead><tr><th>Exam</th><th>Subject</th><th>Term</th><th>Max</th><th>Date</th><th>Results</th><th></th></tr></thead><tbody>';
-      exams.forEach(function(e){
-        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(e.name)+'</td><td>'+esc(e.subject)+'</td><td>'+esc(e.term)+'</td>'
-          +'<td>'+e.max_score+'</td><td>'+esc(e.exam_date||"—")+'</td><td>'+(counts[e.id]||0)+'</td>'
-          +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-res="'+e.id+'">Enter results</button> <button class="btn-sm danger" data-del="'+e.id+'">Delete</button></td></tr>';
-      });
-      html+='</tbody></table>';
-      var t=document.getElementById("ex-table"); t.innerHTML=html;
-      t.querySelectorAll("[data-res]").forEach(function(b){ b.onclick=function(){ results(exams.find(function(x){return x.id===b.getAttribute("data-res");})); }; });
-      t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){
-        if(!await window.SM_confirm("Delete this exam and its results?"))return;
-        var r=await sb.from("exams").delete().eq("id",b.getAttribute("data-del"));
-        if(r.error){ toast("Error: "+r.error.message); return; } toast("Exam deleted"); list();
-      };});
-    }
-    function form(){
-      var m=modal('<h3>New exam</h3>'
-        +'<div class="grid2">'
-        +'<div class="field full"><label>Exam name</label><input id="e-name" value="Mid-Term Exam"></div>'
-        +'<div class="field"><label>Subject</label><input id="e-subj" value="Mathematics"></div>'
-        +'<div class="field"><label>Term</label><select id="e-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option></select></div>'
-        +'<div class="field"><label>Max score</label><input id="e-max" type="number" value="100"></div>'
-        +'<div class="field"><label>Date</label><input id="e-date" type="date"></div>'
-        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Create</button></div>');
-      m.q("#c").onclick=m.close;
-      m.q("#s").onclick=async function(){
-        var rec={ school_id:schoolId, name:m.q("#e-name").value.trim()||"Exam", subject:m.q("#e-subj").value.trim()||"—",
-          term:m.q("#e-term").value, max_score:Number(m.q("#e-max").value)||100, exam_date:m.q("#e-date").value||null };
-        var r=await sb.from("exams").insert(rec);
-        if(r.error){ toast("Error: "+r.error.message); return; }
-        m.close(); toast("Exam created"); list();
-      };
-    }
-    async function results(ex){
-      el.innerHTML='<div class="mod-head"><div><h2>'+esc(ex.name)+'</h2><p>'+esc(ex.subject)+' · '+esc(ex.term)+' · out of '+ex.max_score+'</p></div>'
-        +'<div style="display:flex;gap:10px;"><button class="btn-sm" id="ex-back">← All exams</button><button class="btn-primary indigo" id="ex-save">Save results</button></div></div>'
-        +'<div id="ex-stats" class="kpis"></div><div id="ex-rtable" style="margin-top:18px;"></div>';
-      document.getElementById("ex-back").onclick=list;
-      var sr=await sb.from("students").select("*").eq("school_id",schoolId).eq("status","active").order("first_name");
-      var students=sr.data||[];
-      var existing={};
-      var er=await sb.from("exam_results").select("*").eq("exam_id",ex.id);
-      (er.data||[]).forEach(function(x){ existing[x.student_id]=x.score; });
-      function draw(){
-        var html='<table class="data"><thead><tr><th>Name</th><th>Grade</th><th style="text-align:right;">Score / '+ex.max_score+'</th><th style="text-align:right;">Grade</th></tr></thead><tbody>';
-        students.forEach(function(s){
-          var v=existing[s.id]; v=(v==null?"":v);
-          var L=v===""?"":gradeLetter(Number(v)/ex.max_score*100);
-          html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td><td>'+esc(s.grade||"—")+'</td>'
-            +'<td style="text-align:right;"><input class="score-input ex-score" type="number" min="0" max="'+ex.max_score+'" data-stu="'+s.id+'" value="'+v+'"></td>'
-            +'<td style="text-align:right;"><span class="pill '+(L?gradeColor(L):"gray")+'" data-grade="'+s.id+'">'+(L||"—")+'</span></td></tr>';
-        });
-        html+='</tbody></table>';
-        if(!students.length) html='<div class="empty">No active students.</div>';
-        document.getElementById("ex-rtable").innerHTML=html;
-        document.querySelectorAll(".ex-score").forEach(function(inp){
-          inp.oninput=function(){
-            var id=inp.getAttribute("data-stu"); var pill=document.querySelector('[data-grade="'+id+'"]');
-            if(inp.value===""){ pill.textContent="—"; pill.className="pill gray"; } else { var L=gradeLetter(Number(inp.value)/ex.max_score*100); pill.textContent=L; pill.className="pill "+gradeColor(L); }
-            stats();
-          };
-        });
-        stats();
-      }
-      function stats(){
-        var vals=[]; document.querySelectorAll(".ex-score").forEach(function(i){ if(i.value!=="")vals.push(Number(i.value)); });
-        var avg=vals.length?(vals.reduce(function(a,b){return a+b;},0)/vals.length):0;
-        var hi=vals.length?Math.max.apply(null,vals):0;
-        document.getElementById("ex-stats").innerHTML=
-          '<div class="panel"><div class="muted" style="font-size:12.5px;">Entered</div><div style="font-size:22px;font-weight:700;margin-top:6px;">'+vals.length+' / '+students.length+'</div></div>'
-          +'<div class="panel"><div class="muted" style="font-size:12.5px;">Class average</div><div style="font-size:22px;font-weight:700;margin-top:6px;">'+(vals.length?avg.toFixed(1):"—")+'</div></div>'
-          +'<div class="panel"><div class="muted" style="font-size:12.5px;">Highest</div><div style="font-size:22px;font-weight:700;margin-top:6px;">'+(vals.length?hi:"—")+'</div></div>';
-      }
-      document.getElementById("ex-save").onclick=async function(){
-        var payload=[];
-        document.querySelectorAll(".ex-score").forEach(function(inp){ if(inp.value!=="") payload.push({ school_id:schoolId, exam_id:ex.id, student_id:inp.getAttribute("data-stu"), score:Number(inp.value) }); });
-        if(!payload.length){ toast("Enter at least one score."); return; }
-        var r=await sb.from("exam_results").upsert(payload,{ onConflict:"exam_id,student_id" });
-        if(r.error){ toast("Error: "+r.error.message); return; }
-        toast("Saved "+payload.length+" results");
-      };
-      draw();
-    }
-    list();
   }
 
   // ====================================================
@@ -1290,17 +1139,20 @@
   function placeholder(name){
     return async function(sb, schoolId, el){
       el.innerHTML='<div class="mod-head"><div><h2>'+esc(name)+'</h2><p>This licensed module is on the build roadmap.</p></div></div>'
-        +'<div class="empty" style="margin-top:18px;">The <strong>'+esc(name)+'</strong> workspace is licensed and routed here.<br>Its internal screens are being built next — Students, Attendance, Gradebook and Fees are live now.</div>';
+        +'<div class="empty" style="margin-top:18px;">The <strong>'+esc(name)+'</strong> workspace is licensed and routed here.<br>Its internal screens are being built next — Students, Attendance, Report Cards and Fees are live now.</div>';
     };
   }
 
   window.SchoolModules = {
     "module.students":   renderStudents,
     "module.attendance": renderAttendance,
-    "module.academics":  renderGradebook,
+    // "module.academics" (Report Cards) and "module.exams" (Exam
+    // Announcements) are registered by assets/school-academics.js,
+    // loaded right after this file — they need the shared CBC engine
+    // (assets/academics-core.js) that the old Gradebook/Exams screens
+    // never used.
     "module.finance":    renderFees,
     "module.messaging":  renderCommunications,
-    "module.exams":      renderExams,
     "module.timetable":  renderTimetable,
     "module.library":    renderLibrary,
     "module.transport":  renderTransport,
