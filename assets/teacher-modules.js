@@ -60,97 +60,17 @@
     return out.sort(function(x,y){ return classLabel(x) < classLabel(y) ? -1 : 1; });
   }
 
-  // Shared by the live Report Books preview and the Publish Results screen's
-  // "Generate Report Cards" action, so both compute grades exactly the same
-  // way. onlyPublished=true restricts to mark sheets a Principal/Deputy has
-  // actually published — used when freezing an official snapshot.
-  async function fetchClassReportData(sb, ctx, cls, year, term, allTypes, schemes, onlyPublished){
-    var termsUpTo = year.terms.filter(function(x){ return x.sort<=term.sort; });
-
-    var csr = await sb.from("class_subjects").select("subjects(id,name)").eq("class_id",cls.id);
-    var subjects = (csr.data||[]).map(function(x){ return x.subjects; }).filter(Boolean).sort(function(a,b){ return a.name<b.name?-1:1; });
-
-    var sr = await sb.from("students").select("*").eq("school_id",ctx.schoolId).eq("class_id",cls.id).eq("status","active").order("first_name");
-    var students = sr.data||[];
-    var studentIds = students.map(function(s){ return s.id; });
-
-    var types = window.SamajiGrading.typesForGrade(allTypes, cls.level);
-    var scheme = window.SamajiGrading.schemeForGrade(schemes, cls.level);
-    var levels = scheme ? (scheme.grading_levels||[]) : [];
-
-    var msQ = sb.from("mark_sheets").select("*").eq("class_id",cls.id).eq("academic_year_id",year.id);
-    if (onlyPublished) msQ = msQ.eq("status","published");
-    var msRes = await msQ;
-    var markSheets = msRes.data||[];
-    var msByKey = {}; markSheets.forEach(function(m){ msByKey[m.subject_id+"|"+m.term_id]=m.id; });
-    var msIds = markSheets.map(function(m){ return m.id; });
-
-    var examsByMs = {}, typeByExam = {};
-    if (msIds.length){
-      var exRes = await sb.from("exams").select("id,mark_sheet_id,assessment_type_id").in("mark_sheet_id",msIds);
-      (exRes.data||[]).forEach(function(e){ (examsByMs[e.mark_sheet_id]=examsByMs[e.mark_sheet_id]||[]).push(e); typeByExam[e.id]=e.assessment_type_id; });
-    }
-    var resultsByExam = {};
-    var allExamIds = Object.keys(typeByExam);
-    if (allExamIds.length && studentIds.length){
-      var resRes = await sb.from("exam_results").select("exam_id,student_id,score").in("exam_id",allExamIds).in("student_id",studentIds);
-      (resRes.data||[]).forEach(function(r){ (resultsByExam[r.exam_id]=resultsByExam[r.exam_id]||{})[r.student_id]=r.score; });
-    }
-    function termScoreFor(subjectId, termId2, studentId){
-      var msId = msByKey[subjectId+"|"+termId2];
-      if (!msId) return null;
-      var exams = examsByMs[msId]||[];
-      var scoreArr = exams.map(function(e){ return { assessment_type_id:e.assessment_type_id, score:(resultsByExam[e.id]||{})[studentId] }; });
-      return window.SamajiGrading.weightedTotal(scoreArr, types);
-    }
-
-    var ratingsByStudent = {};
-    if (studentIds.length){
-      var ratingsRes = await sb.from("learner_ratings").select("*").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
-      (ratingsRes.data||[]).forEach(function(r){
-        ratingsByStudent[r.student_id] = ratingsByStudent[r.student_id] || { competency:{}, value:{}, psychomotor:{} };
-        ratingsByStudent[r.student_id][r.category][r.item_name] = r.level_code;
-      });
-    }
-    var remarksByStudent = {};
-    if (studentIds.length){
-      var remarksRes = await sb.from("report_remarks").select("*").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
-      (remarksRes.data||[]).forEach(function(r){ remarksByStudent[r.student_id]=r; });
-    }
-    var attByStudent = {};
-    if (studentIds.length){
-      var attQ = sb.from("attendance").select("student_id,status,on_date").eq("school_id",ctx.schoolId).in("student_id",studentIds);
-      if (term.start_date) attQ = attQ.gte("on_date",term.start_date);
-      if (term.end_date) attQ = attQ.lte("on_date",term.end_date);
-      var attRes = await attQ;
-      (attRes.data||[]).forEach(function(a){
-        attByStudent[a.student_id] = attByStudent[a.student_id] || { daysOpen:0, daysPresent:0, daysAbsent:0 };
-        attByStudent[a.student_id].daysOpen++;
-        if (a.status==="present") attByStudent[a.student_id].daysPresent++;
-        else if (a.status==="absent") attByStudent[a.student_id].daysAbsent++;
-      });
-    }
-
-    return { cls:cls, year:year, term:term, termsUpTo:termsUpTo, subjects:subjects, students:students, types:types, scheme:scheme, levels:levels,
-      termScoreFor:termScoreFor, ratingsByStudent:ratingsByStudent, remarksByStudent:remarksByStudent, attByStudent:attByStudent };
+  // The Teacher Portal and School Portal both call assets/academics-core.js
+  // for grading/report-card math — same engine, no drift between "what a
+  // teacher entered" and "what the admin sees on a report card". Thin
+  // wrappers here just adapt ctx.schoolId -> the shared functions' schoolId param.
+  function fetchClassReportData(sb, ctx, cls, year, term, allTypes, schemes, onlyPublished){
+    return window.SamajiAcademics.fetchClassReportData(sb, ctx.schoolId, cls, year, term, allTypes, schemes, onlyPublished);
   }
-
-  // Pure: turns one student's per-term scores into the subjectRows shape
-  // assets/report-card.js expects (also used to build a frozen snapshot).
-  function computeSubjectRows(data, studentId){
-    return data.subjects.map(function(sub){
-      var termScores = data.termsUpTo.map(function(t){ return data.termScoreFor(sub.id, t.id, studentId); });
-      var valid = termScores.filter(function(v){ return v!=null; });
-      var average = valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
-      var lvl = average==null ? null : window.SamajiGrading.levelFor(data.levels, average);
-      return { name:sub.name, termScores:termScores, termNames:data.termsUpTo.map(function(t){ return t.name; }),
-        average:average, gradeLabel: lvl && lvl.grade_label, competencyCode: lvl && lvl.competency_code, remark: lvl && lvl.remark };
-    });
-  }
-  function overallAverageOf(rows){
-    var valid = rows.map(function(r){ return r.average; }).filter(function(v){ return v!=null; });
-    return valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
-  }
+  var computeSubjectRows = function(data, studentId){ return window.SamajiAcademics.computeSubjectRows(data, studentId); };
+  var subjectAvgPercent  = function(data, sub, studentId){ return window.SamajiAcademics.subjectAvgPercent(data, sub, studentId); };
+  var testSummaryFor     = function(data, studentId){ return window.SamajiAcademics.testSummaryFor(data, studentId); };
+  var overallFromSummary = function(summary){ return window.SamajiAcademics.overallFromSummary(summary); };
 
   // ====================================================
   //  DASHBOARD
@@ -257,32 +177,30 @@
   //  Total/Grade are computed live via assets/grading.js as the teacher
   //  types, then saved as mark_sheets + exams + exam_results.
   // ====================================================
+  // Teachers can only ever record marks against exams the school admin has
+  // already announced (Exam Announcements, in the School Portal) — this
+  // screen never creates a mark_sheet or exam row itself, only reads what
+  // exists and writes exam_results. RLS enforces the same rule server-side.
   async function renderGrading(sb, ctx, el){
     var assignments = await loadMyAssignments(sb, ctx);
     if (!assignments.length){ el.innerHTML='<div class="mod-head"><div><h2>Marks &amp; Grading</h2></div></div><div class="empty">No classes/subjects assigned yet. Ask your school admin to assign you in Settings.</div>'; return; }
     var pairs = assignments.filter(function(a){ return a.school_classes && a.subjects; });
     if (!pairs.length){ el.innerHTML='<div class="mod-head"><div><h2>Marks &amp; Grading</h2></div></div><div class="empty">No subjects assigned yet. Ask your school admin to assign you in Settings.</div>'; return; }
 
-    var ayRes = await sb.from("academic_years").select("*, terms(*)").eq("school_id",ctx.schoolId).order("year",{ascending:false});
-    var years = ayRes.data||[];
+    var academic = await window.SamajiAcademics.loadAcademicContext(sb, ctx.schoolId);
+    var years = academic.years, allTypes = academic.allTypes, schemes = academic.schemes;
     if (!years.length){ el.innerHTML='<div class="mod-head"><div><h2>Marks &amp; Grading</h2></div></div><div class="empty">No academic year set up yet. Ask your school admin to set one up in Settings → CBC Assessment.</div>'; return; }
-    years.forEach(function(y){ y.terms = (y.terms||[]).slice().sort(function(a,b){ return a.sort-b.sort; }); });
 
-    var atRes = await sb.from("assessment_types").select("*").eq("school_id",ctx.schoolId).order("name");
-    var allTypes = atRes.data||[];
-    var schemeRes = await sb.from("grading_schemes").select("*, grading_levels(*)").eq("school_id",ctx.schoolId);
-    var schemes = schemeRes.data||[];
+    var defaultYear = academic.defaultYear;
+    var defaultTerm = academic.defaultTerm;
 
-    var defaultYear = years.find(function(y){ return y.status==="active"; }) || years[0];
-    var defaultTerm = defaultYear.terms.find(function(t){ return t.status==="active"; }) || defaultYear.terms[0];
-
-    el.innerHTML = '<div class="mod-head"><div><h2>Marks &amp; Grading</h2><p>Enter scores per assessment type — the weighted total and grade update automatically.</p></div></div>'
+    el.innerHTML = '<div class="mod-head"><div><h2>Marks &amp; Grading</h2><p>Enter scores for the exams your school admin has announced — the weighted total and grade update automatically.</p></div></div>'
       + '<div class="toolbar">'
       + '<div class="field"><label>Class &amp; subject</label><select id="gb-pair">'+pairs.map(function(a,i){ return '<option value="'+i+'">'+esc(classLabel(a.school_classes))+' — '+esc(a.subjects.name)+'</option>'; }).join("")+'</select></div>'
       + '<div class="field"><label>Academic year</label><select id="gb-year">'+years.map(function(y){ return '<option value="'+y.id+'"'+(y.id===defaultYear.id?" selected":"")+'>'+y.year+'</option>'; }).join("")+'</select></div>'
       + '<div class="field"><label>Term</label><select id="gb-term"></select></div>'
       + '<div style="flex:1;"></div><button class="btn-primary indigo" id="gb-save">Save scores</button></div>'
-      + '<div id="gb-grid"></div>';
+      + '<div id="gb-banner"></div><div id="gb-grid"></div>';
 
     function populateTerms(){
       var year = years.find(function(y){ return y.id===document.getElementById("gb-year").value; });
@@ -292,7 +210,7 @@
     }
     populateTerms();
 
-    var state = { pair:null, year:null, term:null, students:[], types:[], scheme:null, markSheet:null, scores:{} };
+    var state = { pair:null, year:null, term:null, students:[], types:[], scheme:null, markSheet:null, examByType:{}, scores:{}, editable:false };
 
     async function load(){
       var pair = pairs[Number(document.getElementById("gb-pair").value)];
@@ -300,31 +218,37 @@
       var termId = document.getElementById("gb-term").value;
       var term = termId ? year.terms.find(function(t){ return t.id===termId; }) : null;
       var grid = document.getElementById("gb-grid");
+      $set("gb-banner","");
       if (!term){ grid.innerHTML='<div class="empty">This academic year has no terms yet.</div>'; return; }
 
-      var classLevel = pair.school_classes.level;
-      var types = window.SamajiGrading.typesForGrade(allTypes, classLevel);
-      var scheme = window.SamajiGrading.schemeForGrade(schemes, classLevel);
+      var scheme = window.SamajiGrading.schemeForGrade(schemes, pair.school_classes.level);
 
       var stuRes = await sb.from("students").select("*").eq("school_id",ctx.schoolId).eq("class_id",pair.class_id).eq("status","active").order("first_name");
       var students = stuRes.data||[];
 
-      var scores = {};
       var msRes = await sb.from("mark_sheets").select("*").eq("class_id",pair.class_id).eq("subject_id",pair.subject_id).eq("term_id",term.id).eq("academic_year_id",year.id).maybeSingle();
       var markSheet = msRes.data;
-      if (markSheet && students.length){
+      var types = [], examByType = {}, scores = {};
+      if (markSheet){
         var exRes = await sb.from("exams").select("id,assessment_type_id").eq("mark_sheet_id",markSheet.id);
         var exams = exRes.data||[];
-        if (exams.length){
-          var typeByExam = {}; exams.forEach(function(e){ typeByExam[e.id]=e.assessment_type_id; });
+        types = exams.map(function(e){ var t = allTypes.find(function(x){ return x.id===e.assessment_type_id; }); return t ? Object.assign({}, t, { examId:e.id }) : null; })
+          .filter(Boolean).sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
+        types.forEach(function(t){ examByType[t.id]=t.examId; });
+        if (exams.length && students.length){
           var resRes = await sb.from("exam_results").select("*").in("exam_id",exams.map(function(e){return e.id;}));
+          var typeByExam = {}; exams.forEach(function(e){ typeByExam[e.id]=e.assessment_type_id; });
           (resRes.data||[]).forEach(function(r){
             scores[r.student_id] = scores[r.student_id] || {};
             scores[r.student_id][typeByExam[r.exam_id]] = r.score;
           });
         }
       }
-      state = { pair:pair, year:year, term:term, students:students, types:types, scheme:scheme, markSheet:markSheet, scores:scores };
+      var editable = !!markSheet && markSheet.status==="draft";
+      state = { pair:pair, year:year, term:term, students:students, types:types, scheme:scheme, markSheet:markSheet, examByType:examByType, scores:scores, editable:editable };
+      if (markSheet && !editable){
+        $set("gb-banner", '<div class="empty" style="margin-bottom:12px;">This exam has been <strong>'+esc(markSheet.status)+'</strong> — marks are read-only. Ask your school admin/principal to unpublish it first if a correction is needed.</div>');
+      }
       draw();
     }
 
@@ -344,8 +268,13 @@
 
     function draw(){
       var grid = document.getElementById("gb-grid");
+      document.getElementById("gb-save").style.display = state.editable ? "" : "none";
       if (!state.students.length){ grid.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
-      if (!state.types.length){ grid.innerHTML='<div class="empty">No assessment types configured for '+esc(state.pair.school_classes.level)+' yet. Ask your school admin to add some in Settings → CBC Assessment.</div>'; return; }
+      if (!state.types.length){
+        grid.innerHTML='<div class="empty">No exam has been announced for '+esc(state.pair.subjects.name)+' — '+esc(classLabel(state.pair.school_classes))+' this term yet.'
+          + ' Only your school admin can announce an exam (Exams → Exam Announcements) — once they do, it will appear here for you to record marks against.</div>';
+        return;
+      }
       var html='<div style="overflow-x:auto;"><table class="data" style="min-width:'+(480+state.types.length*100)+'px;"><thead><tr><th>Name</th>'
         + state.types.map(function(t){ return '<th style="text-align:right;">'+esc(t.name)+'<div class="muted" style="font-size:10px;font-weight:500;">/'+t.max_marks+' · '+t.weight_percent+'%</div></th>'; }).join("")
         + '<th style="text-align:right;">Total</th><th>Grade</th></tr></thead><tbody>';
@@ -353,12 +282,13 @@
         var row = state.scores[s.id]||{};
         var tl = rowTotalAndLevel(s.id);
         html+='<tr data-row="'+s.id+'"><td style="font-weight:600;color:#1A1D26;white-space:nowrap;">'+esc(s.first_name+" "+s.last_name)+'</td>'
-          + state.types.map(function(t){ var v=row[t.id]; return '<td style="text-align:right;"><input class="gb-score" type="number" min="0" max="'+t.max_marks+'" data-stu="'+s.id+'" data-type="'+t.id+'" value="'+(v!=null?v:"")+'" style="width:64px;text-align:right;"></td>'; }).join("")
+          + state.types.map(function(t){ var v=row[t.id]; return '<td style="text-align:right;"><input class="gb-score" type="number" min="0" max="'+t.max_marks+'" data-stu="'+s.id+'" data-type="'+t.id+'" value="'+(v!=null?v:"")+'"'+(state.editable?"":" disabled")+' style="width:64px;text-align:right;"></td>'; }).join("")
           + '<td class="gb-total" style="text-align:right;font-weight:700;">'+(tl.total==null?'<span class="muted">—</span>':tl.total)+'</td>'
           + '<td class="gb-grade">'+badgeHTML(tl.lvl)+'</td></tr>';
       });
       html+='</tbody></table></div>';
       grid.innerHTML = html;
+      if (!state.editable) return;
       grid.querySelectorAll(".gb-score").forEach(function(inp){
         inp.oninput = function(){
           var sid = inp.getAttribute("data-stu"), tid = inp.getAttribute("data-type");
@@ -376,30 +306,12 @@
     document.getElementById("gb-year").onchange=function(){ populateTerms(); load(); };
     document.getElementById("gb-term").onchange=load;
     document.getElementById("gb-save").onclick=async function(){
-      if (!state.students.length || !state.types.length) return;
-      var markSheet = state.markSheet;
-      if (!markSheet){
-        var ins = await sb.from("mark_sheets").insert({ school_id:ctx.schoolId, class_id:state.pair.class_id, subject_id:state.pair.subject_id,
-          term_id:state.term.id, academic_year_id:state.year.id, teacher_id:ctx.teacher.id, status:"draft" }).select().single();
-        if (ins.error){ toast("Error: "+ins.error.message); return; }
-        markSheet = ins.data; state.markSheet = markSheet;
-      }
-      var exRes = await sb.from("exams").select("id,assessment_type_id").eq("mark_sheet_id",markSheet.id);
-      var examByType = {}; (exRes.data||[]).forEach(function(e){ examByType[e.assessment_type_id]=e.id; });
-      var missing = state.types.filter(function(t){ return !examByType[t.id]; });
-      if (missing.length){
-        var newExams = missing.map(function(t){ return { school_id:ctx.schoolId, name:t.name, subject:state.pair.subjects.name, subject_id:state.pair.subject_id,
-          class_id:state.pair.class_id, teacher_id:ctx.teacher.id, term:state.term.name, term_id:state.term.id, academic_year_id:state.year.id,
-          max_score:t.max_marks, mark_sheet_id:markSheet.id, assessment_type_id:t.id }; });
-        var insEx = await sb.from("exams").insert(newExams).select();
-        if (insEx.error){ toast("Error: "+insEx.error.message); return; }
-        (insEx.data||[]).forEach(function(e){ examByType[e.assessment_type_id]=e.id; });
-      }
+      if (!state.editable || !state.students.length || !state.types.length) return;
       var levels = state.scheme ? (state.scheme.grading_levels||[]) : [];
       var payload = [];
       document.querySelectorAll(".gb-score").forEach(function(inp){
         if (inp.value==="") return;
-        var tid=inp.getAttribute("data-type"), sid=inp.getAttribute("data-stu"), examId=examByType[tid];
+        var tid=inp.getAttribute("data-type"), sid=inp.getAttribute("data-stu"), examId=state.examByType[tid];
         if (!examId) return;
         var type = state.types.find(function(t){ return t.id===tid; });
         var score = Number(inp.value);
@@ -418,8 +330,8 @@
   }
 
   // ====================================================
-  //  REPORT BOOKS  (real KICD-style colored report cards, built from
-  //  Marks & Grading's weighted totals + learner ratings/remarks)
+  //  REPORT BOOKS  (Ministry of Education-style summative report cards,
+  //  built directly from Marks & Grading's per-test scores)
   // ====================================================
   async function renderReportBooks(sb, ctx, el){
     var assignments = await loadMyAssignments(sb, ctx);
@@ -429,20 +341,12 @@
     classes.sort(function(a,b){ return classLabel(a) < classLabel(b) ? -1 : 1; });
     if (!classes.length){ el.innerHTML='<div class="mod-head"><div><h2>Report Books</h2></div></div><div class="empty">No classes assigned yet. Ask your school admin to assign you in Settings.</div>'; return; }
 
-    var ayRes = await sb.from("academic_years").select("*, terms(*)").eq("school_id",ctx.schoolId).order("year",{ascending:false});
-    var years = ayRes.data||[];
+    var academic = await window.SamajiAcademics.loadAcademicContext(sb, ctx.schoolId);
+    var years = academic.years, allTypes = academic.allTypes, schemes = academic.schemes, teacherNameById = academic.teacherNameById;
     if (!years.length){ el.innerHTML='<div class="mod-head"><div><h2>Report Books</h2></div></div><div class="empty">No academic year set up yet. Ask your school admin to set one up in Settings → CBC Assessment.</div>'; return; }
-    years.forEach(function(y){ y.terms=(y.terms||[]).slice().sort(function(a,b){return a.sort-b.sort;}); });
 
-    var atRes = await sb.from("assessment_types").select("*").eq("school_id",ctx.schoolId);
-    var allTypes = atRes.data||[];
-    var schemeRes = await sb.from("grading_schemes").select("*, grading_levels(*)").eq("school_id",ctx.schoolId);
-    var schemes = schemeRes.data||[];
-    var teachersRes = await sb.from("teachers").select("id,name").eq("school_id",ctx.schoolId);
-    var teacherNameById = {}; (teachersRes.data||[]).forEach(function(t){ teacherNameById[t.id]=t.name; });
-
-    var defaultYear = years.find(function(y){ return y.status==="active"; }) || years[0];
-    var defaultTerm = defaultYear.terms.find(function(t){ return t.status==="active"; }) || defaultYear.terms[defaultYear.terms.length-1];
+    var defaultYear = academic.defaultYear;
+    var defaultTerm = academic.defaultTerm;
     var isPublisherRole = ctx.teacher.school_position==="principal" || ctx.teacher.school_position==="deputy_principal";
 
     el.innerHTML = '<div class="mod-head"><div><h2>Report Books</h2><p>Real, colored CBC report cards — pulling live from Marks &amp; Grading.</p></div><button class="btn-primary" id="rb-print">Print all</button></div>'
@@ -460,8 +364,8 @@
     }
     populateTerms();
 
-    var current = { cls:null, year:null, term:null, termsUpTo:[], students:[], subjects:[], types:[], scheme:null, levels:[],
-      termScoreFor:function(){ return null; }, ratingsByStudent:{}, remarksByStudent:{}, attByStudent:{}, isClassTeacher:false, isPublisher:false };
+    var current = { cls:null, year:null, term:null, students:[], subjects:[], types:[], scheme:null, levels:[],
+      percentFor:function(){ return null; }, ratingsByStudent:{}, remarksByStudent:{}, attByStudent:{}, isClassTeacher:false, isPublisher:false };
 
     async function load(){
       var classId = document.getElementById("rb-class").value;
@@ -473,8 +377,8 @@
       if (!term){ t.innerHTML='<div class="empty">This academic year has no terms yet.</div>'; return; }
 
       var data = await fetchClassReportData(sb, ctx, cls, year, term, allTypes, schemes, false);
-      current = { cls:cls, year:year, term:term, termsUpTo:data.termsUpTo, subjects:data.subjects, students:data.students, types:data.types,
-        scheme:data.scheme, levels:data.levels, termScoreFor:data.termScoreFor, ratingsByStudent:data.ratingsByStudent,
+      current = { cls:cls, year:year, term:term, subjects:data.subjects, students:data.students, types:data.types,
+        scheme:data.scheme, levels:data.levels, percentFor:data.percentFor, ratingsByStudent:data.ratingsByStudent,
         remarksByStudent:data.remarksByStudent, attByStudent:data.attByStudent,
         isClassTeacher: cls.class_teacher_id===ctx.teacher.id, isPublisher: isPublisherRole };
       draw();
@@ -486,14 +390,13 @@
       var t=document.getElementById("rb-table");
       if (!current.students.length){ t.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
       if (!current.subjects.length){ t.innerHTML='<div class="empty">No subjects assigned to this class yet — set them in Settings → Classes.</div>'; return; }
-      var html='<table class="data"><thead><tr><th>Name</th>'+current.subjects.map(function(s){ return '<th style="text-align:right;">'+esc(s.name)+'</th>'; }).join("")+'<th style="text-align:right;">Overall Avg</th><th></th></tr></thead><tbody>';
+      var html='<table class="data"><thead><tr><th>Name</th>'+current.subjects.map(function(s){ return '<th style="text-align:right;">'+esc(s.name)+'</th>'; }).join("")+'<th style="text-align:right;">Overall %</th><th></th></tr></thead><tbody>';
       current.students.forEach(function(s){
-        var rows = subjectRowsFor(s.id);
-        var valid = rows.map(function(r){ return r.average; }).filter(function(v){ return v!=null; });
-        var overall = valid.length ? Math.round((valid.reduce(function(a,b){ return a+b; },0)/valid.length)*10)/10 : null;
+        var summary = testSummaryFor(current, s.id);
+        var overall = overallFromSummary(summary);
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
-          + rows.map(function(r){ return '<td style="text-align:right;">'+(r.average==null?'<span class="muted">—</span>':r.average)+'</td>'; }).join("")
-          + '<td style="text-align:right;font-weight:700;">'+(overall==null?'<span class="muted">—</span>':overall)+'</td>'
+          + current.subjects.map(function(sub){ var v=subjectAvgPercent(current, sub, s.id); return '<td style="text-align:right;">'+(v==null?'<span class="muted">—</span>':v+"%")+'</td>'; }).join("")
+          + '<td style="text-align:right;font-weight:700;">'+(overall==null?'<span class="muted">—</span>':overall+"%")+'</td>'
           + '<td style="text-align:right;white-space:nowrap;">'+((current.isClassTeacher||current.isPublisher)?'<button class="btn-sm" data-rate="'+s.id+'">Ratings &amp; Remarks</button> ':'')+'<button class="btn-sm" data-print="'+s.id+'">Print</button></td></tr>';
       });
       html+='</tbody></table>';
@@ -542,19 +445,14 @@
     }
 
     function reportOpts(s){
-      return { school:ctx.school, student:s, classLabel:classLabel(current.cls), classTeacherName: teacherNameById[current.cls.class_teacher_id]||"—",
-        term:current.term, academicYear:current.year, subjectRows:subjectRowsFor(s.id), levels:current.levels, attendance:current.attByStudent[s.id],
-        ratings:current.ratingsByStudent[s.id]||{}, teacherRemark:(current.remarksByStudent[s.id]||{}).teacher_remark, principalRemark:(current.remarksByStudent[s.id]||{}).principal_remark,
-        published:false };
+      return window.SamajiAcademics.buildLiveReportOpts(ctx.school, s, current.cls, current.term, current.year, current,
+        teacherNameById[current.cls.class_teacher_id], (current.remarksByStudent[s.id]||{}).teacher_remark);
     }
     // If Principal/Deputy has already generated (frozen) this student's report for this
     // term, print exactly that snapshot — never the live marks — so a reprint always
     // matches what was originally issued even if marks changed afterwards.
     function snapshotOpts(d, s){
-      return { school:ctx.school, student:s, classLabel:d.class_label||classLabel(current.cls), classTeacherName:d.class_teacher_name||"—",
-        term:current.term, academicYear:current.year, subjectRows:d.subject_rows||[], levels:current.levels,
-        attendance:d.attendance, ratings:d.ratings||{}, teacherRemark:d.teacher_remark, principalRemark:d.principal_remark,
-        published:true, publishedAt:d.published_at };
+      return window.SamajiAcademics.buildSnapshotReportOpts(ctx.school, s, d, current.cls, current.term, current.year, current.levels);
     }
     async function printOne(s){
       var snapRes = await sb.from("report_cards").select("*").eq("student_id",s.id).eq("term_id",current.term.id).eq("academic_year_id",current.year.id).maybeSingle();
@@ -651,19 +549,12 @@
     var gen = document.getElementById("pub-generate");
     var clsRes = await sb.from("school_classes").select("*").eq("school_id",ctx.schoolId);
     var classes = (clsRes.data||[]).slice().sort(function(a,b){ return classLabel(a) < classLabel(b) ? -1 : 1; });
-    var ayRes = await sb.from("academic_years").select("*, terms(*)").eq("school_id",ctx.schoolId).order("year",{ascending:false});
-    var years = ayRes.data||[];
-    years.forEach(function(y){ y.terms=(y.terms||[]).slice().sort(function(a,b){return a.sort-b.sort;}); });
+    var academic = await window.SamajiAcademics.loadAcademicContext(sb, ctx.schoolId);
+    var years = academic.years, allTypes = academic.allTypes, schemes = academic.schemes, teacherNameById = academic.teacherNameById;
     if (!classes.length || !years.length){ gen.innerHTML=""; return; }
 
-    var atRes = await sb.from("assessment_types").select("*").eq("school_id",ctx.schoolId);
-    var allTypes = atRes.data||[];
-    var schemeRes = await sb.from("grading_schemes").select("*, grading_levels(*)").eq("school_id",ctx.schoolId);
-    var schemes = schemeRes.data||[];
-    var teachersRes = await sb.from("teachers").select("id,name").eq("school_id",ctx.schoolId);
-    var teacherNameById = {}; (teachersRes.data||[]).forEach(function(t){ teacherNameById[t.id]=t.name; });
-    var defaultYear = years.find(function(y){ return y.status==="active"; }) || years[0];
-    var defaultTerm = defaultYear.terms.find(function(t){ return t.status==="active"; }) || defaultYear.terms[defaultYear.terms.length-1];
+    var defaultYear = academic.defaultYear;
+    var defaultTerm = academic.defaultTerm;
 
     gen.innerHTML = '<div class="mod-head" style="margin-top:22px;"><div><h3 style="margin:0;">Generate Report Cards</h3>'
       + '<p class="muted" style="margin:4px 0 0;font-size:12.5px;">Freezes every learner\'s report in the chosen class &amp; term from currently published marks. Re-running overwrites the previous snapshot.</p></div></div>'
@@ -691,20 +582,10 @@
       var status = document.getElementById("gen-status");
       if (!term){ status.textContent="This academic year has no terms yet."; return; }
       status.textContent="Generating…";
-      var data = await fetchClassReportData(sb, ctx, cls, year, term, allTypes, schemes, true);
-      if (!data.students.length){ status.textContent="No active students in this class."; return; }
-      var rows = data.students.map(function(s){
-        var subjectRows = computeSubjectRows(data, s.id);
-        var remark = data.remarksByStudent[s.id]||{};
-        return { school_id:ctx.schoolId, student_id:s.id, class_id:cls.id, term_id:term.id, academic_year_id:year.id,
-          class_label: classLabel(cls), class_teacher_name: teacherNameById[cls.class_teacher_id]||null,
-          subject_rows: subjectRows, attendance: data.attByStudent[s.id]||null, ratings: data.ratingsByStudent[s.id]||null,
-          overall_average: overallAverageOf(subjectRows), teacher_remark: remark.teacher_remark||null, principal_remark: remark.principal_remark||null,
-          published_at: new Date().toISOString(), published_by: ctx.teacher.id };
-      });
-      var res = await sb.from("report_cards").upsert(rows, { onConflict:"student_id,term_id,academic_year_id" });
+      var res = await window.SamajiAcademics.generateReportCards(sb, ctx.schoolId, cls, year, term, allTypes, schemes, teacherNameById, ctx.teacher.id);
       if (res.error){ status.textContent="Error: "+res.error.message; return; }
-      status.textContent="Generated "+rows.length+" report card(s) for "+classLabel(cls)+" — "+term.name+" "+year.year+".";
+      if (!res.count){ status.textContent="No active students in this class."; return; }
+      status.textContent="Generated "+res.count+" report card(s) for "+classLabel(cls)+" — "+term.name+" "+year.year+".";
       toast("Report cards generated");
     };
   }
