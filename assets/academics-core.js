@@ -54,7 +54,7 @@
     var csr = await sb.from("class_subjects").select("subjects(id,name)").eq("class_id",cls.id);
     var subjects = (csr.data||[]).map(function(x){ return x.subjects; }).filter(Boolean).sort(function(a,b){ return a.name<b.name?-1:1; });
 
-    var sr = await sb.from("students").select("*").eq("school_id",schoolId).eq("class_id",cls.id).eq("status","active").order("first_name");
+    var sr = await sb.from("students").select("id,first_name,last_name,admission_no").eq("school_id",schoolId).eq("class_id",cls.id).eq("status","active").order("first_name");
     var students = sr.data||[];
     var studentIds = students.map(function(s){ return s.id; });
 
@@ -63,12 +63,11 @@
     var scheme = window.SamajiGrading.schemeForGrade(schemes, cls.level);
     var levels = scheme ? (scheme.grading_levels||[]) : [];
 
-    var msQ = sb.from("mark_sheets").select("*").eq("class_id",cls.id).eq("term_id",term.id).eq("academic_year_id",year.id);
+    var msQ = sb.from("mark_sheets").select("id,subject_id").eq("class_id",cls.id).eq("term_id",term.id).eq("academic_year_id",year.id);
     if (onlyPublished) msQ = msQ.eq("status","published");
     var msRes = await msQ;
     var markSheets = msRes.data||[];
     var msBySubject = {}; markSheets.forEach(function(m){ msBySubject[m.subject_id]=m.id; });
-    var msById = {}; markSheets.forEach(function(m){ msById[m.id]=m; });
     var msIds = markSheets.map(function(m){ return m.id; });
 
     var examsByMs = {};
@@ -102,7 +101,7 @@
 
     var ratingsByStudent = {};
     if (studentIds.length){
-      var ratingsRes = await sb.from("learner_ratings").select("*").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
+      var ratingsRes = await sb.from("learner_ratings").select("student_id,category,item_name,level_code").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
       (ratingsRes.data||[]).forEach(function(r){
         ratingsByStudent[r.student_id] = ratingsByStudent[r.student_id] || { competency:{}, value:{}, psychomotor:{} };
         ratingsByStudent[r.student_id][r.category][r.item_name] = r.level_code;
@@ -110,7 +109,7 @@
     }
     var remarksByStudent = {};
     if (studentIds.length){
-      var remarksRes = await sb.from("report_remarks").select("*").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
+      var remarksRes = await sb.from("report_remarks").select("student_id,teacher_remark,principal_remark").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
       (remarksRes.data||[]).forEach(function(r){ remarksByStudent[r.student_id]=r; });
     }
     var attByStudent = {};
@@ -128,8 +127,7 @@
     }
 
     return { cls:cls, year:year, term:term, subjects:subjects, students:students, types:types, scheme:scheme, levels:levels,
-      percentFor:percentFor, markSheets:markSheets, msBySubject:msBySubject, msById:msById,
-      ratingsByStudent:ratingsByStudent, remarksByStudent:remarksByStudent, attByStudent:attByStudent };
+      percentFor:percentFor, ratingsByStudent:ratingsByStudent, remarksByStudent:remarksByStudent, attByStudent:attByStudent };
   }
 
   // Pure: turns one student's per-test scores into the subjectRows shape

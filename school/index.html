@@ -133,13 +133,15 @@
 <script src="../assets/config.js"></script>
 <script src="../assets/icons.js"></script>
 <script src="../assets/app.js"></script>
-<script src="../assets/payslip.js"></script>
+<script src="../assets/idb-cache.js"></script>
 <script src="../assets/grading.js"></script>
 <script src="../assets/academics-core.js"></script>
-<script src="../assets/report-card.js"></script>
 <script src="../assets/school-modules.js"></script>
 <script src="../assets/school-academics.js"></script>
 <script src="../assets/school-plus.js"></script>
+<!-- assets/payslip.js and assets/report-card.js load on demand (Payroll /
+     Report Cards tabs) via window.loadScriptOnce — see assets/app.js -->
+
 <script>
   var $ = function(id){ return document.getElementById(id); };
   if (window.SamajiIcons) window.SamajiIcons.fill();
@@ -169,18 +171,25 @@
     $("auth").style.display = "none"; $("app").style.display = "block";
     startIdleWatch();
 
-    var sc = await sb.from("schools").select("*").eq("id", SCHOOL).single();
+    // Independent requests — none depends on another's result — so they
+    // run concurrently instead of one round trip after another.
+    var preloadPromise = window.SamajiCache ? window.SamajiCache.preload(sb, SCHOOL) : Promise.resolve();
+    var results = await Promise.all([
+      sb.from("schools").select("*").eq("id", SCHOOL).single(),
+      sb.from("subscriptions").select("*, packages(name)").eq("school_id", SCHOOL).limit(1),
+      sb.rpc("resolve_flags", { p_school: SCHOOL }),
+      preloadPromise // warm cache for instant page switches
+    ]);
+    var sc = results[0], subs = results[1], r = results[2];
+
     var school = sc.data;
     $("school-name").textContent = (school && school.name) || SCHOOL;
     $("school-logo").textContent = ((school && school.name) || "S").charAt(0);
 
-    var subs = await sb.from("subscriptions").select("*, packages(name)").eq("school_id", SCHOOL).limit(1);
     var sub = subs.data && subs.data[0];
     $("school-plan").textContent = (sub && sub.packages && sub.packages.name) ? (sub.packages.name + " plan") : "—";
 
-    var r = await sb.rpc("resolve_flags", { p_school: SCHOOL });
     FLAGS = r.data || {};
-    if (window.SamajiCache) window.SamajiCache.preload(sb, SCHOOL); // warm cache for instant page switches
     buildNav();
     showDashboard();
   }

@@ -128,6 +128,52 @@
     };
   };
 
+  // ---- Debounce ----
+  // These search boxes filter an already-loaded in-memory array (no
+  // network call per keystroke — the data's already on the page), but
+  // rebuilding a big table's innerHTML on every single keypress can still
+  // make fast typing feel laggy. Wrap the handler: window.debounce(fn, 150).
+  window.debounce = function (fn, wait) {
+    wait = wait || 150;
+    var t = null;
+    return function () {
+      var args = arguments, ctx = this;
+      clearTimeout(t);
+      t = setTimeout(function () { fn.apply(ctx, args); }, wait);
+    };
+  };
+
+  // ---- Lazy-load a plain (non-module) script exactly once ----
+  // The equivalent of dynamic import() for this codebase — these files
+  // predate any bundler and are plain IIFE scripts (window.SamajiX = {...}),
+  // not ES modules, so a real import() isn't available for them without
+  // converting every one. Injecting a <script> tag on first use gets the
+  // same result: the byte cost is deferred until a feature that actually
+  // needs it (printing a payslip/report card) is opened, instead of paid
+  // by every session regardless of whether they're ever used.
+  var scriptPromises = {};
+  window.loadScriptOnce = function (src) {
+    if (scriptPromises[src]) return scriptPromises[src];
+    scriptPromises[src] = new Promise(function (resolve, reject) {
+      var el = document.createElement("script");
+      el.src = src;
+      el.onload = function () { resolve(); };
+      el.onerror = function () { delete scriptPromises[src]; reject(new Error("Failed to load " + src)); };
+      document.head.appendChild(el);
+    });
+    return scriptPromises[src];
+  };
+
+  // ---- Service Worker (static asset caching + offline shell) ----
+  // Registered once here rather than duplicated in all four portals'
+  // HTML. Deliberately after "load" so it never competes with the
+  // page's own critical requests for bandwidth/priority.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/sw.js").catch(function () { /* unsupported/blocked — app works fine without it */ });
+    });
+  }
+
   // ---- Copyright year ----
   // Previously fetched from worldtimeapi.org on every single page load,
   // across all four portals — an external network round-trip for a footer

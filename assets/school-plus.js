@@ -84,34 +84,13 @@
   window.SamajiCharts={ bar:barChart, line:lineChart, donut:donut, legend:legend, targetBars:targetBars, PAL:PAL };
 
   // ====================================================
-  //  Cache layer — instant page switches + login preload
+  //  Cache layer — instant page switches + login preload.
+  //  window.SamajiCache itself now lives in assets/idb-cache.js
+  //  (IndexedDB-backed, stale-while-revalidate, loaded before this
+  //  file on every portal) — kept as a plain reference here so this
+  //  file still works even if loaded standalone in an old cached tab.
   // ====================================================
-  var SamajiCache=(function(){
-    var store={}, TTL=90000;
-    function k(table,sel){ return table+"|"+(sel||"*"); }
-    async function get(sb, schoolId, table, sel){
-      var key=k(table,sel), hit=store[key];
-      if(hit && Date.now()-hit.t<TTL) return hit.data;
-      var r=await sb.from(table).select(sel||"*").eq("school_id",schoolId);
-      store[key]={t:Date.now(), data:r.data||[]};
-      return store[key].data;
-    }
-    return {
-      get:get,
-      invalidate:function(table){ Object.keys(store).forEach(function(key){ if(!table||key.indexOf(table+"|")===0) delete store[key]; }); },
-      clear:function(){ store={}; },
-      preload:function(sb, schoolId){
-        return Promise.all([
-          get(sb,schoolId,"students","*"),
-          get(sb,schoolId,"school_classes","*"),
-          get(sb,schoolId,"dormitories","*"),
-          get(sb,schoolId,"fee_structures","*, fee_items(amount)"),
-          get(sb,schoolId,"fee_payments","*")
-        ]).catch(function(){});
-      }
-    };
-  })();
-  window.SamajiCache=SamajiCache;
+  var SamajiCache = window.SamajiCache;
   function cget(sb, schoolId, table, sel){ return SamajiCache.get(sb, schoolId, table, sel); }
 
   // ====================================================
@@ -1023,7 +1002,7 @@
       if(!classes.length){ toast("Set up classes first (Settings → Classes & Streams)."); return; }
       form(null);
     };
-    document.getElementById("stu-search").oninput=draw;
+    document.getElementById("stu-search").oninput=window.debounce(draw,150);
     document.getElementById("stu-class-filter").onchange=draw;
 
     // ---------- promote to next class ----------
@@ -1237,7 +1216,7 @@
       // On the Receipts tab, name/class filtering is folded into the
       // explicit "Search receipts" query instead of refetching on every
       // keystroke — so only Ledger/Fee reports live-update here.
-      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); if(tab!=="receipts") renderTab(); };
+      document.getElementById("fee-search").oninput=window.debounce(function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); if(tab!=="receipts") renderTab(); },150);
       document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); if(tab!=="receipts") renderTab(); };
 
       function matches(name, adm, cls){

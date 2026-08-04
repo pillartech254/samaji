@@ -662,6 +662,11 @@
   async function renderPayroll(sb, schoolId, el){
     var tab="staff";
     var school = { name: schoolId };
+    // Kicked off now, awaited inside render() below — payslip.js isn't
+    // needed by every admin session, so it's not paid for until Payroll
+    // is actually opened. Resolves instantly on every render() after the
+    // first (loadScriptOnce memoizes), so this stays cheap on every tab switch.
+    var payslipLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/payslip.js") : Promise.resolve();
     var sc = await sb.from("schools").select("name").eq("id",schoolId).single();
     if (sc.data) school.name = sc.data.name;
 
@@ -671,7 +676,8 @@
     document.querySelectorAll("#pr-tabs button").forEach(function(b){
       b.onclick=function(){ tab=b.getAttribute("data-tab"); document.querySelectorAll("#pr-tabs button").forEach(function(x){x.className="";}); b.className="on-present"; render(); };
     });
-    function render(){
+    async function render(){
+      await payslipLoad;
       var add=document.getElementById("pr-addwrap");
       if(tab==="staff"){ add.innerHTML='<button class="btn-primary" id="pr-add">+ New staff</button>'; document.getElementById("pr-add").onclick=function(){ staffForm(); }; drawStaff(); }
       else if(tab==="loans"){ add.innerHTML='<button class="btn-primary" id="pr-add">+ New loan/advance</button>'; document.getElementById("pr-add").onclick=function(){ loanForm(); }; drawLoans(); }
@@ -682,11 +688,14 @@
     async function loadTeachers(){ var r=await sb.from("teachers").select("id,name,email").eq("school_id",schoolId).order("name"); return r.data||[]; }
 
     // ---- STAFF ----
-    async function drawStaff(){
+    var staffPage=1;
+    async function drawStaff(pg){
+      if(typeof pg==="number") staffPage=pg; else staffPage=1;
       var rows=await loadStaff();
       if(!rows.length){ document.getElementById("pr-body").innerHTML='<div class="empty">No staff yet. Click <strong>+ New staff</strong>.</div>'; return; }
+      var pgData=window.paginate?window.paginate(rows,staffPage,25):{rows:rows,html:""};
       var html='<table class="data"><thead><tr><th>Name</th><th>Role</th><th>KRA PIN</th><th>Basic</th><th>Allowances</th><th>Net (est.)</th><th></th></tr></thead><tbody>';
-      rows.forEach(function(s){
+      pgData.rows.forEach(function(s){
         var ps=window.SamajiPayslip.compute(s.basic_salary, s.house_allowance, s.transport_allowance, s.allowances, []);
         var totalAllow=(s.house_allowance||0)+(s.transport_allowance||0)+(s.allowances||0);
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.full_name)+(s.active?"":' <span class="pill gray">inactive</span>')+(s.teacher_id?' <span class="pill green" title="Linked to a teacher-portal login">portal</span>':'')+'</td><td>'+esc(s.role||"—")+'</td>'
@@ -694,10 +703,11 @@
           +'<td style="font-weight:600;">'+money(ps.net)+'</td>'
           +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
       });
-      html+='</tbody></table>';
+      html+='</tbody></table>'+pgData.html;
       var t=document.getElementById("pr-body"); t.innerHTML=html;
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ staffForm(rows.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this staff member?"))return; var r=await sb.from("staff").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); drawStaff(); }; });
+      if(pgData.onAttach) pgData.onAttach(t,function(p){ drawStaff(p); });
     }
     async function staffForm(s){
       s=s||{};

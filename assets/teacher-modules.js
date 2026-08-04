@@ -389,6 +389,10 @@
   //  built directly from Marks & Grading's per-test scores)
   // ====================================================
   async function renderReportBooks(sb, ctx, el){
+    // Kicked off now, awaited just before each place that actually uses
+    // window.SamajiReportCard (Ratings modal, Print) — most sessions open
+    // Report Books to skim the summary table without ever printing.
+    var reportCardLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/report-card.js") : Promise.resolve();
     var assignments = await loadMyAssignments(sb, ctx);
     var classes = myClasses(assignments);
     var ctRes = await sb.from("school_classes").select("*").eq("class_teacher_id", ctx.teacher.id);
@@ -464,7 +468,8 @@
       var codes = Array.from(new Set((current.levels||[]).map(function(l){ return l.competency_code; }).filter(Boolean)));
       return '<option value="">—</option>'+codes.map(function(c){ return '<option value="'+c+'"'+(selected===c?" selected":"")+'>'+c+'</option>'; }).join("");
     }
-    function ratingsModal(s){
+    async function ratingsModal(s){
+      await reportCardLoad;
       var ratings = current.ratingsByStudent[s.id]||{ competency:{}, value:{}, psychomotor:{} };
       var remark = current.remarksByStudent[s.id]||{};
       var canEditRatings = current.isClassTeacher, canEditPrincipal = current.isPublisher;
@@ -510,6 +515,7 @@
       return window.SamajiAcademics.buildSnapshotReportOpts(ctx.school, s, d, current.cls, current.term, current.year, current.levels);
     }
     async function printOne(s){
+      await reportCardLoad;
       var snapRes = await sb.from("report_cards").select("*").eq("student_id",s.id).eq("term_id",current.term.id).eq("academic_year_id",current.year.id).maybeSingle();
       var opts = snapRes.data ? snapshotOpts(snapRes.data, s) : reportOpts(s);
       var html = window.SamajiReportCard.studentReportHTML(opts);
@@ -521,6 +527,7 @@
     document.getElementById("rb-term").onchange=load;
     document.getElementById("rb-print").onclick=async function(){
       if (!current.students.length){ toast("Nothing to print yet."); return; }
+      await reportCardLoad;
       var studentIds = current.students.map(function(s){ return s.id; });
       var snapRes = await sb.from("report_cards").select("*").in("student_id",studentIds).eq("term_id",current.term.id).eq("academic_year_id",current.year.id);
       var snapByStudent = {}; (snapRes.data||[]).forEach(function(r){ snapByStudent[r.student_id]=r; });
@@ -538,6 +545,9 @@
   // ====================================================
   async function renderPayroll(sb, ctx, el){
     el.innerHTML = '<div class="mod-head"><div><h2>My Payroll</h2><p>Your payslips and annual tax deduction card (P9).</p></div></div><div id="pay-body"></div>';
+    // Kicked off now, awaited just before draw() — payslip.js isn't needed
+    // by every session, so it's not paid for until Payroll is actually opened.
+    var payslipLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/payslip.js") : Promise.resolve();
     var sres = await sb.from("staff").select("*").eq("teacher_id",ctx.teacher.id).maybeSingle();
     var staffRow = sres.data;
     var body = document.getElementById("pay-body");
@@ -547,6 +557,7 @@
     }
     var pres = await sb.from("payslips").select("*, payroll_runs(period,status)").eq("staff_id",staffRow.id);
     var slips = (pres.data||[]).filter(function(p){ return p.payroll_runs; }).sort(function(a,b){ return a.payroll_runs.period < b.payroll_runs.period ? 1 : -1; });
+    await payslipLoad;
 
     var tab="slip";
     body.innerHTML = '<div class="toolbar" style="margin-top:0;"><div class="seg" id="pay-tabs"><button data-t="slip" class="on-present">Payslip</button><button data-t="p9">P9 Form</button></div></div><div id="pay-view" style="margin-top:14px;"></div>';
