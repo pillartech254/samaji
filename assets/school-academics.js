@@ -90,22 +90,28 @@
         };
       }
 
-      var types = window.SamajiGrading.typesForGrade(allTypes, cls.level).slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
-      var typeBox = document.getElementById("ea-types");
+      // Only contributing assessment types are offered here — the official
+      // exams are First/Second/Third Test, full stop. Formative types
+      // (Observation, Portfolio, etc.) aren't announceable at all anymore;
+      // a school that still has some configured in Settings → CBC
+      // Assessment can leave them there, they just won't show up here.
       var MAX_TESTS = window.SamajiAcademics.MAX_TESTS;
+      var types = window.SamajiGrading.typesForGrade(allTypes, cls.level).filter(function(t){ return t.contributes_to_final; })
+        .slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
+      var typeBox = document.getElementById("ea-types");
       if (!types.length){
         typeBox.innerHTML = '<div class="empty">No assessment types configured for '+esc(cls.level)+' yet — add some in Settings → CBC Assessment.</div>';
       } else {
-        typeBox.innerHTML = '<label style="font-size:12.5px;font-weight:600;">Assessment type(s)</label>'
-          + '<p class="muted" style="font-size:11.5px;margin:2px 0 6px;">The report card has a fixed First/Second/Third Test grid — at most '+MAX_TESTS+' contributing assessment types count as "tests" per subject; formative ones (Observation, Portfolio…) don\'t count toward that limit.</p>'
+        typeBox.innerHTML = '<label style="font-size:12.5px;font-weight:600;">Test(s)</label>'
+          + '<p class="muted" style="font-size:11.5px;margin:2px 0 6px;">The report card has a fixed First/Second/Third Test grid — pick at most '+MAX_TESTS+'.</p>'
           + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">'
-          + types.map(function(t){ return '<label class="chk-pill"><input type="checkbox" class="ea-type" value="'+t.id+'" data-contrib="'+(t.contributes_to_final?"1":"0")+'"> '+esc(t.name)+(t.contributes_to_final?'':' <span class="muted">(formative)</span>')+'</label>'; }).join("")
+          + types.map(function(t){ return '<label class="chk-pill"><input type="checkbox" class="ea-type" value="'+t.id+'"> '+esc(t.name)+'</label>'; }).join("")
           + '</div>';
-        typeBox.querySelectorAll('.ea-type[data-contrib="1"]').forEach(function(cb){
+        typeBox.querySelectorAll('.ea-type').forEach(function(cb){
           cb.onchange = function(){
             if (!cb.checked) return;
-            var checkedContrib = typeBox.querySelectorAll('.ea-type[data-contrib="1"]:checked');
-            if (checkedContrib.length > MAX_TESTS){
+            var checked = typeBox.querySelectorAll('.ea-type:checked');
+            if (checked.length > MAX_TESTS){
               cb.checked = false;
               toast("Only "+MAX_TESTS+" tests allowed per term (First/Second/Third Test) — uncheck one first.");
             }

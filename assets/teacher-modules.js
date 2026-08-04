@@ -239,21 +239,19 @@
           var outOf = Number(e.max_score)||Number(t.max_marks)||100;
           return Object.assign({}, t, { examId:e.id, outOf:outOf, origOutOf:outOf });
         }).filter(Boolean).sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
-        // Same First/Second/Third Test grid as the report card: cap
-        // contributing (summative) assessments to MAX_TESTS, in order.
-        // Formative ones (contributes_to_final=false) are still scorable
-        // here — they just aren't a numbered "test" and don't print on
-        // the report card.
+        // Marks & Grading shows ONLY the official First/Second/Third Test
+        // grid — same MAX_TESTS cap as the report card. Formative
+        // (contributes_to_final=false) assessment types are not "tests"
+        // and are not shown here even if announced; a school shouldn't
+        // announce them at all now (Exam Announcements only offers
+        // contributing types), but this stays defensive either way.
         var testIndex = 0;
         types = [];
         allAnnounced.forEach(function(t){
-          if (t.contributes_to_final){
-            if (testIndex >= window.SamajiAcademics.MAX_TESTS) return; // beyond the report card's 3 test columns
-            types.push(Object.assign({}, t, { testLabel: ordinal(testIndex)+" Test" }));
-            testIndex++;
-          } else {
-            types.push(t);
-          }
+          if (!t.contributes_to_final) return;
+          if (testIndex >= window.SamajiAcademics.MAX_TESTS) return; // beyond the report card's 3 test columns
+          types.push(Object.assign({}, t, { testLabel: ordinal(testIndex)+" Test" }));
+          testIndex++;
         });
         types.forEach(function(t){ examByType[t.id]=t.examId; });
         if (exams.length && students.length){
@@ -301,8 +299,7 @@
       var html='<div style="overflow-x:auto;"><table class="data" style="min-width:'+(480+state.types.length*110)+'px;"><thead><tr><th>Name</th>'
         + state.types.map(function(t){
             var head = t.testLabel ? esc(t.testLabel.toUpperCase()) : esc(t.name);
-            var name = t.testLabel ? (esc(t.name)+' · ') : (t.contributes_to_final?'':'<span class="muted">formative · </span>');
-            var sub = name+'Out of <input type="number" class="gb-outof" data-type="'+t.id+'" value="'+t.outOf+'" min="1"'+(state.editable?"":" disabled")
+            var sub = esc(t.name)+' · Out of <input type="number" class="gb-outof" data-type="'+t.id+'" value="'+t.outOf+'" min="1"'+(state.editable?"":" disabled")
               +' style="width:48px;text-align:center;padding:1px 3px;border:1px solid var(--line);border-radius:4px;font-size:10px;font-family:inherit;">'
               +' · '+t.weight_percent+'%';
             return '<th style="text-align:right;">'+head+'<div class="muted" style="font-size:10px;font-weight:500;margin-top:3px;">'+sub+'</div></th>';
