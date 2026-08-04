@@ -12,6 +12,13 @@
 //  score, in `sort` order) — one EE/ME/AE/BE competency band per cell.
 // ============================================================
 (function () {
+  // The KICD summative report card has exactly three fixed test columns
+  // (First/Second/Third Test) — a school can configure as many contributing
+  // assessment types as it likes, but only the first 3 (by `sort`) ever
+  // become report-card columns. Also enforced in the Exam Announcements
+  // screen and in the database (setup-modules-32.sql).
+  var MAX_TESTS = 3;
+
   function classLabel(c){ if(!c) return "—"; return c.level + (c.stream ? " "+c.stream : ""); }
 
   // Common bootstrap both portals need before they can render anything
@@ -52,7 +59,7 @@
     var studentIds = students.map(function(s){ return s.id; });
 
     var types = window.SamajiGrading.typesForGrade(allTypes, cls.level).filter(function(t){ return t.contributes_to_final; })
-      .slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
+      .slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); }).slice(0, MAX_TESTS);
     var scheme = window.SamajiGrading.schemeForGrade(schemes, cls.level);
     var levels = scheme ? (scheme.grading_levels||[]) : [];
 
@@ -212,6 +219,7 @@
   }
 
   window.SamajiAcademics = {
+    MAX_TESTS: MAX_TESTS,
     classLabel: classLabel,
     loadAcademicContext: loadAcademicContext,
     fetchClassReportData: fetchClassReportData,

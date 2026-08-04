@@ -47,16 +47,17 @@
     return String(name).toUpperCase();
   }
 
-  // Maps a class level ('Grade 6', 'PP1', 'Grade 8'...) to the CBC
-  // school-segment phrase printed on the form, e.g. "MIDDLE SCHOOL
-  // (UPPER PRIMARY)" for Grades 4-6, matching the official template.
+  // Maps a class level ('Grade 6', 'PP1', 'Grade 3'...) to the CBC
+  // school-segment phrase printed on the form, matching the official
+  // template: PP1/PP2 and Grades 1-3 are "Early Years Education", Grades
+  // 4-6 are "Middle School (Upper Primary)", 7-9 "Junior School".
   function gradeSegment(level){
     var s = String(level||"");
-    if (/pp\s*[12]/i.test(s)) return "PRE-PRIMARY";
+    if (/pp\s*[12]/i.test(s)) return "EARLY YEARS EDUCATION";
     var m = s.match(/(\d+)/);
     if (m){
       var n = parseInt(m[1],10);
-      if (n>=1 && n<=3) return "LOWER PRIMARY";
+      if (n>=1 && n<=3) return "EARLY YEARS EDUCATION";
       if (n>=4 && n<=6) return "MIDDLE SCHOOL (UPPER PRIMARY)";
       if (n>=7 && n<=9) return "JUNIOR SCHOOL";
       if (n>=10) return "SENIOR SCHOOL";
@@ -93,8 +94,11 @@
     opts = opts || {};
     var school = opts.school||{}, s = opts.student||{}, cls = opts.cls||{}, term = opts.term||{};
     var subjectRows = opts.subjectRows||[];
-    var testCount = (subjectRows[0] && subjectRows[0].tests && subjectRows[0].tests.length)
-      || (opts.totalPercentPerTest||[]).length || 0;
+    // Fixed at 3 (First/Second/Third Test) to match the official KICD
+    // summative report grid — capped here too in case opts came from
+    // somewhere other than assets/academics-core.js's own MAX_TESTS cap.
+    var testCount = Math.min((subjectRows[0] && subjectRows[0].tests && subjectRows[0].tests.length)
+      || (opts.totalPercentPerTest||[]).length || 0, 3);
     var testIdx = []; for (var i=0;i<testCount;i++) testIdx.push(i);
 
     var stampLabel = opts.published===false ? "DRAFT" : "ORIGINAL";
@@ -206,7 +210,8 @@
     +'td.rc-datefilled{border-bottom:1px solid #101626;font-weight:700;padding-left:6px;}'
     +'.rc-datesrow{display:flex;justify-content:space-between;margin-top:16px;font-size:11.5px;font-weight:700;}'
     +'.rc-foot2{margin-top:16px;text-align:center;font-size:9px;color:#667085;}'
-    +'@media print{ body{padding:0;} .rc-card{page-break-after:always;border:2px double #101626;} }';
+    +'@page{ size:A4 portrait; margin:10mm; }'
+    +'@media print{ body{padding:0;} .rc-card{page-break-after:always;border:2px double #101626;box-shadow:none;} }';
 
   function printHTML(innerHTML, title){
     var w = window.open("", "_blank", "width=820,height=900");

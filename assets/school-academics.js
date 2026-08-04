@@ -92,13 +92,25 @@
 
       var types = window.SamajiGrading.typesForGrade(allTypes, cls.level).slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
       var typeBox = document.getElementById("ea-types");
+      var MAX_TESTS = window.SamajiAcademics.MAX_TESTS;
       if (!types.length){
         typeBox.innerHTML = '<div class="empty">No assessment types configured for '+esc(cls.level)+' yet — add some in Settings → CBC Assessment.</div>';
       } else {
         typeBox.innerHTML = '<label style="font-size:12.5px;font-weight:600;">Assessment type(s)</label>'
+          + '<p class="muted" style="font-size:11.5px;margin:2px 0 6px;">The report card has a fixed First/Second/Third Test grid — at most '+MAX_TESTS+' contributing assessment types count as "tests" per subject; formative ones (Observation, Portfolio…) don\'t count toward that limit.</p>'
           + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">'
-          + types.map(function(t){ return '<label class="chk-pill"><input type="checkbox" class="ea-type" value="'+t.id+'"> '+esc(t.name)+(t.contributes_to_final?'':' <span class="muted">(formative)</span>')+'</label>'; }).join("")
+          + types.map(function(t){ return '<label class="chk-pill"><input type="checkbox" class="ea-type" value="'+t.id+'" data-contrib="'+(t.contributes_to_final?"1":"0")+'"> '+esc(t.name)+(t.contributes_to_final?'':' <span class="muted">(formative)</span>')+'</label>'; }).join("")
           + '</div>';
+        typeBox.querySelectorAll('.ea-type[data-contrib="1"]').forEach(function(cb){
+          cb.onchange = function(){
+            if (!cb.checked) return;
+            var checkedContrib = typeBox.querySelectorAll('.ea-type[data-contrib="1"]:checked');
+            if (checkedContrib.length > MAX_TESTS){
+              cb.checked = false;
+              toast("Only "+MAX_TESTS+" tests allowed per term (First/Second/Third Test) — uncheck one first.");
+            }
+          };
+        });
       }
       await loadList();
     }
@@ -178,7 +190,8 @@
       if (!subjectIds.length || !typeIds.length){ summary.textContent="Pick at least one subject and one assessment type."; return; }
       summary.textContent = "Announcing…";
 
-      var announced = [], skipped = [];
+      var MAX_TESTS = window.SamajiAcademics.MAX_TESTS;
+      var announced = [], skipped = [], capped = [];
       for (var i=0;i<subjectIds.length;i++){
         var subjectId = subjectIds[i];
         var subject = subjectsForClass.find(function(s){ return s.id===subjectId; });
@@ -195,9 +208,26 @@
 
         var exRes = await sb.from("exams").select("id,assessment_type_id").eq("mark_sheet_id",markSheet.id);
         var existingTypeIds = (exRes.data||[]).map(function(e){ return e.assessment_type_id; });
+        var existingContribCount = existingTypeIds.filter(function(tid){ var t=allTypes.find(function(x){return x.id===tid;}); return t && t.contributes_to_final; }).length;
+
         var missingTypeIds = typeIds.filter(function(tid){ return existingTypeIds.indexOf(tid)===-1; });
-        if (missingTypeIds.length){
-          var newExams = missingTypeIds.map(function(tid){
+        // The report card has exactly MAX_TESTS test columns — cap how many
+        // *contributing* assessment types this subject's mark sheet can gain
+        // in this announcement, regardless of what's checked. Formative
+        // (non-contributing) types are unlimited since they don't render as
+        // report-card columns.
+        var remainingTestSlots = Math.max(0, MAX_TESTS - existingContribCount);
+        var wasCapped = false;
+        var toInsertTypeIds = missingTypeIds.filter(function(tid){
+          var t = allTypes.find(function(x){ return x.id===tid; });
+          if (!t || !t.contributes_to_final) return true;
+          if (remainingTestSlots > 0){ remainingTestSlots--; return true; }
+          wasCapped = true; return false;
+        });
+        if (wasCapped) capped.push(subject.name);
+
+        if (toInsertTypeIds.length){
+          var newExams = toInsertTypeIds.map(function(tid){
             var type = allTypes.find(function(t){ return t.id===tid; });
             return { school_id:schoolId, name:type.name, subject:subject.name, subject_id:subjectId, class_id:cls.id,
               teacher_id:teacherId, term:term.name, term_id:term.id, academic_year_id:year.id,
@@ -206,11 +236,12 @@
           var insEx = await sb.from("exams").insert(newExams);
           if (insEx.error){ toast("Error announcing "+subject.name+": "+insEx.error.message); continue; }
         }
-        announced.push(subject.name);
+        if (toInsertTypeIds.length || existingTypeIds.length) announced.push(subject.name);
       }
 
       var msg = [];
       if (announced.length) msg.push("Announced: "+announced.join(", "));
+      if (capped.length) msg.push(MAX_TESTS+"-test limit reached, some selections skipped for: "+capped.join(", "));
       if (skipped.length) msg.push("Skipped (no teacher assigned): "+skipped.join(", "));
       summary.textContent = msg.join(" · ") || "Nothing to announce.";
       if (announced.length) toast("Exam announced for "+announced.length+" subject"+(announced.length===1?"":"s"));
