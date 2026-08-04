@@ -84,9 +84,16 @@
     + '<path d="M32 20 L34 25 L32 30 L30 25 Z" fill="#101626" stroke="none"/>'
     + '</g></svg>';
 
+  // A grading scheme's competency_code may be a plain band ('EE') or a
+  // finer sub-level ('EE1'/'EE2', with its own points value) — the printed
+  // grid still only has 4 physical columns, so a sub-level always checks
+  // its base band's column.
+  function baseBand(code){ return code ? String(code).slice(0,2).toUpperCase() : null; }
+
   function bandCells(code){
+    var band = baseBand(code);
     return BANDS.map(function(b){
-      return '<td class="rc-checkcell">'+(code===b ? '<span class="rc-check">&#10003;</span>' : '')+'</td>';
+      return '<td class="rc-checkcell">'+(band===b ? '<span class="rc-check">&#10003;</span>' : '')+'</td>';
     }).join("");
   }
 

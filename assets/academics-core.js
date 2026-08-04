@@ -73,7 +73,7 @@
 
     var examsByMs = {};
     if (msIds.length){
-      var exRes = await sb.from("exams").select("id,mark_sheet_id,assessment_type_id").in("mark_sheet_id",msIds);
+      var exRes = await sb.from("exams").select("id,mark_sheet_id,assessment_type_id,max_score").in("mark_sheet_id",msIds);
       (exRes.data||[]).forEach(function(e){ (examsByMs[e.mark_sheet_id]=examsByMs[e.mark_sheet_id]||[]).push(e); });
     }
     var resultsByExam = {};
@@ -84,6 +84,9 @@
       (resRes.data||[]).forEach(function(r){ (resultsByExam[r.exam_id]=resultsByExam[r.exam_id]||{})[r.student_id]=r.score; });
     }
     // One student's percentage on one subject's one test, or null if not recorded.
+    // Uses the exam's OWN max_score (set by the teacher when marking that
+    // specific test) rather than the assessment type's default max_marks —
+    // the same test slot can be marked out of a different total each term.
     function percentFor(subjectId, typeId, studentId){
       var msId = msBySubject[subjectId];
       if (!msId) return null;
@@ -91,6 +94,7 @@
       if (!exam) return null;
       var score = (resultsByExam[exam.id]||{})[studentId];
       if (score==null) return null;
+      if (exam.max_score) return Math.round((Number(score)/Number(exam.max_score))*1000)/10;
       var type = allTypes.find(function(t){ return t.id===typeId; });
       var max = type ? (Number(type.max_marks)||100) : 100;
       return Math.round((Number(score)/max)*1000)/10;

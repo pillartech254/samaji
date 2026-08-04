@@ -5,8 +5,12 @@
 //  same weighting/rounding logic runs everywhere a score is shown.
 // ============================================================
 (function () {
-  // scores: [{ assessment_type_id, score }]  — one entry per assessment type
-  // that actually has a value for this student (blanks are simply omitted).
+  // scores: [{ assessment_type_id, score, maxScore }]  — one entry per
+  // assessment type that actually has a value for this student (blanks are
+  // simply omitted). maxScore is optional — the actual "out of" marks for
+  // THIS specific exam instance (a teacher can set this per test, since the
+  // same assessment type may be marked out of a different total each term);
+  // falls back to the assessment type's configured max_marks when absent.
   // types: the assessment_types rows those ids refer to (max_marks, weight_percent, contributes_to_final).
   // Weight is prorated across whichever contributing types are actually
   // present, so a partially-filled mark sheet still shows a sensible
@@ -17,7 +21,8 @@
     scores.forEach(function (s) {
       var t = byId[s.assessment_type_id];
       if (!t || !t.contributes_to_final || s.score == null || s.score === "") return;
-      var pct = (Number(s.score) / (Number(t.max_marks) || 100)) * 100;
+      var max = s.maxScore != null && s.maxScore !== "" ? Number(s.maxScore) : (Number(t.max_marks) || 100);
+      var pct = (Number(s.score) / (max || 100)) * 100;
       var w = Number(t.weight_percent) || 0;
       weightedSum += pct * w;
       weightSum += w;
