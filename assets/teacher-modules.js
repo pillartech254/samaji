@@ -201,7 +201,7 @@
       + '<div class="field"><label>Class &amp; subject</label><select id="gb-pair">'+pairs.map(function(a,i){ return '<option value="'+i+'">'+esc(classLabel(a.school_classes))+' — '+esc(a.subjects.name)+'</option>'; }).join("")+'</select></div>'
       + '<div class="field"><label>Academic year</label><select id="gb-year">'+years.map(function(y){ return '<option value="'+y.id+'"'+(y.id===defaultYear.id?" selected":"")+'>'+y.year+'</option>'; }).join("")+'</select></div>'
       + '<div class="field"><label>Term</label><select id="gb-term"></select></div>'
-      + '<div style="flex:1;"></div><button class="btn-primary indigo" id="gb-save">Save scores</button></div>'
+      + '<div style="flex:1;"></div><button class="btn-sm" id="gb-import">Import CSV</button><button class="btn-primary indigo" id="gb-save">Save scores</button></div>'
       + '<div id="gb-banner"></div><div id="gb-grid"></div>';
 
     function populateTerms(){
@@ -290,6 +290,7 @@
     function draw(){
       var grid = document.getElementById("gb-grid");
       document.getElementById("gb-save").style.display = state.editable ? "" : "none";
+      document.getElementById("gb-import").style.display = (state.editable && state.types.length) ? "" : "none";
       if (!state.students.length){ grid.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
       if (!state.types.length){
         grid.innerHTML='<div class="empty">No exam has been announced for '+esc(state.pair.subjects.name)+' — '+esc(classLabel(state.pair.school_classes))+' this term yet.'
@@ -346,9 +347,86 @@
       });
     }
 
+    // ---------- bulk import (CSV) ----------
+    // Fills the same in-memory state.scores the manual grid edits, then
+    // redraws — "Save scores" (below) does the actual write, so an import
+    // gets exactly the same out-of persistence, weighting and grading as
+    // typing scores in by hand, for free.
+    function openImportModal(){
+      if (!state.editable || !state.types.length) return;
+      var header = "admission_no," + state.types.map(function(t){ return csvSafe(t.name); }).join(",");
+      var sampleRow = state.students.slice(0,1).map(function(s){ return s.admission_no||"ADM-0101"; })[0] || "ADM-0101";
+      var tplCsv = header + "\n" + sampleRow + "," + state.types.map(function(){ return ""; }).join(",") + "\n";
+      var m = modal('<h3>Import scores from CSV</h3>'
+        + '<p class="muted" style="font-size:12.5px;margin:0;">Header row required: <code>' + esc(header) + '</code> — matched by admission number. Leave a cell blank to skip that score.</p>'
+        + '<div class="field full" style="margin-top:12px;"><input type="file" id="gbim-file" accept=".csv,text/csv"></div>'
+        + '<div id="gbim-preview" style="margin-top:12px;max-height:300px;overflow:auto;"></div>'
+        + '<div class="modal-actions"><a id="gbim-template" download="marks-template.csv" style="margin-right:auto;align-self:center;font-size:12.5px;">Download template</a><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s" disabled>Apply</button></div>', true);
+      m.q("#gbim-template").href = "data:text/csv;charset=utf-8," + encodeURIComponent(tplCsv);
+      m.q("#c").onclick = m.close;
+      var byAdm = {}; state.students.forEach(function(s){ if (s.admission_no) byAdm[s.admission_no.trim().toLowerCase()] = s; });
+      var parsed = [];
+      function parseCsv(text){
+        var lines = text.split(/\r?\n/).filter(function(l){ return l.trim().length; });
+        if (!lines.length) return { rows:[], errors:["Empty file."] };
+        var cols = lines[0].split(",").map(function(h){ return h.trim().toLowerCase(); });
+        var typeColIdx = state.types.map(function(t){ return cols.indexOf(t.name.toLowerCase()); });
+        var rows = [], errors = [];
+        for (var i=1;i<lines.length;i++){
+          var cells = lines[i].split(",").map(function(c){ return c.trim(); });
+          var adm = cells[cols.indexOf("admission_no")] || "";
+          if (!adm){ errors.push("Row "+(i+1)+": missing admission_no — skipped."); continue; }
+          var stu = byAdm[adm.toLowerCase()];
+          if (!stu){ errors.push("Row "+(i+1)+": no student with admission no \""+adm+"\" in this class — skipped."); continue; }
+          var scores = {};
+          state.types.forEach(function(t, ti){
+            var idx = typeColIdx[ti]; if (idx<0) return;
+            var raw = cells[idx];
+            if (raw==="" || raw==null) return;
+            var n = Number(raw);
+            if (isNaN(n)){ errors.push("Row "+(i+1)+": \""+raw+"\" for "+t.name+" is not a number — skipped."); return; }
+            scores[t.id] = n;
+          });
+          if (Object.keys(scores).length) rows.push({ student:stu, scores:scores });
+        }
+        return { rows:rows, errors:errors };
+      }
+      m.q("#gbim-file").onchange = function(e){
+        var f = e.target.files[0]; if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function(){
+          var res = parseCsv(String(reader.result));
+          parsed = res.rows;
+          var html = "";
+          if (res.errors.length) html += '<div class="empty" style="border-color:#FDE68A;background:#FFFBEB;color:#92400E;margin-bottom:10px;">'+res.errors.map(esc).join("<br>")+'</div>';
+          if (parsed.length){
+            html += '<table class="data"><thead><tr><th>Name</th>'+state.types.map(function(t){ return '<th>'+esc(t.name)+'</th>'; }).join("")+'</tr></thead><tbody>'
+              + parsed.slice(0,50).map(function(p){ return '<tr><td>'+esc(p.student.first_name+" "+p.student.last_name)+'</td>'
+                + state.types.map(function(t){ return '<td>'+(p.scores[t.id]!=null?p.scores[t.id]:'<span class="muted">—</span>')+'</td>'; }).join("")+'</tr>'; }).join("")
+              + '</tbody></table>' + (parsed.length>50?'<p class="muted" style="font-size:11.5px;">+'+(parsed.length-50)+' more rows…</p>':'');
+          } else html += '<div class="empty">No valid rows found.</div>';
+          m.q("#gbim-preview").innerHTML = html;
+          m.q("#s").disabled = !parsed.length;
+          m.q("#s").textContent = "Apply "+parsed.length+" row"+(parsed.length===1?"":"s");
+        };
+        reader.readAsText(f);
+      };
+      m.q("#s").onclick = function(){
+        if (!parsed.length) return;
+        parsed.forEach(function(p){
+          state.scores[p.student.id] = state.scores[p.student.id] || {};
+          Object.keys(p.scores).forEach(function(tid){ state.scores[p.student.id][tid] = p.scores[tid]; });
+        });
+        m.close(); draw();
+        toast("Imported scores for "+parsed.length+" student"+(parsed.length===1?"":"s")+" — review and click Save scores.");
+      };
+    }
+    function csvSafe(s){ return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+
     document.getElementById("gb-pair").onchange=load;
     document.getElementById("gb-year").onchange=function(){ populateTerms(); load(); };
     document.getElementById("gb-term").onchange=load;
+    document.getElementById("gb-import").onclick=openImportModal;
     document.getElementById("gb-save").onclick=async function(){
       if (!state.editable || !state.students.length || !state.types.length) return;
       var levels = state.scheme ? (state.scheme.grading_levels||[]) : [];
