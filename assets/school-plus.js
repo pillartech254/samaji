@@ -156,6 +156,7 @@
       +'<button data-t="profile">School Profile</button>'
       +'<button data-t="classes" class="on">Classes &amp; Streams</button>'
       +'<button data-t="subjects">Subjects</button>'
+      +'<button data-t="pathways">Pathways</button>'
       +'<button data-t="teachers">Teachers</button>'
       +'<button data-t="dorms">Dormitories</button>'
       +'<button data-t="fees">Fee Structures</button>'
@@ -163,7 +164,7 @@
       +'<button data-t="activity">Activity Log</button>'
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
+    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="pathways") pathwaysTab(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
 
     // ---------- Activity Log: read-only trail of who changed what ----
     // (audit_log is populated entirely by DB triggers — see
@@ -256,13 +257,16 @@
       var t=document.getElementById("cls-table");
       if(!list.length){ t.innerHTML='<div class="empty">No classes yet. Click <strong>Load Kenyan CBC defaults</strong> to populate PP1–Grade 9, or add your own.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Level</th><th>Stream</th><th>Curriculum</th><th>Capacity</th><th>Students</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Level</th><th>Stream</th><th>Curriculum</th><th>Pathway</th><th>Capacity</th><th>Students</th><th></th></tr></thead><tbody>';
         // count students per class
         var cr=await sb.from("students").select("class_id").eq("school_id",schoolId);
         var counts={}; (cr.data||[]).forEach(function(s){ if(s.class_id) counts[s.class_id]=(counts[s.class_id]||0)+1; });
+        var pr2=await sb.from("pathways").select("id,name").eq("school_id",schoolId); var pathwayName={}; (pr2.data||[]).forEach(function(p){ pathwayName[p.id]=p.name; });
         list.forEach(function(c){
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(c.level)+'</td><td>'+(c.stream?esc(c.stream):'<span class="muted">—</span>')+'</td>'
-            +'<td><span class="pill gray">'+esc(c.curriculum)+'</span></td><td>'+c.capacity+'</td><td>'+(counts[c.id]||0)+'</td>'
+            +'<td><span class="pill gray">'+esc(c.curriculum)+'</span></td>'
+            +'<td>'+(c.pathway_id&&pathwayName[c.pathway_id]?esc(pathwayName[c.pathway_id]):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+c.capacity+'</td><td>'+(counts[c.id]||0)+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-csub="'+c.id+'">Subjects &amp; teachers</button> <button class="btn-sm" data-edit="'+c.id+'">Edit</button> <button class="btn-sm danger" data-del="'+c.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
@@ -272,24 +276,27 @@
       }
       document.getElementById("add-class").onclick=function(){ classForm(null); };
       document.getElementById("seed-cbc").onclick=async function(){
-        var levels=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
+        var levels=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"];
         var rows=levels.map(function(lv,i){ return { school_id:schoolId, level:lv, stream:null, curriculum:"CBC", sort:i }; });
         var r=await sb.from("school_classes").upsert(rows,{ onConflict:"school_id,level,stream", ignoreDuplicates:true });
         if(r.error){ toast("Error: "+r.error.message); return; } toast("Kenyan CBC classes loaded"); classes();
       };
     }
-    function classForm(c){
+    async function classForm(c){
       c=c||{};
+      var pr=await sb.from("pathways").select("id,name").eq("school_id",schoolId).order("sort"); var allPathways=pr.data||[];
+      var pathwayOpts='<option value="">— none —</option>'+allPathways.map(function(p){ return '<option value="'+p.id+'"'+(c.pathway_id===p.id?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("");
       var m=modal('<h3>'+(c.id?"Edit class":"Add class")+'</h3>'
         +'<div class="grid2">'
         +'<div class="field"><label>Level</label><input id="c-level" value="'+esc(c.level||"")+'" placeholder="Grade 6"></div>'
         +'<div class="field"><label>Stream (optional)</label><input id="c-stream" value="'+esc(c.stream||"")+'" placeholder="East / A / Blue"></div>'
         +'<div class="field"><label>Curriculum</label><select id="c-cur"><option'+(c.curriculum!=="8-4-4"?" selected":"")+'>CBC</option><option'+(c.curriculum==="8-4-4"?" selected":"")+'>8-4-4</option></select></div>'
         +'<div class="field"><label>Capacity</label><input id="c-cap" type="number" value="'+(c.capacity||40)+'"></div>'
+        +'<div class="field full"><label>Pathway (Senior School only, optional)</label><select id="c-pathway">'+pathwayOpts+'</select></div>'
         +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>');
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
-        var rec={ school_id:schoolId, level:m.q("#c-level").value.trim(), stream:m.q("#c-stream").value.trim()||null, curriculum:m.q("#c-cur").value, capacity:Number(m.q("#c-cap").value)||40 };
+        var rec={ school_id:schoolId, level:m.q("#c-level").value.trim(), stream:m.q("#c-stream").value.trim()||null, curriculum:m.q("#c-cur").value, capacity:Number(m.q("#c-cap").value)||40, pathway_id:m.q("#c-pathway").value||null };
         if(!rec.level){ toast("Level is required."); return; }
         var r=c.id? await sb.from("school_classes").update(rec).eq("id",c.id) : await sb.from("school_classes").insert(rec);
         if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"That level + stream already exists.":r.error.message)); return; }
@@ -338,17 +345,83 @@
       };
     }
 
+    // ----- Kenyan CBC subject catalog (PP1 – Grade 12) -----
+    // Illustrative starter catalog per the MoE CBC learning areas — schools
+    // are free to edit, delete or add to every row; nothing here is hardcoded
+    // into the assessment/grading/report-card engine itself.
+    var CBC_SUBJECT_CATALOG=[
+      // PP1 - PP2
+      {name:"Language Activities",code:"LANG-ACT",learning_area:"Languages",grades:["PP1","PP2"]},
+      {name:"Mathematical Activities",code:"MATH-ACT",learning_area:"Mathematics",grades:["PP1","PP2"]},
+      {name:"Environmental Activities",code:"ENV-ACT",learning_area:"Environmental Studies",grades:["PP1","PP2","Grade 1","Grade 2","Grade 3"]},
+      {name:"Psychomotor and Creative Activities",code:"PSY-ACT",learning_area:"Creative Arts",grades:["PP1","PP2"]},
+      {name:"Religious Education Activities",code:"RE-ACT",learning_area:"Religious Education",grades:["PP1","PP2"]},
+      // Lower Primary (Grade 1-3)
+      {name:"English Language",code:"ENG",learning_area:"Languages",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Kiswahili Language",code:"KIS",learning_area:"Languages",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Mathematics",code:"MATH",learning_area:"Mathematics",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Religious Education",code:"RE",learning_area:"Religious Education",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6"]},
+      {name:"Creative Arts",code:"CRE-ART",learning_area:"Creative Arts",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6"]},
+      {name:"Physical and Health Education",code:"PHE",learning_area:"Physical Education",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Indigenous Language",code:"IND-LANG",learning_area:"Languages",grades:["Grade 1","Grade 2","Grade 3"],optional:true},
+      // Upper Primary (Grade 4-6)
+      {name:"Science and Technology",code:"SCI-TECH",learning_area:"Science",grades:["Grade 4","Grade 5","Grade 6"]},
+      {name:"Social Studies",code:"SOC-ST",learning_area:"Social Studies",grades:["Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"]},
+      {name:"Agriculture and Nutrition",code:"AGR-NUT",learning_area:"Agriculture",grades:["Grade 4","Grade 5","Grade 6"]},
+      // Junior School (Grade 7-9)
+      {name:"Integrated Science",code:"INT-SCI",learning_area:"Science",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Pre-Technical Studies",code:"PRE-TECH",learning_area:"Pre-Technical & Pre-Career",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Agriculture",code:"AGR",learning_area:"Agriculture",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Christian Religious Education",code:"CRE",learning_area:"Religious Education",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Islamic Religious Education",code:"IRE",learning_area:"Religious Education",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Hindu Religious Education",code:"HRE",learning_area:"Religious Education",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Business Studies",code:"BUS",learning_area:"Business Studies",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Life Skills Education",code:"LIFE",learning_area:"Life Skills",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Visual Arts",code:"VIS-ART",learning_area:"Creative Arts",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Performing Arts",code:"PERF-ART",learning_area:"Creative Arts",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"French",code:"FRE",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"German",code:"GER",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Arabic",code:"ARA",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Mandarin",code:"MAN",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Kenyan Sign Language",code:"KSL",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      // Senior School core (Grade 10-12)
+      {name:"Community Service Learning",code:"CSL",learning_area:"Life Skills",grades:["Grade 10","Grade 11","Grade 12"]},
+      // Senior School — STEM pathway
+      {name:"Biology",code:"BIO",learning_area:"Pure Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Chemistry",code:"CHEM",learning_area:"Pure Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Physics",code:"PHY",learning_area:"Pure Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Computer Studies",code:"COMP",learning_area:"Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Home Science",code:"HSC",learning_area:"Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Drawing and Design",code:"DRAW",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Building and Construction",code:"BUILD",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Electrical Technology",code:"ELEC",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Power Mechanics",code:"POWM",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      // Senior School — Social Sciences pathway
+      {name:"History and Citizenship",code:"HIST",learning_area:"Humanities",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Geography",code:"GEO",learning_area:"Humanities",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Literature in English",code:"LIT-ENG",learning_area:"Languages & Literature",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Fasihi ya Kiswahili",code:"FASIHI",learning_area:"Languages & Literature",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      // Senior School — Arts & Sports Science pathway
+      {name:"Sports Science",code:"SPORT-SCI",learning_area:"Sports Science",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Music",code:"MUS",learning_area:"Performing Arts",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Fine Arts",code:"FINE-ART",learning_area:"Visual Arts",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Theatre and Film",code:"THEATRE",learning_area:"Performing Arts",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]}
+    ];
+
     // ----- subjects catalog -----
     async function subjects(){
       var body=document.getElementById("set-body");
-      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The subject catalog for this school — used when assigning subjects to a class.</span><button class="btn-primary" id="add-subject">+ Add subject</button></div><div id="subj-table"></div>';
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The subject catalog for this school — used when assigning subjects to a class.</span><button class="btn-sm" id="seed-subjects">Load Kenyan CBC subjects</button><button class="btn-primary" id="add-subject">+ Add subject</button></div><div id="subj-table"></div>';
       var r=await sb.from("subjects").select("*").eq("school_id",schoolId).order("name");
       var list=r.data||[], t=document.getElementById("subj-table");
-      if(!list.length){ t.innerHTML='<div class="empty">No subjects yet. Add one, e.g. Mathematics.</div>'; }
+      if(!list.length){ t.innerHTML='<div class="empty">No subjects yet. Click <strong>Load Kenyan CBC subjects</strong> to populate the PP1–Grade 12 catalog, or add your own.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Name</th><th>Code</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Name</th><th>Code</th><th>Learning area</th><th>Compulsory</th><th>Grades</th><th></th></tr></thead><tbody>';
         list.forEach(function(s){
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.code?esc(s.code):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(s.learning_area?esc(s.learning_area):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(s.is_compulsory?'<span class="pill green">Yes</span>':'<span class="pill amber">Optional</span>')+'</td>'
+            +'<td>'+(s.applicable_grades&&s.applicable_grades.length?esc(s.applicable_grades.join(", ")):'<span class="muted">All</span>')+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
@@ -356,20 +429,124 @@
         t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this subject? It will be removed from any classes it's assigned to."))return; var r=await sb.from("subjects").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); subjects(); }; });
       }
       document.getElementById("add-subject").onclick=function(){ subjectForm(null); };
+      document.getElementById("seed-subjects").onclick=async function(){
+        var rows=CBC_SUBJECT_CATALOG.map(function(s){ return { school_id:schoolId, name:s.name, code:s.code, learning_area:s.learning_area,
+          department:s.department||null, is_compulsory:!s.optional, is_optional:!!s.optional, applicable_grades:s.grades }; });
+        var r=await sb.from("subjects").upsert(rows,{ onConflict:"school_id,name", ignoreDuplicates:true });
+        if(r.error){ toast("Error: "+r.error.message); return; } toast("Kenyan CBC subject catalog loaded"); subjects();
+      };
     }
     function subjectForm(s){
       s=s||{};
       var m=modal('<h3>'+(s.id?"Edit subject":"Add subject")+'</h3><div class="grid2">'
         +'<div class="field"><label>Name</label><input id="sj-name" value="'+esc(s.name||"")+'" placeholder="Mathematics"></div>'
         +'<div class="field"><label>Code (optional)</label><input id="sj-code" value="'+esc(s.code||"")+'" placeholder="MATH"></div>'
-        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
+        +'<div class="field"><label>Learning area (optional)</label><input id="sj-area" value="'+esc(s.learning_area||"")+'" placeholder="Mathematics"></div>'
+        +'<div class="field"><label>Department (optional)</label><input id="sj-dept" value="'+esc(s.department||"")+'" placeholder="STEM"></div>'
+        +'<div class="field"><label>Compulsory</label><select id="sj-compulsory"><option value="true"'+(s.is_compulsory!==false?" selected":"")+'>Yes</option><option value="false"'+(s.is_compulsory===false?" selected":"")+'>No (optional)</option></select></div>'
+        +'<div class="field"><label>Total competencies (optional)</label><input id="sj-comp" type="number" value="'+(s.total_competencies!=null?s.total_competencies:"")+'"></div>'
+        +'<div class="field full"><label>Applicable grades (comma separated, blank = all)</label><input id="sj-grades" value="'+esc((s.applicable_grades||[]).join(", "))+'" placeholder="Grade 4, Grade 5, Grade 6"></div>'
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>', true);
       m.q("#c").onclick=m.close;
       m.q("#sv").onclick=async function(){
-        var rec={ school_id:schoolId, name:m.q("#sj-name").value.trim(), code:m.q("#sj-code").value.trim()||null };
+        var gradesRaw=m.q("#sj-grades").value.trim();
+        var compRaw=m.q("#sj-comp").value.trim();
+        var isCompulsory=m.q("#sj-compulsory").value==="true";
+        var rec={ school_id:schoolId, name:m.q("#sj-name").value.trim(), code:m.q("#sj-code").value.trim()||null,
+          learning_area:m.q("#sj-area").value.trim()||null, department:m.q("#sj-dept").value.trim()||null,
+          is_compulsory:isCompulsory, is_optional:!isCompulsory,
+          total_competencies: compRaw?Number(compRaw):null,
+          applicable_grades: gradesRaw ? gradesRaw.split(",").map(function(x){return x.trim();}).filter(Boolean) : null };
         if(!rec.name){ toast("Name is required."); return; }
         var r=s.id? await sb.from("subjects").update(rec).eq("id",s.id) : await sb.from("subjects").insert(rec);
         if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"That subject already exists.":r.error.message)); return; }
         m.close(); toast("Saved"); subjects();
+      };
+    }
+
+    // ----- Senior School pathways -----
+    var DEFAULT_PATHWAYS=[
+      {name:"Science, Technology, Engineering and Mathematics",code:"STEM"},
+      {name:"Social Sciences",code:"SOC"},
+      {name:"Arts and Sports Science",code:"ARTS"}
+    ];
+    async function pathwaysTab(){
+      var body=document.getElementById("set-body");
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Senior School (Grade 10–12) pathways. Assign subjects to each pathway, then tag Senior School classes with their pathway in Classes &amp; Streams.</span><button class="btn-sm" id="seed-pathways">Load Kenyan pathways</button><button class="btn-primary" id="add-pathway">+ Add pathway</button></div><div id="pathway-list"></div>';
+      var r=await sb.from("pathways").select("*").eq("school_id",schoolId).order("sort");
+      var list=r.data||[]; var wrap=document.getElementById("pathway-list");
+      if(!list.length){ wrap.innerHTML='<div class="empty">No pathways yet. Click <strong>Load Kenyan pathways</strong> for STEM / Social Sciences / Arts &amp; Sports Science, or add your own.</div>'; }
+      else {
+        var sr=await sb.from("senior_school_subjects").select("pathway_id").in("pathway_id",list.map(function(p){return p.id;}));
+        var subjCount={}; (sr.data||[]).forEach(function(x){ subjCount[x.pathway_id]=(subjCount[x.pathway_id]||0)+1; });
+        wrap.innerHTML=list.map(function(p){
+          return '<div class="panel" style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">'
+            +'<div><strong style="font-size:14px;">'+esc(p.name)+'</strong>'+(p.code?' <span class="pill gray">'+esc(p.code)+'</span>':'')
+            +'<div class="muted" style="font-size:12px;margin-top:3px;">'+(subjCount[p.id]||0)+' subject(s) assigned'+(p.description?' — '+esc(p.description):'')+'</div></div>'
+            +'<div style="display:flex;gap:8px;"><button class="btn-sm" data-subj="'+p.id+'">Subjects</button> <button class="btn-sm" data-edit="'+p.id+'">Edit</button> <button class="btn-sm danger" data-del="'+p.id+'">Delete</button></div>'
+            +'</div>';
+        }).join("");
+        wrap.querySelectorAll("[data-subj]").forEach(function(b){ b.onclick=function(){ pathwaySubjectsForm(list.find(function(x){return x.id===b.getAttribute("data-subj");})); }; });
+        wrap.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ pathwayForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+        wrap.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this pathway? Subjects assigned to it will lose that assignment."))return; var r=await sb.from("pathways").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); pathwaysTab(); }; });
+      }
+      document.getElementById("add-pathway").onclick=function(){ pathwayForm(); };
+      document.getElementById("seed-pathways").onclick=async function(){
+        var rows=DEFAULT_PATHWAYS.map(function(p,i){ return { school_id:schoolId, name:p.name, code:p.code, sort:i }; });
+        var r=await sb.from("pathways").upsert(rows,{ onConflict:"school_id,name", ignoreDuplicates:true });
+        if(r.error){ toast("Error: "+r.error.message); return; } toast("Kenyan pathways loaded"); pathwaysTab();
+      };
+    }
+    function pathwayForm(p){
+      p=p||{};
+      var m=modal('<h3>'+(p.id?"Edit":"Add")+' pathway</h3><div class="grid2">'
+        +'<div class="field full"><label>Name</label><input id="pw-name" value="'+esc(p.name||"")+'" placeholder="Science, Technology, Engineering and Mathematics"></div>'
+        +'<div class="field"><label>Code (optional)</label><input id="pw-code" value="'+esc(p.code||"")+'" placeholder="STEM"></div>'
+        +'<div class="field"><label>Sort order</label><input id="pw-sort" type="number" value="'+(p.sort||0)+'"></div>'
+        +'<div class="field full"><label>Description (optional)</label><input id="pw-desc" value="'+esc(p.description||"")+'"></div>'
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+      m.q("#c").onclick=m.close;
+      m.q("#s").onclick=async function(){
+        var rec={ school_id:schoolId, name:m.q("#pw-name").value.trim(), code:m.q("#pw-code").value.trim()||null,
+          sort:Number(m.q("#pw-sort").value)||0, description:m.q("#pw-desc").value.trim()||null };
+        if(!rec.name){ toast("Name is required."); return; }
+        var r=p.id? await sb.from("pathways").update(rec).eq("id",p.id) : await sb.from("pathways").insert(rec);
+        if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That pathway already exists.":("Error: "+r.error.message)); return; }
+        m.close(); toast("Saved"); pathwaysTab();
+      };
+    }
+    async function pathwaySubjectsForm(p){
+      var sr=await sb.from("subjects").select("id,name").eq("school_id",schoolId).order("name"); var allSubjects=sr.data||[];
+      if(!allSubjects.length){ toast("Add subjects first, in the Subjects tab."); return; }
+      var asr=await sb.from("senior_school_subjects").select("*").eq("pathway_id",p.id); var assigned={}; (asr.data||[]).forEach(function(x){ assigned[x.subject_id]=x; });
+      var rows=allSubjects.map(function(s){
+        var a=assigned[s.id]; var checked=!!a;
+        return '<div class="cst-row" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-2);">'
+          +'<label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;font-size:13px;"><input type="checkbox" class="ps-chk" data-sid="'+s.id+'"'+(checked?" checked":"")+'> '+esc(s.name)+'</label>'
+          +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);"><input type="checkbox" class="ps-core" data-sid="'+s.id+'"'+(a&&a.is_core?" checked":"")+(checked?"":" disabled")+'> Core</label>'
+          +'<input class="ps-cluster" data-sid="'+s.id+'" placeholder="Cluster (optional)" value="'+esc((a&&a.cluster)||"")+'" style="min-width:160px;font-size:12.5px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;"'+(checked?"":" disabled")+'>'
+          +'</div>';
+      }).join("");
+      var m=modal('<h3>Subjects — '+esc(p.name)+'</h3><p class="muted" style="font-size:12.5px;margin:0 0 6px;">Tick the subjects offered under this pathway. Mark core subjects and optionally group them into a cluster (e.g. Pure Sciences, Applied Sciences).</p>'
+        +'<div style="max-height:400px;overflow:auto;">'+rows+'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+      m.q("#c").onclick=m.close;
+      m.qa(".ps-chk").forEach(function(chk){ chk.onchange=function(){ var sid=chk.getAttribute("data-sid");
+        var coreChk=m.el.querySelector('.ps-core[data-sid="'+sid+'"]'); var clusterInp=m.el.querySelector('.ps-cluster[data-sid="'+sid+'"]');
+        coreChk.disabled=!chk.checked; clusterInp.disabled=!chk.checked; }; });
+      m.q("#s").onclick=async function(){
+        var checkedIds=[]; m.qa(".ps-chk").forEach(function(chk){ if(chk.checked) checkedIds.push(chk.getAttribute("data-sid")); });
+        var del=await sb.from("senior_school_subjects").delete().eq("pathway_id",p.id);
+        if(del.error){ toast("Error: "+del.error.message); return; }
+        if(checkedIds.length){
+          var rows=checkedIds.map(function(sid){
+            var coreChk=m.el.querySelector('.ps-core[data-sid="'+sid+'"]'); var clusterInp=m.el.querySelector('.ps-cluster[data-sid="'+sid+'"]');
+            return { subject_id:sid, pathway_id:p.id, is_core:coreChk.checked, cluster:clusterInp.value.trim()||null };
+          });
+          var ins=await sb.from("senior_school_subjects").insert(rows);
+          if(ins.error){ toast("Error: "+ins.error.message); return; }
+        }
+        m.close(); toast("Saved"); pathwaysTab();
       };
     }
 
