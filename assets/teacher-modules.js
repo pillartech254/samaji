@@ -234,7 +234,6 @@
       if (markSheet){
         var exRes = await sb.from("exams").select("id,assessment_type_id,max_score").eq("mark_sheet_id",markSheet.id);
         var exams = exRes.data||[];
-        var maxScoreByExam = {}; exams.forEach(function(e){ maxScoreByExam[e.id]=e.max_score; });
         var allAnnounced = exams.map(function(e){ var t = allTypes.find(function(x){ return x.id===e.assessment_type_id; });
           if (!t) return null;
           var outOf = Number(e.max_score)||Number(t.max_marks)||100;

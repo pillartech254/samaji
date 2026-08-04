@@ -87,7 +87,8 @@ begin
      or new.academic_year_id is distinct from old.academic_year_id
      or new.mark_sheet_id is distinct from old.mark_sheet_id
      or new.assessment_type_id is distinct from old.assessment_type_id
-     or new.exam_date is distinct from old.exam_date then
+     or new.exam_date is distinct from old.exam_date
+     or new.created_at is distinct from old.created_at then
     raise exception 'Teachers may only change how many marks a test is out of (max_score) — everything else about an exam is set by the school admin in Exam Announcements.';
   end if;
   return new;
