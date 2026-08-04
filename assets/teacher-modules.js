@@ -33,6 +33,8 @@
   function toast(t){ window.SM_toast(t, /error|fail|required|invalid/i.test(t)?"err":"ok"); }
   function classLabel(c){ if(!c) return "—"; return c.level + (c.stream ? " "+c.stream : ""); }
   function uniq(arr){ return Array.from(new Set(arr)); }
+  var ORDINALS = ["First","Second","Third","Fourth","Fifth","Sixth","Seventh","Eighth"];
+  function ordinal(i){ return ORDINALS[i] || ((i+1)+"th"); }
 
   // Teacher Portal doesn't load school-modules.js/school-plus.js (where this
   // pattern normally lives) — same .overlay/.modal markup, shared via styles.css.
@@ -232,8 +234,24 @@
       if (markSheet){
         var exRes = await sb.from("exams").select("id,assessment_type_id").eq("mark_sheet_id",markSheet.id);
         var exams = exRes.data||[];
-        types = exams.map(function(e){ var t = allTypes.find(function(x){ return x.id===e.assessment_type_id; }); return t ? Object.assign({}, t, { examId:e.id }) : null; })
+        var allAnnounced = exams.map(function(e){ var t = allTypes.find(function(x){ return x.id===e.assessment_type_id; }); return t ? Object.assign({}, t, { examId:e.id }) : null; })
           .filter(Boolean).sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
+        // Same First/Second/Third Test grid as the report card: cap
+        // contributing (summative) assessments to MAX_TESTS, in order.
+        // Formative ones (contributes_to_final=false) are still scorable
+        // here — they just aren't a numbered "test" and don't print on
+        // the report card.
+        var testIndex = 0;
+        types = [];
+        allAnnounced.forEach(function(t){
+          if (t.contributes_to_final){
+            if (testIndex >= window.SamajiAcademics.MAX_TESTS) return; // beyond the report card's 3 test columns
+            types.push(Object.assign({}, t, { testLabel: ordinal(testIndex)+" Test" }));
+            testIndex++;
+          } else {
+            types.push(t);
+          }
+        });
         types.forEach(function(t){ examByType[t.id]=t.examId; });
         if (exams.length && students.length){
           var resRes = await sb.from("exam_results").select("*").in("exam_id",exams.map(function(e){return e.id;}));
@@ -263,7 +281,9 @@
     function badgeHTML(lvl){
       if (!lvl) return '<span class="muted">—</span>';
       var c = lvl.color || "#475467";
-      return '<span class="pill" style="background:'+c+'22;color:'+c+';">'+esc(lvl.grade_label || lvl.competency_code || "—")+'</span>';
+      // CBC competency code (EE/ME/AE/BE) first — that's what prints on the
+      // report card — falling back to a letter grade only if a scheme has no code.
+      return '<span class="pill" style="background:'+c+'22;color:'+c+';">'+esc(lvl.competency_code || lvl.grade_label || "—")+'</span>';
     }
 
     function draw(){
@@ -276,7 +296,11 @@
         return;
       }
       var html='<div style="overflow-x:auto;"><table class="data" style="min-width:'+(480+state.types.length*100)+'px;"><thead><tr><th>Name</th>'
-        + state.types.map(function(t){ return '<th style="text-align:right;">'+esc(t.name)+'<div class="muted" style="font-size:10px;font-weight:500;">/'+t.max_marks+' · '+t.weight_percent+'%</div></th>'; }).join("")
+        + state.types.map(function(t){
+            var head = t.testLabel ? esc(t.testLabel.toUpperCase()) : esc(t.name);
+            var sub = t.testLabel ? (esc(t.name)+' · /'+t.max_marks+' · '+t.weight_percent+'%') : ('/'+t.max_marks+' · '+t.weight_percent+'%'+(t.contributes_to_final?'':' · formative'));
+            return '<th style="text-align:right;">'+head+'<div class="muted" style="font-size:10px;font-weight:500;">'+sub+'</div></th>';
+          }).join("")
         + '<th style="text-align:right;">Total</th><th>Grade</th></tr></thead><tbody>';
       state.students.forEach(function(s){
         var row = state.scores[s.id]||{};
@@ -318,7 +342,7 @@
         var pct = (score/(type.max_marks||100))*100;
         var lvl = window.SamajiGrading.levelFor(levels, pct);
         payload.push({ school_id:ctx.schoolId, exam_id:examId, student_id:sid, score:score,
-          grade: lvl ? (lvl.grade_label || lvl.competency_code) : null, remarks: lvl ? lvl.remark : null });
+          grade: lvl ? (lvl.competency_code || lvl.grade_label) : null, remarks: lvl ? lvl.remark : null });
       });
       if (!payload.length){ toast("Enter at least one score."); return; }
       var r = await sb.from("exam_results").upsert(payload, { onConflict:"exam_id,student_id" });
