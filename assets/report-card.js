@@ -7,6 +7,13 @@
 //  and the School/Parent Portals later. Mirrors the print-popup
 //  pattern in assets/payslip.js.
 //
+//  studentReportHTML(opts) dispatches on opts.cls.level: PP1/PP2 get
+//  earlyYearsReportHTML's competency-checklist layout (no test columns,
+//  no ranking/class position — CBC doesn't exam this band the way
+//  Grade 1+ is), sourced from learner_ratings via opts.ratings. Every
+//  other level renders the standard exam grid below, byte-for-byte
+//  unchanged from before that branch existed.
+//
 //  opts: {
 //    school: {name, logo_url},
 //    student: {first_name,last_name,admission_no,upi,photo_url},
@@ -18,6 +25,8 @@
 //            checkmark grid itself but kept for future badge reuse),
 //    totalPercentPerTest: [number|null, ...],
 //    averageCodePerTest:  [competencyCode|null, ...],
+//    ratings: {competency:{}, value:{}, psychomotor:{}}|null, -- only
+//            rendered by the PP1/PP2 layout (item name -> level code)
 //    attendance: {daysOpen,daysPresent,daysAbsent}|null,
 //    promotionStatus: string|null,
 //    verificationCode: string|null,             -- only set on a frozen
@@ -115,20 +124,12 @@
     }catch(e){ return ""; }
   }
 
-  function studentReportHTML(opts){
-    opts = opts || {};
-    var school = opts.school||{}, s = opts.student||{}, cls = opts.cls||{}, term = opts.term||{};
-    var subjectRows = opts.subjectRows||[];
-    // Fixed at 3 (First/Second/Third Test) to match the official KICD
-    // summative report grid — capped here too in case opts came from
-    // somewhere other than assets/academics-core.js's own MAX_TESTS cap.
-    var testCount = Math.min((subjectRows[0] && subjectRows[0].tests && subjectRows[0].tests.length)
-      || (opts.totalPercentPerTest||[]).length || 0, 3);
-    var testIdx = []; for (var i=0;i<testCount;i++) testIdx.push(i);
-
-    var stampLabel = opts.published===false ? "DRAFT" : "ORIGINAL";
-
-    var head = ''
+  // Shared chrome between the standard (Grade 1+) and early-years (PP1/PP2)
+  // layouts — identical Ministry header, learner bio, signatures, dates and
+  // verification footer either way; only the middle "what was assessed"
+  // table differs.
+  function buildHead(school, cls, term){
+    return ''
       +'<div class="rc-govhead">'
       +'  <div class="rc-logo">'+(school.logo_url?'<img src="'+esc(school.logo_url)+'">':'<div class="rc-logo-ph">'+esc((school.name||"S").charAt(0))+'</div>')+'</div>'
       +'  <div class="rc-govtext">'
@@ -139,7 +140,8 @@
       +'  </div>'
       +'  <div class="rc-coat">'+COAT_SVG+'</div>'
       +'</div>';
-
+  }
+  function buildBio(school, s, cls, opts){
     var classStr = String(cls.level||"—") + (cls.stream ? " "+cls.stream : "");
     var bioTable = ''
       +'<table class="rc-bio2"><tbody>'
@@ -151,7 +153,105 @@
       +'<td class="k">Class:</td><td class="v">'+esc(classStr)+'</td></tr>'
       +'</tbody></table>';
     var photoBox = '<div class="rc-photo">'+(s.photo_url?'<img src="'+esc(s.photo_url)+'">':'<span class="rc-photo-ph">Photo</span>')+'</div>';
-    var bio = '<div class="rc-biowrap">'+bioTable+photoBox+'</div>';
+    return '<div class="rc-biowrap">'+bioTable+photoBox+'</div>';
+  }
+  function buildStatusBar(opts){
+    var att = opts.attendance;
+    var attStr = att && att.daysOpen ? (att.daysPresent||0)+" / "+att.daysOpen+" days" : "—";
+    return '<div class="rc-statusbar">'
+      +'<span>ATTENDANCE: <strong>'+esc(attStr)+'</strong></span>'
+      +'<span>PROMOTION STATUS: <strong>'+esc(opts.promotionStatus||"—")+'</strong></span>'
+      +'</div>';
+  }
+  function buildSignatures(genDate){
+    return '<table class="rc-signtable"><tbody>'
+      +'<tr><td class="rc-signlabel">Facilitator\'s Signature:</td><td class="rc-signline"></td><td class="rc-signlabel">Date:</td><td class="rc-datefilled">'+esc(genDate)+'</td></tr>'
+      +'<tr><td class="rc-signlabel">Head Teacher\'s Signature:</td><td class="rc-signline"></td><td class="rc-signlabel">Date:</td><td class="rc-signline"></td></tr>'
+      +'<tr><td class="rc-signlabel">Parent/Guardian\'s Signature:</td><td class="rc-signline"></td><td class="rc-signlabel">Date:</td><td class="rc-signline"></td></tr>'
+      +'</tbody></table>';
+  }
+  function buildDatesRow(term){
+    return '<div class="rc-datesrow">'
+      +'<span>OPENING DATE: <strong>'+esc(fmtDate(term.start_date))+'</strong></span>'
+      +'<span>CLOSING DATE: <strong>'+esc(fmtDate(term.end_date))+'</strong></span>'
+      +'</div>';
+  }
+  function buildVerify(opts){
+    if (!opts.verificationCode) return '';
+    var verifyUrl = (typeof window!=="undefined" && window.location ? window.location.origin : "") + "/verify.html?code=" + opts.verificationCode;
+    var svg = qrSvg(verifyUrl);
+    return '<div class="rc-verify">'
+      + (svg ? '<div class="rc-verify-qr">'+svg+'</div>' : '')
+      + '<div class="rc-verify-text">Verify this report at<br><strong>'+esc(verifyUrl.replace(/^https?:\/\//,""))+'</strong><br>Code: <span class="mono">'+esc(opts.verificationCode)+'</span></div>'
+      + '</div>';
+  }
+  // PP1/PP2 don't sit exams the way Grade 1+ does — CBC guidance for this
+  // band is a competency checklist (no test columns, no ranking, no class
+  // position, which this report never had anyway). Same chrome as the
+  // standard layout (buildHead/buildBio/buildSignatures/etc.), just a
+  // different middle table sourced from learner_ratings instead of
+  // subjectRows/exam scores.
+  function isEarlyYears(level){ return /pp\s*[12]/i.test(String(level||"")); }
+
+  function earlyYearsReportHTML(opts){
+    var school = opts.school||{}, s = opts.student||{}, cls = opts.cls||{}, term = opts.term||{};
+    var stampLabel = opts.published===false ? "DRAFT" : "ORIGINAL";
+    var head = buildHead(school, cls, term);
+    var bio = buildBio(school, s, cls, opts);
+
+    var ratings = opts.ratings || {};
+    function levelCell(code){ return code ? '<span class="rc-ey-badge">'+esc(code)+'</span>' : '<span class="rc-ey-nb">—</span>'; }
+    function section(title, cat){
+      var items = CATALOG[cat]||[];
+      return '<tr><td colspan="2" class="rc-ey-sect">'+esc(title)+'</td></tr>'
+        + items.map(function(name){
+            return '<tr><td class="rc-ey-item">'+esc(name)+'</td><td class="rc-ey-level">'+levelCell((ratings[cat]||{})[name])+'</td></tr>';
+          }).join("");
+    }
+    var grid = '<table class="rc-ey-table"><thead><tr><th>Competency / Activity</th><th>Level Achieved</th></tr></thead><tbody>'
+      + section("Core Competencies","competency")
+      + section("Values","value")
+      + section("Psychomotor Skills","psychomotor")
+      + '</tbody></table>';
+
+    var remarks = '<div class="rc-remarksbox">'
+      +'<div class="rc-remarks-label">Facilitator\'s remarks based on:- core competencies, achievements, PCI\'s development and Values:</div>'
+      +'<div class="rc-remarks-text">'+esc(opts.facilitatorRemark||"")+'</div>'
+      +'</div>';
+    var statusBar = buildStatusBar(opts);
+    var genDate = fmtDate(new Date());
+    var signatures = buildSignatures(genDate);
+    var dates = buildDatesRow(term);
+    var watermark = school.logo_url ? '<div class="rc-watermark" style="background-image:url(\''+esc(school.logo_url).replace(/'/g,"%27")+'\');"></div>' : '';
+    var verify = buildVerify(opts);
+
+    return '<div class="rc-card">'
+      + '<div class="rc-stamp'+(stampLabel==="DRAFT"?" rc-stamp-draft":"")+'">'+esc(stampLabel)+'</div>'
+      + watermark
+      + '<div class="rc-content">'
+      +   head + bio + grid + remarks + statusBar + signatures + dates
+      +   '<div class="rc-foot2">'+verify+'<span>Generated by Samaji School System · '+esc(genDate)+'</span></div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  function studentReportHTML(opts){
+    opts = opts || {};
+    var cls = opts.cls||{};
+    if (isEarlyYears(cls.level)) return earlyYearsReportHTML(opts);
+    var school = opts.school||{}, s = opts.student||{}, term = opts.term||{};
+    var subjectRows = opts.subjectRows||[];
+    // Fixed at 3 (First/Second/Third Test) to match the official KICD
+    // summative report grid — capped here too in case opts came from
+    // somewhere other than assets/academics-core.js's own MAX_TESTS cap.
+    var testCount = Math.min((subjectRows[0] && subjectRows[0].tests && subjectRows[0].tests.length)
+      || (opts.totalPercentPerTest||[]).length || 0, 3);
+    var testIdx = []; for (var i=0;i<testCount;i++) testIdx.push(i);
+
+    var stampLabel = opts.published===false ? "DRAFT" : "ORIGINAL";
+
+    var head = buildHead(school, cls, term);
+    var bio = buildBio(school, s, cls, opts);
 
     var grid = '<table class="rc-grid"><thead>'
       +'<tr><th rowspan="2" class="rc-actcol">ACTIVITIES</th>'
@@ -177,36 +277,12 @@
       +'<div class="rc-remarks-text">'+esc(opts.facilitatorRemark||"")+'</div>'
       +'</div>';
 
-    var att = opts.attendance;
-    var attStr = att && att.daysOpen ? (att.daysPresent||0)+" / "+att.daysOpen+" days" : "—";
-    var statusBar = '<div class="rc-statusbar">'
-      +'<span>ATTENDANCE: <strong>'+esc(attStr)+'</strong></span>'
-      +'<span>PROMOTION STATUS: <strong>'+esc(opts.promotionStatus||"—")+'</strong></span>'
-      +'</div>';
-
+    var statusBar = buildStatusBar(opts);
     var genDate = fmtDate(new Date());
-    var signatures = '<table class="rc-signtable"><tbody>'
-      +'<tr><td class="rc-signlabel">Facilitator\'s Signature:</td><td class="rc-signline"></td><td class="rc-signlabel">Date:</td><td class="rc-datefilled">'+esc(genDate)+'</td></tr>'
-      +'<tr><td class="rc-signlabel">Head Teacher\'s Signature:</td><td class="rc-signline"></td><td class="rc-signlabel">Date:</td><td class="rc-signline"></td></tr>'
-      +'<tr><td class="rc-signlabel">Parent/Guardian\'s Signature:</td><td class="rc-signline"></td><td class="rc-signlabel">Date:</td><td class="rc-signline"></td></tr>'
-      +'</tbody></table>';
-
-    var dates = '<div class="rc-datesrow">'
-      +'<span>OPENING DATE: <strong>'+esc(fmtDate(term.start_date))+'</strong></span>'
-      +'<span>CLOSING DATE: <strong>'+esc(fmtDate(term.end_date))+'</strong></span>'
-      +'</div>';
-
+    var signatures = buildSignatures(genDate);
+    var dates = buildDatesRow(term);
     var watermark = school.logo_url ? '<div class="rc-watermark" style="background-image:url(\''+esc(school.logo_url).replace(/'/g,"%27")+'\');"></div>' : '';
-
-    var verify = '';
-    if (opts.verificationCode){
-      var verifyUrl = (typeof window!=="undefined" && window.location ? window.location.origin : "") + "/verify.html?code=" + opts.verificationCode;
-      var svg = qrSvg(verifyUrl);
-      verify = '<div class="rc-verify">'
-        + (svg ? '<div class="rc-verify-qr">'+svg+'</div>' : '')
-        + '<div class="rc-verify-text">Verify this report at<br><strong>'+esc(verifyUrl.replace(/^https?:\/\//,""))+'</strong><br>Code: <span class="mono">'+esc(opts.verificationCode)+'</span></div>'
-        + '</div>';
-    }
+    var verify = buildVerify(opts);
 
     return '<div class="rc-card">'
       + '<div class="rc-stamp'+(stampLabel==="DRAFT"?" rc-stamp-draft":"")+'">'+esc(stampLabel)+'</div>'
@@ -266,6 +342,14 @@
     +'.rc-verify-qr svg{display:block;width:44px;height:44px;}'
     +'.rc-verify-text{font-size:8.5px;line-height:1.5;}'
     +'.rc-verify-text .mono{font-family:"Courier New",monospace;font-weight:700;color:#101626;}'
+    +'table.rc-ey-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px;}'
+    +'table.rc-ey-table th{border:1px solid #101626;padding:5px 8px;text-align:left;font-size:10px;font-weight:700;background:#F4F6F8;}'
+    +'table.rc-ey-table td{border:1px solid #101626;padding:5px 8px;}'
+    +'td.rc-ey-sect{background:#EDEFF3;font-weight:700;text-transform:uppercase;font-size:9.5px;letter-spacing:.03em;}'
+    +'td.rc-ey-item{width:70%;}'
+    +'td.rc-ey-level{text-align:center;}'
+    +'.rc-ey-badge{display:inline-block;padding:2px 10px;border-radius:10px;background:#101626;color:#fff;font-weight:700;font-size:10.5px;}'
+    +'.rc-ey-nb{color:#98A2B3;}'
     +'@page{ size:A4 portrait; margin:10mm; }'
     +'@media print{ body{padding:0;} .rc-card{page-break-after:always;border:2px double #101626;box-shadow:none;} }';
 

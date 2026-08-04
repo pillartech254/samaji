@@ -208,6 +208,7 @@
       subjectRows: computeSubjectRows(data, student.id), levels: data.levels,
       totalPercentPerTest: summary.totalPercentPerTest, averageCodePerTest: summary.averageCodePerTest,
       attendance: (data.attByStudent||{})[student.id]||null, promotionStatus: remark.promotion_status||null,
+      ratings: (data.ratingsByStudent||{})[student.id]||null,
       published:false };
   }
   // Same, but from a frozen `report_cards` row — a reprint always matches
@@ -223,6 +224,7 @@
       subjectRows: sr.subjects||[], levels:levels,
       totalPercentPerTest: sr.totalPercentPerTest||[], averageCodePerTest: sr.averageCodePerTest||[],
       attendance: snapshotRow.attendance||null, promotionStatus: snapshotRow.promotion_status||null,
+      ratings: snapshotRow.ratings||null,
       verificationCode: snapshotRow.verification_code||null,
       published:true, publishedAt:snapshotRow.published_at };
   }
