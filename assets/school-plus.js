@@ -606,12 +606,13 @@
             return '<div class="panel" style="margin-bottom:12px;"><div style="display:flex;align-items:center;justify-content:space-between;">'
               +'<strong style="font-size:14px;">'+esc(s.name)+(s.is_default?' <span class="pill green">default</span>':'')+'</strong>'
               +'<div style="display:flex;gap:8px;"><button class="btn-sm" data-add-level="'+s.id+'">+ Band</button> <button class="btn-sm" data-edit-scheme="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del-scheme="'+s.id+'">Delete</button></div></div>'
-              +(levels.length?'<table class="data" style="margin-top:10px;"><thead><tr><th>Range</th><th>Grade</th><th>Competency</th><th>Remark</th><th></th></tr></thead><tbody>'
+              +(levels.length?'<table class="data" style="margin-top:10px;"><thead><tr><th>Range</th><th>Grade</th><th>Competency</th><th style="text-align:right;">Points</th><th>Remark</th><th></th></tr></thead><tbody>'
                 + levels.map(function(l){ return '<tr><td>'+l.min_score+'–'+l.max_score+'</td><td style="font-weight:600;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+esc(l.color||"#98A2B3")+';margin-right:6px;"></span>'+esc(l.grade_label||"—")+'</td>'
                   +'<td>'+(l.competency_code?esc(l.competency_code)+' — '+esc(l.competency_label||""):'<span class="muted">—</span>')+'</td>'
+                  +'<td style="text-align:right;">'+(l.points!=null?l.points:'<span class="muted">—</span>')+'</td>'
                   +'<td>'+esc(l.remark||"—")+'</td>'
                   +'<td style="text-align:right;"><button class="btn-sm" data-edit-level="'+l.id+'">Edit</button> <button class="btn-sm danger" data-del-level="'+l.id+'">Delete</button></td></tr>'; }).join("")
-                +'</tbody></table>' : '<div class="empty" style="margin-top:10px;">No bands yet — add one, e.g. 80–100 = A / EE.</div>')
+                +'</tbody></table>' : '<div class="empty" style="margin-top:10px;">No bands yet — add one, e.g. 90–100 = EE1, 4.0 points.</div>')
               +'</div>';
           }).join("");
           wrap.querySelectorAll("[data-add-level]").forEach(function(b){ b.onclick=function(){ levelForm(b.getAttribute("data-add-level"), null); }; });
@@ -646,7 +647,8 @@
           +'<div class="field"><label>Min score</label><input id="lv-min" type="number" value="'+(l.min_score!=null?l.min_score:0)+'"></div>'
           +'<div class="field"><label>Max score</label><input id="lv-max" type="number" value="'+(l.max_score!=null?l.max_score:100)+'"></div>'
           +'<div class="field"><label>Grade letter (optional)</label><input id="lv-grade" value="'+esc(l.grade_label||"")+'" placeholder="A"></div>'
-          +'<div class="field"><label>Competency code (optional)</label><input id="lv-code" value="'+esc(l.competency_code||"")+'" placeholder="EE"></div>'
+          +'<div class="field"><label>Competency code (optional)</label><input id="lv-code" value="'+esc(l.competency_code||"")+'" placeholder="EE1"></div>'
+          +'<div class="field"><label>Points (optional)</label><input id="lv-points" type="number" step="0.5" value="'+(l.points!=null?l.points:"")+'" placeholder="4.0"></div>'
           +'<div class="field full"><label>Competency label (optional)</label><input id="lv-label" value="'+esc(l.competency_label||"")+'" placeholder="Exceeding Expectation"></div>'
           +'<div class="field"><label>Remark (optional)</label><input id="lv-remark" value="'+esc(l.remark||"")+'" placeholder="Excellent"></div>'
           +'<div class="field"><label>Badge color</label><input id="lv-color" type="color" value="'+esc(l.color||"#0E9384")+'" style="height:38px;padding:4px;"></div>'
@@ -655,9 +657,10 @@
         m.q("#s").onclick=async function(){
           var minS=Number(m.q("#lv-min").value), maxS=Number(m.q("#lv-max").value);
           if(maxS<minS){ toast("Max score must be at least the min score."); return; }
+          var pointsRaw=m.q("#lv-points").value.trim();
           var rec={ scheme_id:schemeId, min_score:minS, max_score:maxS, grade_label:m.q("#lv-grade").value.trim()||null,
             competency_code:m.q("#lv-code").value.trim()||null, competency_label:m.q("#lv-label").value.trim()||null, remark:m.q("#lv-remark").value.trim()||null,
-            color:m.q("#lv-color").value||null };
+            points: pointsRaw?Number(pointsRaw):null, color:m.q("#lv-color").value||null };
           var r=l.id? await sb.from("grading_levels").update(rec).eq("id",l.id) : await sb.from("grading_levels").insert(rec);
           if(r.error){ toast("Error: "+r.error.message); return; }
           m.close(); toast("Saved"); gradingSchemesTab();

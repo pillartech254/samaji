@@ -196,7 +196,7 @@
     var defaultYear = academic.defaultYear;
     var defaultTerm = academic.defaultTerm;
 
-    el.innerHTML = '<div class="mod-head"><div><h2>Marks &amp; Grading</h2><p>Enter scores for the exams your school admin has announced — the weighted total and grade update automatically.</p></div></div>'
+    el.innerHTML = '<div class="mod-head"><div><h2>Marks &amp; Grading</h2><p>Enter scores for the exams your school admin has announced. Set what each test is out of if it wasn\'t marked out of 100 — the percentage, weighted total and grade update automatically.</p></div></div>'
       + '<div class="toolbar">'
       + '<div class="field"><label>Class &amp; subject</label><select id="gb-pair">'+pairs.map(function(a,i){ return '<option value="'+i+'">'+esc(classLabel(a.school_classes))+' — '+esc(a.subjects.name)+'</option>'; }).join("")+'</select></div>'
       + '<div class="field"><label>Academic year</label><select id="gb-year">'+years.map(function(y){ return '<option value="'+y.id+'"'+(y.id===defaultYear.id?" selected":"")+'>'+y.year+'</option>'; }).join("")+'</select></div>'
@@ -232,10 +232,14 @@
       var markSheet = msRes.data;
       var types = [], examByType = {}, scores = {};
       if (markSheet){
-        var exRes = await sb.from("exams").select("id,assessment_type_id").eq("mark_sheet_id",markSheet.id);
+        var exRes = await sb.from("exams").select("id,assessment_type_id,max_score").eq("mark_sheet_id",markSheet.id);
         var exams = exRes.data||[];
-        var allAnnounced = exams.map(function(e){ var t = allTypes.find(function(x){ return x.id===e.assessment_type_id; }); return t ? Object.assign({}, t, { examId:e.id }) : null; })
-          .filter(Boolean).sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
+        var maxScoreByExam = {}; exams.forEach(function(e){ maxScoreByExam[e.id]=e.max_score; });
+        var allAnnounced = exams.map(function(e){ var t = allTypes.find(function(x){ return x.id===e.assessment_type_id; });
+          if (!t) return null;
+          var outOf = Number(e.max_score)||Number(t.max_marks)||100;
+          return Object.assign({}, t, { examId:e.id, outOf:outOf, origOutOf:outOf });
+        }).filter(Boolean).sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
         // Same First/Second/Third Test grid as the report card: cap
         // contributing (summative) assessments to MAX_TESTS, in order.
         // Formative ones (contributes_to_final=false) are still scorable
@@ -272,7 +276,7 @@
 
     function rowTotalAndLevel(sid){
       var row = state.scores[sid]||{};
-      var scoreArr = state.types.map(function(t){ return { assessment_type_id:t.id, score: row[t.id] }; });
+      var scoreArr = state.types.map(function(t){ return { assessment_type_id:t.id, score: row[t.id], maxScore: t.outOf }; });
       var total = window.SamajiGrading.weightedTotal(scoreArr, state.types);
       var levels = state.scheme ? (state.scheme.grading_levels||[]) : [];
       var lvl = total==null ? null : window.SamajiGrading.levelFor(levels, total);
@@ -295,33 +299,53 @@
           + ' Only your school admin can announce an exam (Exams → Exam Announcements) — once they do, it will appear here for you to record marks against.</div>';
         return;
       }
-      var html='<div style="overflow-x:auto;"><table class="data" style="min-width:'+(480+state.types.length*100)+'px;"><thead><tr><th>Name</th>'
+      var html='<div style="overflow-x:auto;"><table class="data" style="min-width:'+(480+state.types.length*110)+'px;"><thead><tr><th>Name</th>'
         + state.types.map(function(t){
             var head = t.testLabel ? esc(t.testLabel.toUpperCase()) : esc(t.name);
-            var sub = t.testLabel ? (esc(t.name)+' · /'+t.max_marks+' · '+t.weight_percent+'%') : ('/'+t.max_marks+' · '+t.weight_percent+'%'+(t.contributes_to_final?'':' · formative'));
-            return '<th style="text-align:right;">'+head+'<div class="muted" style="font-size:10px;font-weight:500;">'+sub+'</div></th>';
+            var name = t.testLabel ? (esc(t.name)+' · ') : (t.contributes_to_final?'':'<span class="muted">formative · </span>');
+            var sub = name+'Out of <input type="number" class="gb-outof" data-type="'+t.id+'" value="'+t.outOf+'" min="1"'+(state.editable?"":" disabled")
+              +' style="width:48px;text-align:center;padding:1px 3px;border:1px solid var(--line);border-radius:4px;font-size:10px;font-family:inherit;">'
+              +' · '+t.weight_percent+'%';
+            return '<th style="text-align:right;">'+head+'<div class="muted" style="font-size:10px;font-weight:500;margin-top:3px;">'+sub+'</div></th>';
           }).join("")
         + '<th style="text-align:right;">Total</th><th>Grade</th></tr></thead><tbody>';
       state.students.forEach(function(s){
         var row = state.scores[s.id]||{};
         var tl = rowTotalAndLevel(s.id);
         html+='<tr data-row="'+s.id+'"><td style="font-weight:600;color:#1A1D26;white-space:nowrap;">'+esc(s.first_name+" "+s.last_name)+'</td>'
-          + state.types.map(function(t){ var v=row[t.id]; return '<td style="text-align:right;"><input class="gb-score" type="number" min="0" max="'+t.max_marks+'" data-stu="'+s.id+'" data-type="'+t.id+'" value="'+(v!=null?v:"")+'"'+(state.editable?"":" disabled")+' style="width:64px;text-align:right;"></td>'; }).join("")
+          + state.types.map(function(t){ var v=row[t.id]; return '<td style="text-align:right;"><input class="gb-score" type="number" min="0" max="'+t.outOf+'" data-stu="'+s.id+'" data-type="'+t.id+'" value="'+(v!=null?v:"")+'"'+(state.editable?"":" disabled")+' style="width:64px;text-align:right;"></td>'; }).join("")
           + '<td class="gb-total" style="text-align:right;font-weight:700;">'+(tl.total==null?'<span class="muted">—</span>':tl.total)+'</td>'
           + '<td class="gb-grade">'+badgeHTML(tl.lvl)+'</td></tr>';
       });
       html+='</tbody></table></div>';
       grid.innerHTML = html;
       if (!state.editable) return;
+      function refreshRow(sid){
+        var tl = rowTotalAndLevel(sid);
+        var tr = grid.querySelector('tr[data-row="'+sid+'"]');
+        if (!tr) return;
+        tr.querySelector(".gb-total").innerHTML = tl.total==null ? '<span class="muted">—</span>' : tl.total;
+        tr.querySelector(".gb-grade").innerHTML = badgeHTML(tl.lvl);
+      }
       grid.querySelectorAll(".gb-score").forEach(function(inp){
         inp.oninput = function(){
           var sid = inp.getAttribute("data-stu"), tid = inp.getAttribute("data-type");
           state.scores[sid] = state.scores[sid] || {};
           state.scores[sid][tid] = inp.value === "" ? null : Number(inp.value);
-          var tl = rowTotalAndLevel(sid);
-          var tr = grid.querySelector('tr[data-row="'+sid+'"]');
-          tr.querySelector(".gb-total").innerHTML = tl.total==null ? '<span class="muted">—</span>' : tl.total;
-          tr.querySelector(".gb-grade").innerHTML = badgeHTML(tl.lvl);
+          refreshRow(sid);
+        };
+      });
+      // A test's "out of" applies to every student taking it — changing it
+      // recomputes every row's Total/Grade, and updates the score inputs'
+      // max so a score already above the new ceiling gets flagged.
+      grid.querySelectorAll(".gb-outof").forEach(function(inp){
+        inp.onchange = function(){
+          var tid = inp.getAttribute("data-type");
+          var t = state.types.find(function(x){ return x.id===tid; });
+          var v = Number(inp.value)||1;
+          inp.value = v; t.outOf = v;
+          grid.querySelectorAll('.gb-score[data-type="'+tid+'"]').forEach(function(sc){ sc.max = v; });
+          state.students.forEach(function(s){ refreshRow(s.id); });
         };
       });
     }
@@ -332,6 +356,17 @@
     document.getElementById("gb-save").onclick=async function(){
       if (!state.editable || !state.students.length || !state.types.length) return;
       var levels = state.scheme ? (state.scheme.grading_levels||[]) : [];
+
+      // "Out of" marks changed for a test? Persist that to the exam itself
+      // first — everyone's percentage below depends on it.
+      var maxScoreUpdates = state.types.filter(function(t){ return t.outOf !== t.origOutOf; });
+      for (var i=0;i<maxScoreUpdates.length;i++){
+        var mt = maxScoreUpdates[i];
+        var mr = await sb.from("exams").update({ max_score: mt.outOf }).eq("id", mt.examId);
+        if (mr.error){ toast("Error updating \""+mt.name+"\" out of "+mt.outOf+": "+mr.error.message); return; }
+        mt.origOutOf = mt.outOf;
+      }
+
       var payload = [];
       document.querySelectorAll(".gb-score").forEach(function(inp){
         if (inp.value==="") return;
@@ -339,12 +374,12 @@
         if (!examId) return;
         var type = state.types.find(function(t){ return t.id===tid; });
         var score = Number(inp.value);
-        var pct = (score/(type.max_marks||100))*100;
+        var pct = (score/(type.outOf||100))*100;
         var lvl = window.SamajiGrading.levelFor(levels, pct);
         payload.push({ school_id:ctx.schoolId, exam_id:examId, student_id:sid, score:score,
           grade: lvl ? (lvl.competency_code || lvl.grade_label) : null, remarks: lvl ? lvl.remark : null });
       });
-      if (!payload.length){ toast("Enter at least one score."); return; }
+      if (!payload.length){ toast(maxScoreUpdates.length?"Saved the marks each test is out of.":"Enter at least one score."); return; }
       var r = await sb.from("exam_results").upsert(payload, { onConflict:"exam_id,student_id" });
       if (r.error){ toast("Error: "+r.error.message); return; }
       toast("Saved "+payload.length+" score"+(payload.length===1?"":"s")+" for "+state.pair.subjects.name+" · "+state.term.name);
