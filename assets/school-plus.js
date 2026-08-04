@@ -1183,9 +1183,15 @@
       var m=modal('<h3>'+(s.id?"Edit student":"New student")+'</h3><p class="muted" style="font-size:12.5px;margin:0;">Full enrollment record.</p>'
         +'<div class="modal-body"><div class="grid3">'
         +'<div class="section-h">Identity</div>'
+        +(s.id?'<div class="field full" style="grid-column:span 3;display:flex;align-items:center;gap:14px;">'
+          +'<div id="stu-photo-preview" style="width:64px;height:78px;border-radius:6px;border:2px dashed #DDE1E6;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;background:#F8FAFB;">'
+          +(s.photo_url?'<img src="'+esc(s.photo_url)+'" style="width:100%;height:100%;object-fit:cover;">':'<span class="muted" style="font-size:9px;text-align:center;">No photo</span>')
+          +'</div><label class="btn-sm" style="cursor:pointer;"><input type="file" id="stu-photo-file" accept="image/*" style="display:none;"> ⬆ Upload photo</label>'
+          +'</div>':'')
         +'<div class="field"><label>First name</label><input id="f-first" value="'+esc(s.first_name||"")+'"></div>'
         +'<div class="field"><label>Last name</label><input id="f-last" value="'+esc(s.last_name||"")+'"></div>'
         +'<div class="field"><label>Admission no</label><input id="f-adm" value="'+esc(s.admission_no||nextAdm())+'"></div>'
+        +'<div class="field"><label>UPI (NEMIS)</label><input id="f-upi" value="'+esc(s.upi||"")+'" placeholder="Unique Personal Identifier"></div>'
         +'<div class="field"><label>Gender</label><select id="f-gender"><option value="">—</option><option'+(s.gender==="M"?" selected":"")+'>M</option><option'+(s.gender==="F"?" selected":"")+'>F</option></select></div>'
         +'<div class="field"><label>Date of birth</label><input id="f-dob" type="date" value="'+esc(s.date_of_birth||"")+'"></div>'
         +'<div class="field"><label>Admission date</label><input id="f-admdate" type="date" value="'+esc(s.admission_date||new Date().toISOString().slice(0,10))+'"></div>'
@@ -1215,13 +1221,28 @@
       // auto-select grade text from class for legacy 'grade' column
       m.q("#cancel").onclick=m.close;
       m.q("#f-bus").onchange=function(){ m.q("#f-route").disabled=(m.q("#f-bus").value!=="yes"); };
+      if(m.q("#stu-photo-file")) m.q("#stu-photo-file").onchange=async function(e){
+        var file=e.target.files[0]; if(!file) return;
+        if(file.size>500*1024){ toast("Photo must be under 500 KB."); return; }
+        var ext=(file.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"")||"jpg";
+        var path=schoolId+"/students/"+s.id+"."+ext;
+        var up=await sb.storage.from("student-photos").upload(path, file, {upsert:true, cacheControl:"3600", contentType:file.type||undefined});
+        if(up.error){ toast("Photo upload failed: "+up.error.message); return; }
+        var pub=sb.storage.from("student-photos").getPublicUrl(path);
+        var publicUrl=(pub.data&&pub.data.publicUrl)?pub.data.publicUrl+"?v="+Date.now():"";
+        var pr=await sb.from("students").update({photo_url:publicUrl}).eq("id",s.id);
+        if(pr.error){ toast("Photo uploaded but couldn't be saved: "+pr.error.message); return; }
+        s.photo_url=publicUrl;
+        m.q("#stu-photo-preview").innerHTML='<img src="'+esc(publicUrl)+'" style="width:100%;height:100%;object-fit:cover;">';
+        toast("Photo saved");
+      };
       m.q("#save").onclick=async function(){
         var clsId=m.q("#f-class").value||null;
         var cls=classes.find(function(c){return c.id===clsId;});
         var usesBus=m.q("#f-bus").value==="yes", routeId=m.q("#f-route").value||null;
         if(usesBus && !routeId){ toast("Select a bus route, or set transport to No."); return; }
         var rec={ school_id:schoolId, first_name:m.q("#f-first").value.trim(), last_name:m.q("#f-last").value.trim(),
-          admission_no:m.q("#f-adm").value.trim()||null, gender:m.q("#f-gender").value||null,
+          admission_no:m.q("#f-adm").value.trim()||null, upi:m.q("#f-upi").value.trim()||null, gender:m.q("#f-gender").value||null,
           date_of_birth:m.q("#f-dob").value||null, admission_date:m.q("#f-admdate").value||null,
           class_id:clsId, grade:cls?cls.level:(s.grade||null), residence:m.q("#f-res").value,
           dormitory_id:m.q("#f-dorm").value||null, status:m.q("#f-status").value,

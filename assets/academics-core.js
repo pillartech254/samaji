@@ -54,7 +54,7 @@
     var csr = await sb.from("class_subjects").select("subjects(id,name)").eq("class_id",cls.id);
     var subjects = (csr.data||[]).map(function(x){ return x.subjects; }).filter(Boolean).sort(function(a,b){ return a.name<b.name?-1:1; });
 
-    var sr = await sb.from("students").select("id,first_name,last_name,admission_no").eq("school_id",schoolId).eq("class_id",cls.id).eq("status","active").order("first_name");
+    var sr = await sb.from("students").select("id,first_name,last_name,admission_no,upi,photo_url").eq("school_id",schoolId).eq("class_id",cls.id).eq("status","active").order("first_name");
     var students = sr.data||[];
     var studentIds = students.map(function(s){ return s.id; });
 
@@ -109,7 +109,7 @@
     }
     var remarksByStudent = {};
     if (studentIds.length){
-      var remarksRes = await sb.from("report_remarks").select("student_id,teacher_remark,principal_remark").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
+      var remarksRes = await sb.from("report_remarks").select("student_id,teacher_remark,principal_remark,promotion_status").in("student_id",studentIds).eq("term_id",term.id).eq("academic_year_id",year.id);
       (remarksRes.data||[]).forEach(function(r){ remarksByStudent[r.student_id]=r; });
     }
     var attByStudent = {};
@@ -188,6 +188,7 @@
           classLevel:cls.level, classStream:cls.stream||null },
         attendance: data.attByStudent[s.id]||null, ratings: data.ratingsByStudent[s.id]||null,
         overall_average: overallFromSummary(summary), teacher_remark: remark.teacher_remark||null, principal_remark: remark.principal_remark||null,
+        promotion_status: remark.promotion_status||null,
         published_at: new Date().toISOString(), published_by: publishedByTeacherId||null };
     });
     var res = await sb.from("report_cards").upsert(rows, { onConflict:"student_id,term_id,academic_year_id" });
@@ -201,14 +202,18 @@
   // the School Portal's Report Cards console.
   function buildLiveReportOpts(school, student, cls, term, academicYear, data, facilitatorName, facilitatorRemark){
     var summary = testSummaryFor(data, student.id);
+    var remark = (data.remarksByStudent||{})[student.id]||{};
     return { school:school, student:student, cls:cls, term:term, academicYear:academicYear,
       facilitatorName: facilitatorName||"—", facilitatorRemark: facilitatorRemark||"",
       subjectRows: computeSubjectRows(data, student.id), levels: data.levels,
       totalPercentPerTest: summary.totalPercentPerTest, averageCodePerTest: summary.averageCodePerTest,
+      attendance: (data.attByStudent||{})[student.id]||null, promotionStatus: remark.promotion_status||null,
       published:false };
   }
   // Same, but from a frozen `report_cards` row — a reprint always matches
-  // what was originally issued even if marks changed afterwards.
+  // what was originally issued even if marks changed afterwards. Only a
+  // frozen row carries a verification_code (a draft/live preview isn't an
+  // official document, so it prints without a verification QR).
   function buildSnapshotReportOpts(school, student, snapshotRow, cls, term, academicYear, levels){
     var sr = snapshotRow.subject_rows||{};
     return { school:school, student:student,
@@ -217,6 +222,8 @@
       facilitatorName: snapshotRow.class_teacher_name||"—", facilitatorRemark: snapshotRow.teacher_remark||"",
       subjectRows: sr.subjects||[], levels:levels,
       totalPercentPerTest: sr.totalPercentPerTest||[], averageCodePerTest: sr.averageCodePerTest||[],
+      attendance: snapshotRow.attendance||null, promotionStatus: snapshotRow.promotion_status||null,
+      verificationCode: snapshotRow.verification_code||null,
       published:true, publishedAt:snapshotRow.published_at };
   }
 

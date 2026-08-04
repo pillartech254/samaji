@@ -265,6 +265,7 @@
     // Kicked off now, awaited just before each place that actually prints —
     // most visits to this console are just filtering/generating, not printing.
     var reportCardLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/report-card.js") : Promise.resolve();
+    var qrLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/qrcode-gen.js") : Promise.resolve();
     var classes = await loadClasses(sb, schoolId);
     var academic = await window.SamajiAcademics.loadAcademicContext(sb, schoolId);
     var years = academic.years, allTypes = academic.allTypes, schemes = academic.schemes, teacherNameById = academic.teacherNameById;
@@ -336,7 +337,7 @@
     }
 
     async function printOne(row, year, term){
-      await reportCardLoad;
+      await reportCardLoad; await qrLoad;
       var snapRes = await sb.from("report_cards").select("*").eq("student_id",row.student.id).eq("term_id",term.id).eq("academic_year_id",year.id).maybeSingle();
       var opts = snapRes.data
         ? window.SamajiAcademics.buildSnapshotReportOpts(school, row.student, snapRes.data, row.cls, term, year, row.data.levels)
@@ -371,7 +372,7 @@
 
     document.getElementById("rc-print").onclick=async function(){
       if (!rows.length){ toast("Nothing to print yet."); return; }
-      await reportCardLoad;
+      await reportCardLoad; await qrLoad;
       var year = years.find(function(y){ return y.id===document.getElementById("rc-year").value; });
       var termId = document.getElementById("rc-term").value;
       var term = termId ? year.terms.find(function(t){ return t.id===termId; }) : null;

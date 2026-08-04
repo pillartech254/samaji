@@ -393,6 +393,7 @@
     // window.SamajiReportCard (Ratings modal, Print) — most sessions open
     // Report Books to skim the summary table without ever printing.
     var reportCardLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/report-card.js") : Promise.resolve();
+    var qrLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/qrcode-gen.js") : Promise.resolve();
     var assignments = await loadMyAssignments(sb, ctx);
     var classes = myClasses(assignments);
     var ctRes = await sb.from("school_classes").select("*").eq("class_teacher_id", ctx.teacher.id);
@@ -487,6 +488,7 @@
         + section("Psychomotor Skills","psychomotor")
         + '<div class="field full"><label>Teacher\'s remark</label>'+(canEditRatings?'<textarea id="rt-teacher-remark" rows="3" style="width:100%;font-family:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:9px 11px;">'+esc(remark.teacher_remark||"")+'</textarea>':'<div class="muted">'+esc(remark.teacher_remark||"—")+'</div>')+'</div>'
         + '<div class="field full"><label>Head Teacher\'s remark</label>'+(canEditPrincipal?'<textarea id="rt-principal-remark" rows="3" style="width:100%;font-family:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:9px 11px;">'+esc(remark.principal_remark||"")+'</textarea>':'<div class="muted">'+esc(remark.principal_remark||"—")+'</div>')+'</div>'
+        + '<div class="field full"><label>Promotion status</label>'+(canEditPrincipal?'<select id="rt-promotion"><option value=""'+(!remark.promotion_status?" selected":"")+'>—</option><option value="Promoted"'+(remark.promotion_status==="Promoted"?" selected":"")+'>Promoted</option><option value="Repeat"'+(remark.promotion_status==="Repeat"?" selected":"")+'>Repeat</option><option value="On Probation"'+(remark.promotion_status==="On Probation"?" selected":"")+'>On Probation</option></select>':'<div class="muted">'+esc(remark.promotion_status||"—")+'</div>')+'</div>'
         + '</div><div class="modal-actions"><button class="btn-sm" id="c">Close</button>'+((canEditRatings||canEditPrincipal)?'<button class="btn-primary" id="sv">Save</button>':'')+'</div>', true);
       m.q("#c").onclick=m.close;
       if (m.q("#sv")) m.q("#sv").onclick=async function(){
@@ -497,7 +499,8 @@
         }
         var remRec = { school_id:ctx.schoolId, student_id:s.id, term_id:current.term.id, academic_year_id:current.year.id,
           teacher_remark: canEditRatings ? (m.q("#rt-teacher-remark").value.trim()||null) : (remark.teacher_remark||null),
-          principal_remark: canEditPrincipal ? (m.q("#rt-principal-remark").value.trim()||null) : (remark.principal_remark||null) };
+          principal_remark: canEditPrincipal ? (m.q("#rt-principal-remark").value.trim()||null) : (remark.principal_remark||null),
+          promotion_status: canEditPrincipal ? (m.q("#rt-promotion").value||null) : (remark.promotion_status||null) };
         var rr = await sb.from("report_remarks").upsert(remRec,{ onConflict:"student_id,term_id,academic_year_id" });
         if (rr.error){ toast("Error: "+rr.error.message); return; }
         m.close(); toast("Saved"); load();
@@ -515,7 +518,7 @@
       return window.SamajiAcademics.buildSnapshotReportOpts(ctx.school, s, d, current.cls, current.term, current.year, current.levels);
     }
     async function printOne(s){
-      await reportCardLoad;
+      await reportCardLoad; await qrLoad;
       var snapRes = await sb.from("report_cards").select("*").eq("student_id",s.id).eq("term_id",current.term.id).eq("academic_year_id",current.year.id).maybeSingle();
       var opts = snapRes.data ? snapshotOpts(snapRes.data, s) : reportOpts(s);
       var html = window.SamajiReportCard.studentReportHTML(opts);
@@ -527,7 +530,7 @@
     document.getElementById("rb-term").onchange=load;
     document.getElementById("rb-print").onclick=async function(){
       if (!current.students.length){ toast("Nothing to print yet."); return; }
-      await reportCardLoad;
+      await reportCardLoad; await qrLoad;
       var studentIds = current.students.map(function(s){ return s.id; });
       var snapRes = await sb.from("report_cards").select("*").in("student_id",studentIds).eq("term_id",current.term.id).eq("academic_year_id",current.year.id);
       var snapByStudent = {}; (snapRes.data||[]).forEach(function(r){ snapByStudent[r.student_id]=r; });
