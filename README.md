@@ -20,7 +20,7 @@ webapp/
 ├─ school/index.html   school portal
 ├─ teacher/index.html  teacher portal
 ├─ parent/index.html   parent portal
-├─ supabase/functions/ Edge Functions (admin user management, M-Pesa STK push)
+├─ supabase/functions/ Edge Functions (admin user management, M-Pesa Daraja STK push, KCB Buni)
 ├─ assets/
 │  ├─ config.js        ← the ONLY file you edit (Supabase keys)
 │  ├─ app.js           shared client + module metadata
@@ -77,9 +77,14 @@ webapp/
     (principal/deputy_principal/dos — a title, not a login role) and
     `school_classes.class_teacher_id`. Manage all of it from **Settings → CBC Assessment** in the
     School Portal. Purely additive — doesn't touch `exams`/`exam_results`/`grades` yet.
-18. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
-    (`supabase functions deploy admin-users` / `mpesa-stk`) and set their secrets
-    (`SUPABASE_SERVICE_ROLE_KEY`, M-Pesa Daraja credentials) in Project Settings → Edge Functions.
+18. **Edge Functions**: deploy `supabase/functions/admin-users`, `supabase/functions/mpesa-stk`
+    (Safaricom Daraja) and `supabase/functions/kcb-stk` (KCB Buni — a second, independent
+    payment rail; its `KCB_ENDPOINTS`/payload field names in `index.ts` are placeholders
+    until confirmed against KCB's actual API definition in the Buni portal)
+    (`supabase functions deploy admin-users` / `mpesa-stk` / `kcb-stk`, the latter two with
+    `--no-verify-jwt` so their callback routes are reachable) and set their secrets
+    (`SUPABASE_SERVICE_ROLE_KEY`; M-Pesa Daraja and KCB credentials live in the
+    `mpesa_config`/`kcb_config` tables, not as function secrets) in Project Settings → Edge Functions.
 19. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
     "Confirm email" (re-enable for production).
 20. **Project Settings → API**: copy your **Project URL** and **anon public key**.

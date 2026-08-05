@@ -133,6 +133,7 @@
         <button class="navitem" id="nav-users"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="users"></span>Users</button>
         <div class="nav-h">Operations</div>
         <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
+        <button class="navitem" id="nav-kcb"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>KCB Config</button>
         <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="database"></span>Database</button>
         <button class="navitem" id="nav-audit"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reports"></span>Activity Log</button>
         <div style="flex:1;"></div>
@@ -209,7 +210,7 @@
   }
 
   // ---- Nav ----
-  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","database","audit","settings"];
+  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","kcb","database","audit","settings"];
   function setActive(key){
     NAV_KEYS.forEach(function(k){
       var el = $("nav-" + k);
@@ -222,6 +223,7 @@
   $("nav-licensing").onclick = function(){ showLicensing(); };
   $("nav-users").onclick = function(){ showUsers(); };
   $("nav-mpesa").onclick = function(){ showMpesa(); };
+  $("nav-kcb").onclick = function(){ showKcb(); };
   $("nav-database").onclick = function(){ showDatabase(); };
   $("nav-audit").onclick = function(){ showAuditLog(); };
   $("nav-settings").onclick = function(){ showSettings(); };
@@ -908,6 +910,60 @@
         if (res.error) { toast("Error: " + res.error.message); return; }
         toast("M-Pesa config saved.");
         loadMpesaConfig(schoolId);
+      };
+    }
+  }
+
+  // ====================================================
+  //  5b. KCB CONFIG (Buni / WSO2 — separate rail from Daraja above)
+  // ====================================================
+  async function showKcb(){
+    setActive("kcb");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">KCB Configuration</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Per-school KCB Buni (Till/Paybill) credentials — a separate payment rail from M-Pesa Config above. Get these from the KCB Buni developer portal after subscribing to the M-PESA Express API.</p></div>' +
+      '<div class="row" style="gap:10px;margin-bottom:20px;"><span class="muted">School</span><select id="kcb-school"></select></div>' +
+      '<div id="kcb-form"></div>';
+
+    schoolSelector("kcb-school", function(val){ if (val) loadKcbConfig(val); else document.getElementById("kcb-form").innerHTML = '<p class="muted">Select a school.</p>'; });
+
+    async function loadKcbConfig(schoolId){
+      var form = document.getElementById("kcb-form");
+      form.innerHTML = '<p class="muted">Loading...</p>';
+      var r = await sb.from("kcb_config").select("*").eq("school_id", schoolId).maybeSingle();
+      var cfg = (r.data) || {};
+      form.innerHTML =
+        '<div class="panel" style="max-width:560px;">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;">Base URL (Buni gateway host)</label><input id="kcb-baseurl" value="' + esc(cfg.base_url || "https://sandbox.buni.kcbgroup.com") + '" placeholder="https://sandbox.buni.kcbgroup.com">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Till/Paybill Number</label><input id="kcb-till" value="' + esc(cfg.till_number || "") + '">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Consumer Key</label><input id="kcb-ckey" value="' + esc(cfg.consumer_key || "") + '">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Consumer Secret</label><input id="kcb-csecret" value="' + esc(cfg.consumer_secret || "") + '">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Callback URL (IPN — leave blank to use the default)</label><input id="kcb-callback" value="' + esc(cfg.callback_url || "") + '" placeholder="https://...functions/v1/kcb-stk/callback">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Environment</label><select id="kcb-env"><option value="sandbox"' + (cfg.environment !== "production" ? " selected" : "") + '>Sandbox</option><option value="production"' + (cfg.environment === "production" ? " selected" : "") + '>Production</option></select>' +
+        '<div style="margin-top:20px;"><button class="btn-primary btn-sm" id="kcb-save">Save Configuration</button></div>' +
+        '</div>';
+
+      document.getElementById("kcb-save").onclick = async function(){
+        var data = {
+          school_id: schoolId,
+          base_url: document.getElementById("kcb-baseurl").value.trim(),
+          till_number: document.getElementById("kcb-till").value.trim(),
+          consumer_key: document.getElementById("kcb-ckey").value.trim(),
+          consumer_secret: document.getElementById("kcb-csecret").value.trim(),
+          callback_url: document.getElementById("kcb-callback").value.trim(),
+          environment: document.getElementById("kcb-env").value
+        };
+        if (!data.till_number) { toast("Till/Paybill number is required."); return; }
+        var res;
+        if (cfg.school_id) {
+          res = await sb.from("kcb_config").update(data).eq("school_id", cfg.school_id);
+        } else {
+          res = await sb.from("kcb_config").insert(data);
+        }
+        if (res.error) { toast("Error: " + res.error.message); return; }
+        toast("KCB config saved.");
+        loadKcbConfig(schoolId);
       };
     }
   }
