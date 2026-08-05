@@ -935,8 +935,10 @@
       var cfg = (r.data) || {};
       form.innerHTML =
         '<div class="panel" style="max-width:560px;">' +
-        '<label style="display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;">Base URL (Buni gateway host)</label><input id="kcb-baseurl" value="' + esc(cfg.base_url || "https://sandbox.buni.kcbgroup.com") + '" placeholder="https://sandbox.buni.kcbgroup.com">' +
-        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Till/Paybill Number</label><input id="kcb-till" value="' + esc(cfg.till_number || "") + '">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;">Base URL (Buni API server — from the "Try Out" tab)</label><input id="kcb-baseurl" value="' + esc(cfg.base_url || "https://uat.buni.kcbgroup.com/mm/api/request/1.0.0") + '" placeholder="https://uat.buni.kcbgroup.com/mm/api/request/1.0.0">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Shared shortcode?</label><select id="kcb-shared"><option value="true"' + (cfg.shared_short_code !== false ? " selected" : "") + '>Yes — use KCB\'s internal shortcode</option><option value="false"' + (cfg.shared_short_code === false ? " selected" : "") + '>No — use our own Till + passkey below</option></select>' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Till/Paybill Number</label><input id="kcb-till" value="' + esc(cfg.till_number || "") + '" placeholder="Required only if not using a shared shortcode">' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Org Passkey</label><input id="kcb-passkey" value="' + esc(cfg.org_passkey || "") + '" placeholder="Required only if not using a shared shortcode">' +
         '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Consumer Key</label><input id="kcb-ckey" value="' + esc(cfg.consumer_key || "") + '">' +
         '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Consumer Secret</label><input id="kcb-csecret" value="' + esc(cfg.consumer_secret || "") + '">' +
         '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Callback URL (IPN — leave blank to use the default)</label><input id="kcb-callback" value="' + esc(cfg.callback_url || "") + '" placeholder="https://...functions/v1/kcb-stk/callback">' +
@@ -945,16 +947,19 @@
         '</div>';
 
       document.getElementById("kcb-save").onclick = async function(){
+        var sharedShortCode = document.getElementById("kcb-shared").value === "true";
         var data = {
           school_id: schoolId,
           base_url: document.getElementById("kcb-baseurl").value.trim(),
-          till_number: document.getElementById("kcb-till").value.trim(),
+          shared_short_code: sharedShortCode,
+          till_number: document.getElementById("kcb-till").value.trim() || null,
+          org_passkey: document.getElementById("kcb-passkey").value.trim() || null,
           consumer_key: document.getElementById("kcb-ckey").value.trim(),
           consumer_secret: document.getElementById("kcb-csecret").value.trim(),
           callback_url: document.getElementById("kcb-callback").value.trim(),
           environment: document.getElementById("kcb-env").value
         };
-        if (!data.till_number) { toast("Till/Paybill number is required."); return; }
+        if (!sharedShortCode && (!data.till_number || !data.org_passkey)) { toast("Till number and Org Passkey are required when not using a shared shortcode."); return; }
         var res;
         if (cfg.school_id) {
           res = await sb.from("kcb_config").update(data).eq("school_id", cfg.school_id);

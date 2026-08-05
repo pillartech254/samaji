@@ -12,17 +12,21 @@
 //  Consumer Key/Secret, exchange them for an OAuth2 access token via
 //  client_credentials, then call the subscribed API with that token.
 //
-//  ⚠ UNVERIFIED AGAINST KCB'S ACTUAL API SPEC — the OAuth2
-//  client_credentials exchange below is the standard WSO2 pattern and
-//  should work as-is, but the payment-initiation endpoint PATH and its
-//  exact request/response FIELD NAMES (the KCB_ENDPOINTS block and
-//  buildInitiatePayload/parseCallback below) are placeholders. Before
-//  going live: log into the Buni portal, open the subscribed "M-PESA
-//  Express" API's definition (Swagger/OpenAPI — usually a "Try it out"
-//  tab after subscribing), and update the three TODOs marked below to
-//  match exactly. The IPN callback route (/kcb-stk/callback) is real
-//  and reachable the moment this function is deployed — give KCB that
-//  URL regardless of whether the TODOs are filled in yet.
+//  STATUS: the OAuth2 token exchange (KCB_TOKEN_URL) and the /stkpush
+//  request/response shape (handleInitiate's payload + response parsing)
+//  are CONFIRMED against KCB's own published Buni docs (MpesaExpressAPIService
+//  > Documents > STKPushRequest/STKPushResponse schemas, and > Try Out's
+//  server list). Run a real sandbox test (see the "Sandbox test checklist"
+//  in the project notes) before trusting it further.
+//
+//  STILL UNCONFIRMED: the async IPN body KCB posts to callbackUrl once a
+//  customer completes/cancels payment on their phone — that's a different
+//  schema from the two above and hasn't been published anywhere we've seen
+//  yet. handleCallback() guesses at Safaricom's native nested shape (a
+//  reasonable bet, since CheckoutRequestID already comes back in
+//  Safaricom's own format) but ALWAYS stores the raw body in raw_callback
+//  regardless of whether the guess is right — check that column after a
+//  real sandbox test payment and adjust handleCallback() to match exactly.
 //
 //  Routes:
 //    POST /kcb-stk           → Initiate a Till/Paybill payment request
@@ -37,9 +41,9 @@
 //    SUPABASE_URL              — auto-set by Supabase
 //    SUPABASE_SERVICE_ROLE_KEY — auto-set by Supabase
 //
-//  Per-school KCB credentials live in the `kcb_config` table
-//  (base_url, till_number, consumer_key, consumer_secret, environment,
-//  callback_url) — see setup-modules-38.sql.
+//  Per-school KCB credentials live in the `kcb_config` table (base_url,
+//  shared_short_code, till_number, org_passkey, consumer_key,
+//  consumer_secret, environment, callback_url) — see setup-modules-38.sql.
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -94,13 +98,10 @@ async function getWSO2Token(
   return data.access_token as string;
 }
 
-// TODO (confirm against KCB's Buni API definition): the exact context
-// path for the "M-PESA Express" / Till payment-initiation API once
-// subscribed. This is a placeholder shaped like Safaricom's own STK
-// endpoint naming convention, which many bank aggregators mirror, but
-// KCB's actual path must be copied from their portal.
+// CONFIRMED from the Buni portal (MpesaExpressAPIService > Try Out server
+// list, and > Documents > Express Checkout Request).
 const KCB_ENDPOINTS = {
-  initiate: "/mpesa/stkpush/v1/processrequest", // TODO: confirm exact path from Buni portal
+  initiate: "/stkpush",
 };
 
 function formatPhone(phone: string): string {
@@ -156,9 +157,6 @@ async function handleInitiate(req: Request): Promise<Response> {
     return jsonResponse({ error: "KCB payment is not configured for this school. Contact your school admin." }, 400);
   }
 
-  const { data: school } = await sb.from("schools").select("name").eq("id", school_id).single();
-  const schoolName = school?.name || "School";
-
   try {
     const token = await getWSO2Token(config.consumer_key, config.consumer_secret);
     const formattedPhone = formatPhone(phone);
@@ -166,16 +164,24 @@ async function handleInitiate(req: Request): Promise<Response> {
       config.callback_url ||
       Deno.env.get("SUPABASE_URL") + "/functions/v1/kcb-stk/callback";
 
-    // TODO (confirm against KCB's Buni API definition): field names below
-    // mirror the Safaricom STK Push shape as a starting point — replace
-    // with KCB's actual request schema once available.
+    // invoiceNumber is our own reference, echoed back to us — build a short
+    // (<=12 char, alpha-numeric) one from the transaction id so it's unique
+    // and traceable back to this row without a second lookup.
+    const invoiceNumber = "INV" + transaction_id.replace(/-/g, "").slice(0, 9).toUpperCase();
+
+    // CONFIRMED shape (Buni portal > Documents > STKPushRequest schema).
+    // amount MUST be a string with no decimals ("Decimal values are not
+    // permitted"). transactionDescription is capped at 13 characters —
+    // easy to overflow, kept short deliberately.
     const payload = {
-      TillNumber: config.till_number,
-      Amount: Math.ceil(amount),
-      PhoneNumber: formattedPhone,
-      CallBackURL: callbackUrl,
-      AccountReference: (account_ref || schoolName).slice(0, 12),
-      TransactionDesc: "Fee payment - " + schoolName,
+      phoneNumber: formattedPhone,
+      amount: String(Math.ceil(amount)),
+      invoiceNumber: invoiceNumber,
+      sharedShortCode: config.shared_short_code !== false,
+      orgShortCode: config.till_number || "",
+      orgPassKey: config.org_passkey || "",
+      callbackUrl: callbackUrl,
+      transactionDescription: (account_ref || "Fee payment").slice(0, 13),
     };
 
     const res = await fetch(config.base_url.replace(/\/$/, "") + KCB_ENDPOINTS.initiate, {
@@ -187,20 +193,24 @@ async function handleInitiate(req: Request): Promise<Response> {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    // CONFIRMED response is wrapped: { header: {statusCode, statusDescription},
+    // response: { ResponseCode, ResponseDescription, CheckoutRequestID,
+    // CustomerMessage, ... } } — read from the wrapper, falling back to a
+    // flat shape in case a given deployment doesn't wrap it.
+    const inner = data.response || data;
 
-    // TODO (confirm): success/failure discriminator field name — using
-    // Safaricom's "ResponseCode === '0'" convention as a placeholder.
-    const ok = res.ok && (data.ResponseCode === "0" || data.ResponseCode === 0);
+    const ok = res.ok && (inner.ResponseCode === 0 || inner.ResponseCode === "0");
 
     if (ok) {
       await sb.from("kcb_transactions").update({
-        external_ref: data.CheckoutRequestID || data.TransactionID || null,
+        external_ref: inner.CheckoutRequestID || null,
+        reference: invoiceNumber,
         status: "pending",
       }).eq("id", transaction_id);
 
       return jsonResponse({ success: true, message: "Payment request sent to " + formattedPhone });
     } else {
-      const errMsg = data.errorMessage || data.ResponseDescription || "Payment request rejected by KCB";
+      const errMsg = inner.ResponseDescription || inner.errorMessage || data.header?.statusDescription || "Payment request rejected by KCB";
       await sb.from("kcb_transactions").update({ status: "failed", result_desc: errMsg }).eq("id", transaction_id);
       return jsonResponse({ success: false, error: errMsg }, 400);
     }
@@ -211,7 +221,19 @@ async function handleInitiate(req: Request): Promise<Response> {
 }
 
 // --------------- 2. KCB IPN CALLBACK ---------------
-
+//
+// ⚠ STILL UNCONFIRMED: the Buni "Documents" tab published the STKPushRequest
+// (what we send) and STKPushResponse (KCB's immediate sync reply) schemas —
+// neither is the async IPN body KCB posts to callbackUrl once the customer
+// actually completes/cancels the M-Pesa prompt on their phone. That's a
+// separate schema, not yet seen. Since KCB's CheckoutRequestID comes back in
+// Safaricom's own native format (ws_CO_...), the most likely shape is
+// Safaricom's own nested callback envelope passed through largely as-is
+// (Body.stkCallback.{...}) — checked first below — with flatter/wrapped
+// fallbacks after it. The full raw body is always stored in raw_callback
+// regardless of whether any of these match, so nothing is lost; once a real
+// sandbox test IPN arrives, check kcb_transactions.raw_callback and update
+// this function to match exactly.
 async function handleCallback(req: Request): Promise<Response> {
   let body: any;
   try {
@@ -222,12 +244,11 @@ async function handleCallback(req: Request): Promise<Response> {
 
   const sb = serviceClient();
 
-  // TODO (confirm against KCB's IPN spec): the field(s) that identify
-  // which of our transactions this notification is for. Tries a few
-  // plausible names; the raw body is always stored in raw_callback so
-  // nothing is lost if none of these match once the real spec is known.
+  // Try Safaricom's native nested shape first, then flatter guesses.
+  const stk = body?.Body?.stkCallback;
+  const inner = body?.response || body;
   const externalRef =
-    body?.CheckoutRequestID || body?.TransactionID || body?.TransactionReference || body?.reference;
+    stk?.CheckoutRequestID || inner?.CheckoutRequestID || body?.TransactionReference || body?.reference;
 
   if (!externalRef) {
     console.error("KCB callback: no recognizable reference field in body", JSON.stringify(body));
@@ -249,18 +270,25 @@ async function handleCallback(req: Request): Promise<Response> {
     return new Response("OK", { status: 200 }); // already processed
   }
 
-  // TODO (confirm): success discriminator + receipt/amount field names.
-  const resultCode = body?.ResultCode ?? body?.ResponseCode;
+  const resultCode = stk?.ResultCode ?? inner?.ResultCode ?? inner?.ResponseCode;
   const success = resultCode === 0 || resultCode === "0";
 
   if (success) {
-    const receiptNo = body?.MpesaReceiptNumber || body?.ReceiptNumber || externalRef;
-    const paidAmount = Number(body?.Amount ?? tx.amount);
+    // Safaricom's native shape reports the receipt/amount inside
+    // CallbackMetadata.Item[{Name,Value}] rather than flat fields.
+    let receiptNo = inner?.MpesaReceiptNumber || inner?.ReceiptNumber || "";
+    let paidAmount = Number(inner?.Amount ?? tx.amount);
+    const items: any[] = stk?.CallbackMetadata?.Item || [];
+    for (const item of items) {
+      if (item.Name === "MpesaReceiptNumber") receiptNo = String(item.Value);
+      if (item.Name === "Amount") paidAmount = Number(item.Value);
+    }
+    if (!receiptNo) receiptNo = externalRef;
 
     await sb.from("kcb_transactions").update({
       status: "completed",
       result_code: String(resultCode),
-      result_desc: body?.ResultDesc || body?.ResponseDescription || "",
+      result_desc: stk?.ResultDesc || inner?.ResponseDescription || "",
       receipt_no: receiptNo,
       amount: paidAmount,
       raw_callback: body,
@@ -278,7 +306,7 @@ async function handleCallback(req: Request): Promise<Response> {
     await sb.from("kcb_transactions").update({
       status: "failed",
       result_code: String(resultCode ?? ""),
-      result_desc: body?.ResultDesc || body?.ResponseDescription || "",
+      result_desc: stk?.ResultDesc || inner?.ResponseDescription || "",
       raw_callback: body,
     }).eq("id", tx.id);
   }

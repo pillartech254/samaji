@@ -16,15 +16,20 @@
 -- ============================================================
 
 -- ---------- 1. KCB CONFIG (per school) ---------------------------
+-- Field names/defaults below are CONFIRMED against KCB's own published
+-- STKPushRequest schema (Buni portal > MpesaExpressAPIService > Documents),
+-- not guessed.
 create table if not exists kcb_config (
-  school_id       text primary key references schools(id) on delete cascade,
-  base_url        text not null default 'https://sandbox.buni.kcbgroup.com',  -- API *invocation* host only (confirm exact value from the "Try Out" tab) — NOT the OAuth token host, which is a fixed platform endpoint hardcoded in kcb-stk/index.ts (KCB_TOKEN_URL)
-  till_number     text not null,          -- KCB Till/Paybill number issued for this school
-  consumer_key    text not null,          -- WSO2 application "Consumer Key"
-  consumer_secret text not null,          -- WSO2 application "Consumer Secret"
-  callback_url    text,                   -- IPN URL given to KCB; defaults to the kcb-stk edge function's /callback route if blank
-  environment     text not null default 'sandbox',
-  updated_at      timestamptz not null default now()
+  school_id         text primary key references schools(id) on delete cascade,
+  base_url          text not null default 'https://uat.buni.kcbgroup.com/mm/api/request/1.0.0',  -- confirmed live UAT/sandbox server from the "Try Out" tab; production will differ
+  till_number       text,                   -- -> STKPushRequest.orgShortCode (KCB calls it "Till/Paybill number" at signup, 5-6 digits); only required when shared_short_code = false
+  org_passkey       text,                   -- -> STKPushRequest.orgPassKey; only required when shared_short_code = false
+  shared_short_code boolean not null default true,  -- -> STKPushRequest.sharedShortCode: true = KCB uses its own internal shortcode/passkey (till_number/org_passkey ignored server-side); false = your own dedicated till_number+org_passkey are used. CONFIRM which mode KCB actually issued you before going live.
+  consumer_key      text not null,          -- WSO2 application "Consumer Key"
+  consumer_secret   text not null,          -- WSO2 application "Consumer Secret"
+  callback_url      text,                   -- -> STKPushRequest.callbackUrl (KCB's IPN field, sent per-request, not registered separately); defaults to the kcb-stk edge function's /callback route if blank
+  environment       text not null default 'sandbox',
+  updated_at        timestamptz not null default now()
 );
 
 -- ---------- 2. KCB TRANSACTIONS -----------------------------------
