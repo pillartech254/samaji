@@ -18,7 +18,7 @@
 -- ---------- 1. KCB CONFIG (per school) ---------------------------
 create table if not exists kcb_config (
   school_id       text primary key references schools(id) on delete cascade,
-  base_url        text not null default 'https://sandbox.buni.kcbgroup.com',  -- WSO2 gateway host; confirm exact value from KCB's Buni portal
+  base_url        text not null default 'https://sandbox.buni.kcbgroup.com',  -- API *invocation* host only (confirm exact value from the "Try Out" tab) — NOT the OAuth token host, which is a fixed platform endpoint hardcoded in kcb-stk/index.ts (KCB_TOKEN_URL)
   till_number     text not null,          -- KCB Till/Paybill number issued for this school
   consumer_key    text not null,          -- WSO2 application "Consumer Key"
   consumer_secret text not null,          -- WSO2 application "Consumer Secret"

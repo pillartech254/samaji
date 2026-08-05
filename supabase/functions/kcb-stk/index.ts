@@ -60,17 +60,28 @@ function jsonResponse(body: Record<string, unknown>, status = 200): Response {
 }
 
 // --------------- WSO2 OAuth2 (standard client_credentials grant) ---------------
-// This part follows the generic WSO2 API Manager flow and should not need
-// changes: https://apim.docs.wso2.com/en/4.2.0/get-started/integration-quick-start-guide/
+// CONFIRMED from the Buni portal's "MpesaExpressAPIService" > Subscriptions >
+// Sandbox OAuth2 Keys > Key Configurations panel — this is the token issuer
+// for ALL Buni APIs (identity is on a separate host from API invocation),
+// so it does not live in kcb_config and does not vary per school/API.
+// Production will use a different host — confirm it the same way (switch
+// the portal's environment selector to Production and re-check Key
+// Configurations) before going live; update KCB_TOKEN_URL accordingly
+// (or make it environment-aware here once the production value is known).
+const KCB_TOKEN_URL = "https://accounts.buni.kcbgroup.com/oauth2/token";
+
 async function getWSO2Token(
-  baseUrl: string,
   consumerKey: string,
   consumerSecret: string
 ): Promise<string> {
   const auth = btoa(consumerKey + ":" + consumerSecret);
-  const res = await fetch(baseUrl.replace(/\/$/, "") + "/token?grant_type=client_credentials", {
+  const res = await fetch(KCB_TOKEN_URL, {
     method: "POST",
-    headers: { Authorization: "Basic " + auth },
+    headers: {
+      Authorization: "Basic " + auth,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "grant_type=client_credentials",
   });
   if (!res.ok) {
     const text = await res.text();
@@ -149,7 +160,7 @@ async function handleInitiate(req: Request): Promise<Response> {
   const schoolName = school?.name || "School";
 
   try {
-    const token = await getWSO2Token(config.base_url, config.consumer_key, config.consumer_secret);
+    const token = await getWSO2Token(config.consumer_key, config.consumer_secret);
     const formattedPhone = formatPhone(phone);
     const callbackUrl =
       config.callback_url ||
