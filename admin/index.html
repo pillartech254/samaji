@@ -970,6 +970,85 @@
         toast("KCB config saved.");
         loadKcbConfig(schoolId);
       };
+
+      // ---- Send Test Payment (only once credentials are saved) ----
+      if (cfg.school_id) {
+        var testPanel = document.createElement("div");
+        testPanel.className = "panel";
+        testPanel.style.cssText = "max-width:560px;margin-top:16px;";
+        testPanel.innerHTML =
+          '<h3 style="margin:0 0 4px;font-size:15px;">Send Test Payment</h3>' +
+          '<p class="muted" style="font-size:12px;margin:0 0 14px;">Runs a real sandbox STK push through your own kcb-stk edge function — requires it to be deployed first (<span class="mono">supabase functions deploy kcb-stk --no-verify-jwt</span>).</p>' +
+          '<label style="display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;">Test phone (Safaricom sandbox number)</label><input id="kcbtest-phone" value="254708374149">' +
+          '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Amount (KES)</label><input id="kcbtest-amount" type="number" value="1">' +
+          '<div style="margin-top:16px;display:flex;gap:8px;">' +
+          '<button class="btn-primary btn-sm" id="kcbtest-send">Send Test STK Push</button>' +
+          '<button class="btn-sm" id="kcbtest-refresh" style="display:none;">Refresh status</button>' +
+          '</div>' +
+          '<pre id="kcbtest-out" style="display:none;margin-top:14px;background:#0E1424;color:#D3D8E2;padding:12px;border-radius:8px;font-size:11.5px;white-space:pre-wrap;word-break:break-all;max-height:340px;overflow:auto;"></pre>';
+        form.parentNode.appendChild(testPanel);
+
+        var currentTxId = null;
+        var pollTimer = null;
+
+        function showOut(obj){
+          var out = document.getElementById("kcbtest-out");
+          out.style.display = "block";
+          out.textContent = JSON.stringify(obj, null, 2);
+        }
+
+        async function refreshStatus(){
+          if (!currentTxId) return;
+          var r = await sb.from("kcb_transactions").select("*").eq("id", currentTxId).single();
+          if (r.error) { showOut({ error: r.error.message }); return; }
+          showOut(r.data);
+          if (r.data.status === "completed" || r.data.status === "failed" || r.data.status === "cancelled") {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            toast(r.data.status === "completed" ? "Test payment completed — check raw_callback below." : "Test payment ended: " + r.data.status);
+          }
+        }
+        document.getElementById("kcbtest-refresh").onclick = refreshStatus;
+
+        document.getElementById("kcbtest-send").onclick = async function(){
+          var btn = document.getElementById("kcbtest-send");
+          var phone = document.getElementById("kcbtest-phone").value.trim();
+          var amount = Number(document.getElementById("kcbtest-amount").value);
+          if (!phone || !amount || amount < 1) { toast("Enter a phone number and an amount of at least 1."); return; }
+          btn.disabled = true; btn.textContent = "Sending…";
+          if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+
+          var ins = await sb.from("kcb_transactions").insert({
+            school_id: schoolId, phone: phone, amount: amount, status: "pending"
+          }).select().single();
+          if (ins.error) { showOut({ error: ins.error.message }); btn.disabled = false; btn.textContent = "Send Test STK Push"; return; }
+          currentTxId = ins.data.id;
+
+          var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/kcb-stk";
+          var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+          try {
+            var res = await fetch(stkUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY },
+              body: JSON.stringify({ transaction_id: currentTxId, school_id: schoolId, phone: phone, amount: amount, account_ref: "TEST" })
+            });
+            var data = await res.json();
+            showOut({ transaction_id: currentTxId, initiate_response: data });
+            document.getElementById("kcbtest-refresh").style.display = "";
+            if (data.success) {
+              toast("Sent — polling kcb_transactions for the IPN result...");
+              var polls = 0;
+              pollTimer = setInterval(function(){
+                polls++;
+                if (polls > 20) { clearInterval(pollTimer); pollTimer = null; return; }
+                refreshStatus();
+              }, 3000);
+            }
+          } catch (e) {
+            showOut({ error: "Could not reach the kcb-stk function — has it been deployed? (" + String(e) + ")" });
+          }
+          btn.disabled = false; btn.textContent = "Send Test STK Push";
+        };
+      }
     }
   }
 
