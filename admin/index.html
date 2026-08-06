@@ -902,8 +902,8 @@
           environment: document.getElementById("mp-env").value
         };
         var res;
-        if (cfg.id) {
-          res = await sb.from("mpesa_config").update(data).eq("id", cfg.id);
+        if (cfg.school_id) {
+          res = await sb.from("mpesa_config").update(data).eq("school_id", cfg.school_id);
         } else {
           res = await sb.from("mpesa_config").insert(data);
         }
@@ -913,7 +913,7 @@
       };
 
       // ---- Send Test Payment (only once credentials are saved) ----
-      if (cfg.id) {
+      if (cfg.school_id) {
         var testPanel = document.createElement("div");
         testPanel.className = "panel";
         testPanel.style.cssText = "max-width:560px;margin-top:16px;";
