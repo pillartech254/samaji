@@ -12,21 +12,17 @@
 //  Consumer Key/Secret, exchange them for an OAuth2 access token via
 //  client_credentials, then call the subscribed API with that token.
 //
-//  STATUS: the OAuth2 token exchange (KCB_TOKEN_URL) and the /stkpush
-//  request/response shape (handleInitiate's payload + response parsing)
-//  are CONFIRMED against KCB's own published Buni docs (MpesaExpressAPIService
-//  > Documents > STKPushRequest/STKPushResponse schemas, and > Try Out's
-//  server list). Run a real sandbox test (see the "Sandbox test checklist"
-//  in the project notes) before trusting it further.
-//
-//  STILL UNCONFIRMED: the async IPN body KCB posts to callbackUrl once a
-//  customer completes/cancels payment on their phone — that's a different
-//  schema from the two above and hasn't been published anywhere we've seen
-//  yet. handleCallback() guesses at Safaricom's native nested shape (a
-//  reasonable bet, since CheckoutRequestID already comes back in
-//  Safaricom's own format) but ALWAYS stores the raw body in raw_callback
-//  regardless of whether the guess is right — check that column after a
-//  real sandbox test payment and adjust handleCallback() to match exactly.
+//  STATUS: fully verified end-to-end with a live sandbox test (2026-08) —
+//  OAuth2 token exchange, /stkpush request/response, AND the async IPN
+//  callback all confirmed working as implemented. The IPN body is
+//  Safaricom's own native nested shape passed through by KCB unchanged
+//  (Body.stkCallback.{ResultCode, ResultDesc, CallbackMetadata.Item[]}),
+//  exactly as handleCallback() expects — a resulting transaction reached
+//  status "completed" with a real M-Pesa receipt number. Before
+//  PRODUCTION: re-run the same test against KCB's production host/token
+//  endpoint/credentials (sandbox and production hosts differ — see
+//  KCB_TOKEN_URL and kcb_config.base_url) since a bank's prod environment
+//  can behave differently even when sandbox is fully correct.
 //
 //  Routes:
 //    POST /kcb-stk           → Initiate a Till/Paybill payment request
@@ -229,18 +225,13 @@ async function handleInitiate(req: Request): Promise<Response> {
 
 // --------------- 2. KCB IPN CALLBACK ---------------
 //
-// ⚠ STILL UNCONFIRMED: the Buni "Documents" tab published the STKPushRequest
-// (what we send) and STKPushResponse (KCB's immediate sync reply) schemas —
-// neither is the async IPN body KCB posts to callbackUrl once the customer
-// actually completes/cancels the M-Pesa prompt on their phone. That's a
-// separate schema, not yet seen. Since KCB's CheckoutRequestID comes back in
-// Safaricom's own native format (ws_CO_...), the most likely shape is
-// Safaricom's own nested callback envelope passed through largely as-is
-// (Body.stkCallback.{...}) — checked first below — with flatter/wrapped
-// fallbacks after it. The full raw body is always stored in raw_callback
-// regardless of whether any of these match, so nothing is lost; once a real
-// sandbox test IPN arrives, check kcb_transactions.raw_callback and update
-// this function to match exactly.
+// CONFIRMED via a live sandbox test (2026-08): KCB posts Safaricom's own
+// native nested callback envelope unchanged — Body.stkCallback.{ResultCode,
+// ResultDesc, CallbackMetadata.Item[{Name,Value}], ...} — checked first
+// below, with flatter/wrapped fallbacks kept only as defensive belt-and-
+// braces for edge cases (e.g. failure callbacks might omit CallbackMetadata
+// entirely). raw_callback still stores the full body on every notification
+// regardless, so any future shape drift stays diagnosable from the DB.
 async function handleCallback(req: Request): Promise<Response> {
   let body: any;
   try {
