@@ -726,7 +726,6 @@
 
   function loadFeeDataForChildren(cb) {
     var pending = CHILDREN.length;
-    var currentYear = new Date().getFullYear();
     childFeeData = {};
 
     for (var i = 0; i < CHILDREN.length; i++) {
@@ -736,7 +735,10 @@
         var openingBalance = Number(child.opening_balance) || 0;
         childFeeData[sid] = { billed: openingBalance, paid: 0, balance: 0, items: [], transportPaid: 0, openingBalance: openingBalance };
 
-        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(fsRes){
+        // No year filter — matches how the school admin's own Fees screen
+        // computes a student's billed total (assets/school-plus.js), so
+        // parent and admin always agree on the same balance.
+        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).then(function(fsRes){
           var structures = fsRes.data || [];
           if (structures.length === 0) {
             loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
