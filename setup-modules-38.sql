@@ -78,5 +78,10 @@ create policy p_kcb_tx_parent_insert on kcb_transactions for insert to authentic
   with check (parent_id = auth.uid());
 
 -- ---------- 4. GRANTS (idempotent) --------------------------------
-grant select, insert, update, delete on kcb_config       to authenticated;
-grant select, insert, update, delete on kcb_transactions to authenticated;
+-- service_role is what the kcb-stk edge function runs as — it bypasses
+-- RLS but still needs an explicit table-level GRANT like any other role;
+-- forgetting this produces "permission denied for table kcb_config"
+-- (Postgres error 42501) the first time the function actually queries it,
+-- discovered via live testing rather than at migration time.
+grant select, insert, update, delete on kcb_config       to authenticated, service_role;
+grant select, insert, update, delete on kcb_transactions to authenticated, service_role;
