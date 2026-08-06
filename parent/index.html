@@ -173,6 +173,9 @@
   .btn-pay-all{width:100%;padding:14px;background:#0A4F49;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:18px;min-height:48px;transition:background .12s;}
   .btn-pay-all:hover{background:#083E3A;}
 
+  .btn-kcb{background:#1B4D2E;}
+  .btn-kcb:hover{background:#123A21;}
+
   /* ===== TABLE ===== */
   .data-table{width:100%;border-collapse:collapse;font-size:13px;}
   .data-table th{text-align:left;font-size:11.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid #EAECEF;}
@@ -812,7 +815,8 @@
       if (fd2.balance > 0) childrenWithBalance.push(CHILDREN[i]);
     }
     if (childrenWithBalance.length > 1 && totalBalance > 0) {
-      html += '<button class="btn-pay-all" onclick="window._payAll()">Pay for all children &mdash; ' + fmtMoney(totalBalance) + '</button>';
+      html += '<button class="btn-pay-all" onclick="window._payAll(\'mpesa\')">Pay for all children via M-Pesa &mdash; ' + fmtMoney(totalBalance) + '</button>';
+      html += '<button class="btn-pay-all btn-kcb" onclick="window._payAll(\'kcb\')">Pay for all children via KCB &mdash; ' + fmtMoney(totalBalance) + '</button>';
     }
 
     // Student cards
@@ -930,7 +934,8 @@
     }
 
     if (fd.balance > 0) {
-      html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\')">Pay via M-Pesa &mdash; ' + fmtMoney(fd.balance) + '</button>';
+      html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\',\'mpesa\')">Pay via M-Pesa &mdash; ' + fmtMoney(fd.balance) + '</button>';
+      html += '<button class="btn-mpesa btn-kcb" onclick="window._payChild(\'' + c.id + '\',\'kcb\')">Pay via KCB &mdash; ' + fmtMoney(fd.balance) + '</button>';
     }
     html += '</div>';
 
@@ -969,18 +974,25 @@
     return d.innerHTML;
   }
 
-  // ---- MPESA PAYMENT ----
-  window._payChild = function(studentId) {
+  // ---- PAYMENT (M-Pesa via Daraja, or KCB via Buni — same flow shape,
+  // parameterized by provider so the two integrations share one path
+  // instead of drifting into two copies of the same bugs) ----
+  var PAY_PROVIDERS = {
+    mpesa: { label: "M-Pesa", txTable: "mpesa_transactions", fnName: "mpesa-stk", receiptField: "mpesa_receipt_no" },
+    kcb:   { label: "KCB",    txTable: "kcb_transactions",    fnName: "kcb-stk",    receiptField: "receipt_no" }
+  };
+
+  window._payChild = function(studentId, providerKey) {
     var child = null;
     for (var i = 0; i < CHILDREN.length; i++) {
       if (CHILDREN[i].id === studentId) { child = CHILDREN[i]; break; }
     }
     if (!child) return;
     var fd = childFeeData[studentId] || { balance: 0 };
-    openMpesaModal([child], fd.balance);
+    openPayModal(PAY_PROVIDERS[providerKey] || PAY_PROVIDERS.mpesa, [child], fd.balance);
   };
 
-  window._payAll = function() {
+  window._payAll = function(providerKey) {
     var total = 0;
     var kids = [];
     for (var i = 0; i < CHILDREN.length; i++) {
@@ -991,10 +1003,10 @@
       }
     }
     if (kids.length === 0) return;
-    openMpesaModal(kids, total);
+    openPayModal(PAY_PROVIDERS[providerKey] || PAY_PROVIDERS.mpesa, kids, total);
   };
 
-  function openMpesaModal(students, totalBalance) {
+  function openPayModal(provider, students, totalBalance) {
     var box = $("mpesa-box");
     var names = [];
     var sids = [];
@@ -1003,12 +1015,12 @@
       sids.push(students[i].id);
     }
 
-    var html = '<h2>Pay fees via M-Pesa</h2>';
-    html += '<p class="modal-sub">Send an M-Pesa payment for ' + escHtml(names.join(", ")) + '</p>';
+    var html = '<h2>Pay fees via ' + escHtml(provider.label) + '</h2>';
+    html += '<p class="modal-sub">Send a ' + escHtml(provider.label) + ' payment for ' + escHtml(names.join(", ")) + '</p>';
     html += '<div style="display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px solid #F0F1F4;"><span style="color:#667085;">Total balance</span><span style="font-weight:600;">' + fmtMoney(totalBalance) + '</span></div>';
     html += '<label for="mpesa-amount">Amount to pay (KES)</label>';
     html += '<input id="mpesa-amount" type="number" value="' + Math.max(0, totalBalance) + '" min="1">';
-    html += '<label for="mpesa-phone">M-Pesa phone number</label>';
+    html += '<label for="mpesa-phone">' + escHtml(provider.label) + ' phone number</label>';
     html += '<input id="mpesa-phone" type="tel" value="' + escHtml(PARENT.phone || "") + '">';
     html += '<button class="modal-btn" id="mpesa-pay">Pay now</button>';
     html += '<div class="modal-msg" id="mpesa-msg"></div>';
@@ -1038,7 +1050,7 @@
       var studentIdArr = [];
       for (var j = 0; j < sids.length; j++) { studentIdArr.push(sids[j]); }
 
-      sb.from("mpesa_transactions").insert({
+      sb.from(provider.txTable).insert({
         school_id: SCHOOL,
         parent_id: USER.id,
         phone: phone,
@@ -1054,7 +1066,7 @@
         }
         var txId = res.data.id;
         // Trigger the STK push via the edge function
-        var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/mpesa-stk";
+        var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/" + provider.fnName;
         var token = window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
         fetch(stkUrl, {
           method: "POST",
@@ -1073,7 +1085,7 @@
             $("mpesa-pay").disabled = false;
             return;
           }
-          showMpesaPolling(txId);
+          showPayPolling(provider, txId, students);
         }).catch(function(e){
           $("mpesa-msg").textContent = "Failed to send STK push: " + String(e && e.message || e);
           $("mpesa-msg").className = "modal-msg err";
@@ -1087,11 +1099,11 @@
     };
   }
 
-  function showMpesaPolling(txId) {
+  function showPayPolling(provider, txId, students) {
     var box = $("mpesa-box");
     var html = '<div style="text-align:center;padding:20px 0;">';
     html += '<div class="spinner" style="width:32px;height:32px;margin:0 auto 16px;border-width:3px;"></div>';
-    html += '<h2 style="font-size:17px;">STK Push sent to your phone</h2>';
+    html += '<h2 style="font-size:17px;">' + escHtml(provider.label) + ' request sent to your phone</h2>';
     html += '<p class="modal-sub">Enter your M-Pesa PIN to complete payment.</p>';
     html += '<div class="modal-msg" id="mpesa-poll-msg">Waiting for confirmation...</div>';
     html += '</div>';
@@ -1108,25 +1120,15 @@
         $("mpesa-poll-msg").className = "modal-msg err";
         return;
       }
-      sb.from("mpesa_transactions").select("status, mpesa_receipt_no").eq("id", txId).single().then(function(res){
+      sb.from(provider.txTable).select("*").eq("id", txId).single().then(function(res){
         if (res.error) return;
         var tx = res.data;
         if (tx.status === "completed") {
           clearInterval(pollTimer);
-          var successHtml = '<div style="text-align:center;padding:20px 0;">';
-          successHtml += '<div style="width:48px;height:48px;border-radius:50%;background:#E7F6F3;color:#0E9384;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:24px;">&#10003;</div>';
-          successHtml += '<h2 style="font-size:17px;">Payment successful!</h2>';
-          successHtml += '<p class="modal-sub">Receipt: ' + escHtml(tx.mpesa_receipt_no || "-") + '</p>';
-          successHtml += '<button class="modal-btn" id="mpesa-done">Done</button>';
-          successHtml += '</div>';
-          box.innerHTML = successHtml;
-          $("mpesa-done").onclick = function(){
-            $("mpesa-modal").style.display = "none";
-            loadChildren();
-          };
-        } else if (tx.status === "failed") {
+          showReceiptScreen(provider, tx, students);
+        } else if (tx.status === "failed" || tx.status === "cancelled") {
           clearInterval(pollTimer);
-          $("mpesa-poll-msg").textContent = "Payment failed. Please try again.";
+          $("mpesa-poll-msg").textContent = "Payment " + tx.status + (tx.result_desc ? ": " + tx.result_desc : ". Please try again.");
           $("mpesa-poll-msg").className = "modal-msg err";
         }
       });
@@ -1135,6 +1137,53 @@
     $("mpesa-poll-cancel").onclick = function(){
       clearInterval(pollTimer);
       $("mpesa-modal").style.display = "none";
+    };
+  }
+
+  // Auto-shown the moment a payment's status flips to "completed" — a
+  // printable receipt for what was just paid, not a full fee statement
+  // (that already exists in the admin/school portal; this is proof of
+  // THIS payment for the parent to keep).
+  function showReceiptScreen(provider, tx, students) {
+    var box = $("mpesa-box");
+    var names = [];
+    for (var i = 0; i < students.length; i++) { names.push(studentName(students[i])); }
+    var receiptNo = tx[provider.receiptField] || tx.id.slice(0, 8).toUpperCase();
+    var when = new Date();
+
+    var html = '<div style="text-align:center;padding:10px 0 4px;">';
+    html += '<div style="width:44px;height:44px;border-radius:50%;background:#E7F6F3;color:#0E9384;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:22px;">&#10003;</div>';
+    html += '<h2 style="font-size:16px;margin:0;">Payment successful!</h2>';
+    html += '</div>';
+
+    html += '<div id="print-area"><div class="rcpt" style="width:100%;box-shadow:none;border:1px solid #EAECEF;">';
+    var schoolName = ($("school-name") && $("school-name").textContent) || "School";
+    html += '<div class="rc-top"><div class="rc-logo">' + escHtml(schoolName) + '</div>';
+    html += '<div class="rc-school">Payment Receipt</div><div class="rc-sub">via ' + escHtml(provider.label) + '</div>';
+    html += '<div class="rc-stamp">PAID</div></div>';
+    html += '<div class="rc-body"><div class="rc-meta">';
+    html += '<div><div class="k">Receipt No</div><div class="v">' + escHtml(receiptNo) + '</div></div>';
+    html += '<div><div class="k">Date</div><div class="v">' + when.toLocaleDateString() + '</div></div>';
+    html += '<div><div class="k">Student' + (students.length > 1 ? "s" : "") + '</div><div class="v">' + escHtml(names.join(", ")) + '</div></div>';
+    html += '<div><div class="k">Phone</div><div class="v">' + escHtml(tx.phone || "-") + '</div></div>';
+    html += '<div><div class="k">Method</div><div class="v">' + escHtml(provider.label) + '</div></div>';
+    html += '<div><div class="k">Paid by</div><div class="v">' + escHtml(PARENT.full_name || "-") + '</div></div>';
+    html += '</div>';
+    html += '<div class="rc-amt"><div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#067647;">Amount Paid</div><div class="big">' + fmtMoney(tx.amount) + '</div></div>';
+    html += '<svg width="36" height="36" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#067647"/><path d="M8 12.5l2.5 2.5L16 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+    html += '</div><div class="rc-foot">Thank you. This is a computer-generated receipt &mdash; ' + escHtml(receiptNo) + '<br>Powered by Samaji &middot; Pillartech Solutions</div>';
+    html += '</div></div>';
+
+    html += '<div style="display:flex;gap:10px;margin-top:14px;">';
+    html += '<button style="flex:1;background:none;border:1px solid #DDE1E6;border-radius:10px;color:#344054;font-size:13px;cursor:pointer;padding:12px;font-family:inherit;" id="mpesa-done">Done</button>';
+    html += '<button class="modal-btn" style="flex:1;" id="mpesa-print">Print receipt</button>';
+    html += '</div>';
+
+    box.innerHTML = html;
+    $("mpesa-print").onclick = function(){ window.print(); };
+    $("mpesa-done").onclick = function(){
+      $("mpesa-modal").style.display = "none";
+      loadChildren();
     };
   }
 
