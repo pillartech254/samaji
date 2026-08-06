@@ -1055,7 +1055,7 @@
         var txId = res.data.id;
         // Trigger the STK push via the edge function
         var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/mpesa-stk";
-        var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+        var token = window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
         fetch(stkUrl, {
           method: "POST",
           headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
@@ -1074,8 +1074,8 @@
             return;
           }
           showMpesaPolling(txId);
-        }).catch(function(){
-          $("mpesa-msg").textContent = "Failed to send STK push. Please try again.";
+        }).catch(function(e){
+          $("mpesa-msg").textContent = "Failed to send STK push: " + String(e && e.message || e);
           $("mpesa-msg").className = "modal-msg err";
           $("mpesa-pay").disabled = false;
         });
