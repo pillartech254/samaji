@@ -965,7 +965,7 @@
           mpCurrentTxId = ins.data.id;
 
           var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/mpesa-stk";
-          var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+          var token = window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
           try {
             var res = await fetch(stkUrl, {
               method: "POST",
@@ -1103,7 +1103,7 @@
           currentTxId = ins.data.id;
 
           var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/kcb-stk";
-          var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+          var token = window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
           try {
             var res = await fetch(stkUrl, {
               method: "POST",
