@@ -154,7 +154,14 @@ async function handleInitiate(req: Request): Promise<Response> {
     .single();
 
   if (cfgErr || !config) {
-    return jsonResponse({ error: "KCB payment is not configured for this school. Contact your school admin." }, 400);
+    // Surface the real reason (RLS, missing table/schema-cache, connection,
+    // etc.) instead of a one-size-fits-all message — this endpoint is only
+    // ever called from trusted server-side/admin code, so it's safe to
+    // expose the underlying error for debugging.
+    return jsonResponse({
+      error: "KCB payment is not configured for this school.",
+      debug: cfgErr ? { message: cfgErr.message, code: cfgErr.code, details: cfgErr.details, hint: cfgErr.hint } : "No kcb_config row found for school_id=" + school_id,
+    }, 400);
   }
 
   try {
