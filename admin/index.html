@@ -911,6 +911,85 @@
         toast("M-Pesa config saved.");
         loadMpesaConfig(schoolId);
       };
+
+      // ---- Send Test Payment (only once credentials are saved) ----
+      if (cfg.id) {
+        var testPanel = document.createElement("div");
+        testPanel.className = "panel";
+        testPanel.style.cssText = "max-width:560px;margin-top:16px;";
+        testPanel.innerHTML =
+          '<h3 style="margin:0 0 4px;font-size:15px;">Send Test Payment</h3>' +
+          '<p class="muted" style="font-size:12px;margin:0 0 14px;">Runs a real sandbox STK push through your own mpesa-stk edge function — requires it to be deployed first (<span class="mono">supabase functions deploy mpesa-stk --no-verify-jwt</span>).</p>' +
+          '<label style="display:block;font-size:12.5px;font-weight:600;margin:0 0 5px;">Test phone (Safaricom sandbox number)</label><input id="mptest-phone" value="254708374149">' +
+          '<label style="display:block;font-size:12.5px;font-weight:600;margin:14px 0 5px;">Amount (KES)</label><input id="mptest-amount" type="number" value="1">' +
+          '<div style="margin-top:16px;display:flex;gap:8px;">' +
+          '<button class="btn-primary btn-sm" id="mptest-send">Send Test STK Push</button>' +
+          '<button class="btn-sm" id="mptest-refresh" style="display:none;">Refresh status</button>' +
+          '</div>' +
+          '<pre id="mptest-out" style="display:none;margin-top:14px;background:#0E1424;color:#D3D8E2;padding:12px;border-radius:8px;font-size:11.5px;white-space:pre-wrap;word-break:break-all;max-height:340px;overflow:auto;"></pre>';
+        form.parentNode.appendChild(testPanel);
+
+        var mpCurrentTxId = null;
+        var mpPollTimer = null;
+
+        function mpShowOut(obj){
+          var out = document.getElementById("mptest-out");
+          out.style.display = "block";
+          out.textContent = JSON.stringify(obj, null, 2);
+        }
+
+        async function mpRefreshStatus(){
+          if (!mpCurrentTxId) return;
+          var r = await sb.from("mpesa_transactions").select("*").eq("id", mpCurrentTxId).single();
+          if (r.error) { mpShowOut({ error: r.error.message }); return; }
+          mpShowOut(r.data);
+          if (r.data.status === "completed" || r.data.status === "failed" || r.data.status === "cancelled") {
+            if (mpPollTimer) { clearInterval(mpPollTimer); mpPollTimer = null; }
+            toast(r.data.status === "completed" ? "Test payment completed." : "Test payment ended: " + r.data.status);
+          }
+        }
+        document.getElementById("mptest-refresh").onclick = mpRefreshStatus;
+
+        document.getElementById("mptest-send").onclick = async function(){
+          var btn = document.getElementById("mptest-send");
+          var phone = document.getElementById("mptest-phone").value.trim();
+          var amount = Number(document.getElementById("mptest-amount").value);
+          if (!phone || !amount || amount < 1) { toast("Enter a phone number and an amount of at least 1."); return; }
+          btn.disabled = true; btn.textContent = "Sending…";
+          if (mpPollTimer) { clearInterval(mpPollTimer); mpPollTimer = null; }
+
+          var ins = await sb.from("mpesa_transactions").insert({
+            school_id: schoolId, phone: phone, amount: amount, status: "pending"
+          }).select().single();
+          if (ins.error) { mpShowOut({ error: ins.error.message }); btn.disabled = false; btn.textContent = "Send Test STK Push"; return; }
+          mpCurrentTxId = ins.data.id;
+
+          var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/mpesa-stk";
+          var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+          try {
+            var res = await fetch(stkUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY },
+              body: JSON.stringify({ transaction_id: mpCurrentTxId, school_id: schoolId, phone: phone, amount: amount, account_ref: "TEST" })
+            });
+            var data = await res.json();
+            mpShowOut({ transaction_id: mpCurrentTxId, initiate_response: data });
+            document.getElementById("mptest-refresh").style.display = "";
+            if (data.success) {
+              toast("Sent — polling mpesa_transactions for the callback result...");
+              var polls = 0;
+              mpPollTimer = setInterval(function(){
+                polls++;
+                if (polls > 20) { clearInterval(mpPollTimer); mpPollTimer = null; return; }
+                mpRefreshStatus();
+              }, 3000);
+            }
+          } catch (e) {
+            mpShowOut({ error: "Could not reach the mpesa-stk function — has it been deployed? (" + String(e) + ")" });
+          }
+          btn.disabled = false; btn.textContent = "Send Test STK Push";
+        };
+      }
     }
   }
 
