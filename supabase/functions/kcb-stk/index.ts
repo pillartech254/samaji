@@ -18,7 +18,10 @@
 //  Safaricom's own native nested shape passed through by KCB unchanged
 //  (Body.stkCallback.{ResultCode, ResultDesc, CallbackMetadata.Item[]}),
 //  exactly as handleCallback() expects — a resulting transaction reached
-//  status "completed" with a real M-Pesa receipt number. Before
+//  status "completed" with a real M-Pesa receipt number. handleCallback()
+//  acks every notification with a JSON {ResultCode, ResultDesc} body (see
+//  ackResponse()) rather than bare text, matching how Safaricom's own
+//  callback consumers acknowledge this same envelope shape. Before
 //  PRODUCTION: re-run the same test against KCB's production host/token
 //  endpoint/credentials (sandbox and production hosts differ — see
 //  KCB_TOKEN_URL and kcb_config.base_url) since a bank's prod environment
@@ -232,12 +235,23 @@ async function handleInitiate(req: Request): Promise<Response> {
 // braces for edge cases (e.g. failure callbacks might omit CallbackMetadata
 // entirely). raw_callback still stores the full body on every notification
 // regardless, so any future shape drift stays diagnosable from the DB.
+//
+// Response format: KCB's own IPN docs don't pin an exact response body —
+// only "respond 200 immediately" is documented — but since the callback
+// envelope itself is Safaricom's native stkCallback shape passed through
+// unchanged, we ack it the way Safaricom's own callback consumers do: a
+// small JSON body of {ResultCode, ResultDesc} rather than bare text, on
+// every path (success, failure, already-processed, or unrecognized body).
+function ackResponse(): Response {
+  return jsonResponse({ ResultCode: 0, ResultDesc: "Success" }, 200);
+}
+
 async function handleCallback(req: Request): Promise<Response> {
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return new Response("OK", { status: 200 });
+    return ackResponse();
   }
 
   const sb = serviceClient();
@@ -250,7 +264,7 @@ async function handleCallback(req: Request): Promise<Response> {
 
   if (!externalRef) {
     console.error("KCB callback: no recognizable reference field in body", JSON.stringify(body));
-    return new Response("OK", { status: 200 });
+    return ackResponse();
   }
 
   const { data: tx, error: txErr } = await sb
@@ -261,11 +275,11 @@ async function handleCallback(req: Request): Promise<Response> {
 
   if (txErr || !tx) {
     console.error("KCB callback: transaction not found for", externalRef);
-    return new Response("OK", { status: 200 });
+    return ackResponse();
   }
 
   if (tx.status === "completed" || tx.status === "failed") {
-    return new Response("OK", { status: 200 }); // already processed
+    return ackResponse(); // already processed
   }
 
   const resultCode = stk?.ResultCode ?? inner?.ResultCode ?? inner?.ResponseCode;
@@ -309,7 +323,7 @@ async function handleCallback(req: Request): Promise<Response> {
     }).eq("id", tx.id);
   }
 
-  return new Response("OK", { status: 200 });
+  return ackResponse();
 }
 
 // --------------- 3. QUERY (our own DB only — no KCB status-query call yet) ---------------
