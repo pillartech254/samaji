@@ -89,9 +89,7 @@
       + '<div class="cardrow c2" style="margin-top:18px;"><div id="dash-academic">'+panelSkel(4)+'</div><div id="dash-attendance">'+panelSkel(4)+'</div></div>'
       + '<div class="cardrow c2" style="margin-top:18px;"><div id="dash-payments">'+panelSkel(4)+'</div><div id="dash-upcoming">'+panelSkel(4)+'</div></div>'
       + '<div id="dash-activity" style="margin-top:18px;">'+panelSkel(4)+'</div>'
-      + '<div class="cardrow c2" id="dash-charts" style="margin-top:18px;display:none;"></div>'
-      + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:24px;"><h2 style="margin:0;font-size:15px;">Your modules</h2><span class="muted" style="font-size:12.5px;" id="dash-mod-count"></span></div>'
-      + '<div class="tiles" id="dash-tiles" style="margin-top:13px;"></div>';
+      + '<div class="cardrow c2" id="dash-charts" style="margin-top:18px;display:none;"></div>';
 
     // ---- shared state, filled in progressively by independent loaders ----
     var PULSE = {}; // attendancePct, feePct, academicPct, defaulters, overdueBooks, lowAttendance, pendingMarks, stuckTx, unpaidLibCharges
@@ -613,16 +611,9 @@
     }
     buildKpiSkeleton();
 
-    // ---- module tiles (kept, shrunk — sidebar already navigates) ----
-    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
-    document.getElementById("dash-mod-count").textContent = granted.length+" enabled";
-    var tiles = document.getElementById("dash-tiles");
-    granted.forEach(function(k){
-      var m = window.metaFor(k), b = document.createElement("button"); b.className = "modtile";
-      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.icon+'</span><div style="font-size:13px;font-weight:600;">'+m.name+'</div>';
-      b.onclick = function(){ openModule(k); };
-      tiles.appendChild(b);
-    });
+    // "Your modules" tile grid was dropped entirely — it just repeated
+    // what the sidebar (always visible, one click away) already shows,
+    // costing a full screen of scroll for zero new information.
 
     // ---- kick everything off in parallel — nothing here blocks anything else ----
     loadStudents();
