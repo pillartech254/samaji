@@ -1528,7 +1528,13 @@
           stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
           +stat("Tuition collected",money(collected),"#ECFDF3","#067647",icCash())
           +stat("Tuition outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert())
-          +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart())
+          // Capped at 100 — students with real payments but no fee structure
+          // for their grade (billedFor()===0) can push the raw ratio well
+          // past 100%, which reads as a broken number rather than useful
+          // information. The Dashboard's Attention Required list is where
+          // that specific gap (payments with no matching structure) gets
+          // surfaced actionably instead.
+          +stat("Collection rate",(billedTotal?Math.min(100,Math.round(collected/billedTotal*100)):0)+"%","#F1ECFE","#6D28D9",icChart())
           +stat("Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus)
           +stat("Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus)
           +stat("Library charges outstanding",money(libOutstanding),"#FFF6E8","#B54708",icLib);

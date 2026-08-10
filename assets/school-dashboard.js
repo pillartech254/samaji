@@ -118,6 +118,7 @@
       if (PULSE.lowAttendance) issues += 1;
       if (PULSE.stuckTx) issues += 1;
       if (PULSE.unpaidLibCharges) issues += 1;
+      if (PULSE.noStructurePaid) issues += 1;
 
       var worstPct = parts.length ? Math.min.apply(null, parts.map(function(p){return p.value;})) : null;
       var dot = "🟢", label = "School operating normally";
@@ -147,6 +148,7 @@
       if (PULSE.overdueBooks) items.push({dot:"🟡", text: PULSE.overdueBooks + " library book"+(PULSE.overdueBooks>1?"s are":" is")+" overdue", link:"View library →", flag:"module.library"});
       if (PULSE.unpaidLibCharges) items.push({dot:"🟡", text: PULSE.unpaidLibCharges + " unpaid lost-book charge"+(PULSE.unpaidLibCharges>1?"s":""), link:"View library →", flag:"module.library"});
       if (PULSE.stuckTx) items.push({dot:"🟡", text: PULSE.stuckTx + " M-Pesa/KCB transaction"+(PULSE.stuckTx>1?"s":"")+" stuck pending", link:"View fees →", flag:"module.finance"});
+      if (PULSE.noStructurePaid) items.push({dot:"🟡", text: PULSE.noStructurePaid + " student"+(PULSE.noStructurePaid>1?"s have":" has")+" fee payments recorded but no fee structure for their class", link:"View fees →", flag:"module.finance"});
 
       var loadedCount = [PULSE.defaultersLoaded,PULSE.lowAttendanceLoaded,PULSE.pendingMarksLoaded,PULSE.libraryLoaded,PULSE.txLoaded].filter(Boolean).length;
       var expected = [FLAGS["module.finance"],FLAGS["module.attendance"],FLAGS["module.academics"],FLAGS["module.library"],FLAGS["module.finance"]].filter(Boolean).length;
@@ -339,21 +341,32 @@
       var scopedPayments = currentClassFilter ? data.payments.filter(function(p){ return studentIds[p.student_id]; }) : data.payments;
       var paidByStudent = {}; scopedPayments.forEach(function(p){ paidByStudent[p.student_id]=(paidByStudent[p.student_id]||0)+tuitionOf(p); });
 
-      var billedTotal=0, collected=0, defaulters=0;
+      // Students with real payments but no fee structure for their grade
+      // (billedFor()===0) inflate "collected" with nothing to bill it
+      // against — left unflagged that reads as ">100% collected", which
+      // looks broken rather than telling you what actually needs fixing
+      // (a missing/misconfigured fee structure for their class).
+      var billedTotal=0, collected=0, defaulters=0, noStructureCount=0, noStructurePaid=0;
       students.forEach(function(s){
         var billed=billedFor(s), paid=paidByStudent[s.id]||0;
         billedTotal+=billed;
         if (billed>0 && paid<billed) defaulters++;
+        if (billed===0 && paid>0) { noStructureCount++; noStructurePaid+=paid; }
       });
       collected = scopedPayments.reduce(function(a,p){ return a+tuitionOf(p); },0);
       var outstanding = Math.max(0, billedTotal-collected);
       var collectionPct = pct1(collected, billedTotal);
 
-      renderKpi("collected", { val: money(collected), sub: billedTotal>0 ? ("of "+money(billedTotal)+" · "+collectionPct+"%") : "no fee structure yet" });
+      renderKpi("collected", { val: money(collected), sub: billedTotal>0 ? ("of "+money(billedTotal)+" billed · "+collectionPct+"%") : "no fee structure yet" });
       renderKpi("outstanding", { val: money(outstanding), sub: defaulters + " student"+(defaulters!==1?"s":"")+" with balances" });
 
-      PULSE.feePct = billedTotal>0 ? collectionPct : null;
+      // Feeds School Pulse's "fees collected" figure — capped at 100 so an
+      // unstructured-payment distortion (see above) can't drag the whole
+      // pulse status into "operating normally" territory on a fluke, or
+      // display a nonsensical >100% next to Attendance/Academic there.
+      PULSE.feePct = billedTotal>0 ? clamp(collectionPct,0,100) : null;
       PULSE.defaulters = defaulters;
+      PULSE.noStructurePaid = noStructureCount;
       PULSE.defaultersLoaded = true;
       renderPulse(); renderAttention();
 
@@ -364,13 +377,16 @@
 
       var fBox = document.getElementById("dash-finance");
       if (fBox) {
+        var overCollected = collected > billedTotal;
         var barPct = clamp(collectionPct||0,0,100);
         fBox.innerHTML = '<div class="panel" data-drill="module.finance" style="cursor:pointer;">'
           + '<div style="display:flex;justify-content:space-between;align-items:baseline;"><strong style="font-size:15px;">Fees collection</strong><span class="muted" style="font-size:11.5px;">View finance →</span></div>'
           + (billedTotal>0
             ? '<div style="font-size:22px;font-weight:700;margin-top:10px;">'+money(collected)+' <span class="muted" style="font-size:13px;font-weight:500;">collected</span></div>'
               + '<div style="background:var(--line);border-radius:20px;height:9px;margin-top:9px;overflow:hidden;"><div style="background:#0E9384;height:100%;width:'+barPct+'%;border-radius:20px;"></div></div>'
-              + '<div class="muted" style="font-size:11.5px;margin-top:5px;">'+collectionPct+'% of '+money(billedTotal)+' expected &middot; '+money(outstanding)+' outstanding</div>'
+              + (overCollected
+                ? '<div class="muted" style="font-size:11.5px;margin-top:5px;">Fully collected against '+money(billedTotal)+' billed'+(noStructureCount>0?' — '+money(noStructurePaid)+' of that is from '+noStructureCount+' student'+(noStructureCount>1?'s':'')+' with no fee structure assigned (see below)':'')+'</div>'
+                : '<div class="muted" style="font-size:11.5px;margin-top:5px;">'+collectionPct+'% of '+money(billedTotal)+' expected &middot; '+money(outstanding)+' outstanding</div>')
             : '<p class="muted" style="font-size:13px;margin-top:10px;">No fee structure configured yet.</p>')
           + '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);">'
           + '<div class="muted" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;">Today\'s collection</div>'
