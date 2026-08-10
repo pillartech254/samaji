@@ -43,6 +43,23 @@
     return { el:ov, close:function(){ov.remove();}, q:function(s){return ov.querySelector(s);}, qa:function(s){return Array.prototype.slice.call(ov.querySelectorAll(s));} };
   }
 
+  // Same searchable-select behavior as the School Portal's copy
+  // (assets/school-modules.js) — duplicated here since this is a
+  // separate portal with its own script bundle.
+  function wireSearchSelect(selectEl, searchEl, list, labelFn){
+    function draw(){
+      var q=(searchEl.value||"").trim().toLowerCase();
+      var filtered = !q ? list : list.filter(function(s){ return labelFn(s).toLowerCase().indexOf(q)>=0; });
+      var cur = selectEl.value;
+      selectEl.innerHTML = filtered.length
+        ? filtered.map(function(s){ return '<option value="'+s.id+'">'+esc(labelFn(s))+'</option>'; }).join("")
+        : '<option value="">No matches</option>';
+      if (filtered.some(function(s){ return String(s.id)===cur; })) selectEl.value = cur;
+    }
+    searchEl.oninput = draw;
+    draw();
+  }
+
   function todayStr(){ return new Date().toISOString().slice(0,10); }
   function dueStatus(dueDate){
     if(!dueDate) return {label:"No due date",cls:"gray"};
@@ -94,12 +111,13 @@
 
   function issueFlow(sb, ctx, bk, students, onDone){
     if (!students.list.length){ toast("No students found for this school."); return; }
-    var opts = students.list.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+' — '+esc(s.grade||"—")+'</option>'; }).join("");
     var m = modal('<h3>Issue “'+esc(bk.title)+'”</h3>'
-      +'<div class="grid2"><div class="field full"><label>Student</label><select id="l-stu">'+opts+'</select></div>'
+      +'<div class="grid2"><div class="field full"><label>Search student</label><input id="l-stu-search" placeholder="Type a name…"></div>'
+      +'<div class="field full"><label>Student</label><select id="l-stu"></select></div>'
       +'<div class="field"><label>Days borrowed</label><input id="l-days" type="number" value="14" min="1"></div>'
       +'<div class="field"><label>Return due</label><input id="l-due-preview" disabled></div></div>'
       +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Issue</button></div>');
+    wireSearchSelect(m.q("#l-stu"), m.q("#l-stu-search"), students.list, function(s){ return s.first_name+" "+s.last_name+" — "+(s.grade||"—"); });
     function preview(){ var d=Number(m.q("#l-days").value)||14; m.q("#l-due-preview").value=new Date(Date.now()+d*864e5).toISOString().slice(0,10); }
     m.q("#l-days").oninput = preview; preview();
     m.q("#c").onclick = m.close;

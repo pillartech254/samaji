@@ -1632,7 +1632,6 @@
       function canCollect(stu){ return !stu || hasStructure(stu.grade) || Number(stu.opening_balance)>0; }
       function collectForm(preId){
         if(preId){ var ps=students.find(function(x){return x.id===preId;}); if(!canCollect(ps)){ window.SM_confirm("No fee structure has been set up for "+esc(ps.grade||"this class")+". Please create a fee structure in Settings → Fee Structures before collecting fees."); return; } }
-        var opts=students.map(function(s){ return '<option value="'+s.id+'"'+(preId===s.id?" selected":"")+'>'+esc(s.first_name+" "+s.last_name)+(s.admission_no?" ("+esc(s.admission_no)+")":"")+'</option>'; }).join("");
         var idemKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
         var transportFare=0;
         var curYear=new Date().getFullYear();
@@ -1671,7 +1670,8 @@
           return null;
         }
         var m=modal('<h3>Collect payment</h3><div class="grid2">'
-          +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':opts)+'</select></div>'
+          +(preId?'':'<div class="field full"><label>Search student</label><input id="p-stu-search" placeholder="Type a name…"></div>')
+          +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':'')+'</select></div>'
           +'<div class="field full"><div id="p-bal" style="background:#F8FAFB;border:1px solid #EEF0F2;border-radius:10px;padding:11px 13px;font-size:12.5px;"></div></div>'
           +'<div class="field full"><div id="p-term-info" style="font-size:12px;"></div></div>'
           +'<div class="field full" id="p-bus-wrap" style="display:none;">'
@@ -1684,6 +1684,7 @@
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
           +'<div class="field full"><div id="p-spill" style="display:none;background:#FEF9C3;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"></div></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Record &amp; print receipt</button></div>');
+        if(!preId) window.SM_wireSearchSelect(m.q("#p-stu"), m.q("#p-stu-search"), students, function(s){ return s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":""); });
         function refreshTermInfo(){
           var sid=preId||m.q("#p-stu").value;
           var s0=students.find(function(x){return x.id===sid;});

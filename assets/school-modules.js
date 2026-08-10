@@ -18,6 +18,26 @@
   }
   window.SM_toast = toast;
 
+  // Turns a plain <select> full of students into a searchable one: pass the
+  // select element, a search <input> placed above it, the full list, and a
+  // label function. Options are rebuilt on every keystroke from the filtered
+  // list — the select's id/.value contract is unchanged, so every existing
+  // caller keeps working untouched.
+  function wireSearchSelect(selectEl, searchEl, list, labelFn){
+    function draw(){
+      var q=(searchEl.value||"").trim().toLowerCase();
+      var filtered = !q ? list : list.filter(function(s){ return labelFn(s).toLowerCase().indexOf(q)>=0; });
+      var cur = selectEl.value;
+      selectEl.innerHTML = filtered.length
+        ? filtered.map(function(s){ return '<option value="'+s.id+'">'+esc(labelFn(s))+'</option>'; }).join("")
+        : '<option value="">No matches</option>';
+      if (filtered.some(function(s){ return String(s.id)===cur; })) selectEl.value = cur;
+    }
+    searchEl.oninput = draw;
+    draw();
+  }
+  window.SM_wireSearchSelect = wireSearchSelect;
+
   // ====================================================
   //  STUDENTS / SIS
   // ====================================================
@@ -201,14 +221,15 @@
     }
     document.getElementById("fee-new").onclick=function(){
       if(!students.length){ toast("Add a student first."); return; }
-      var opts=students.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+'</option>'; }).join("");
       var m=modal('<h3>New invoice</h3>'
         +'<div class="grid2">'
-        +'<div class="field full"><label>Student</label><select id="i-stu">'+opts+'</select></div>'
+        +'<div class="field full"><label>Search student</label><input id="i-stu-search" placeholder="Type a name…"></div>'
+        +'<div class="field full"><label>Student</label><select id="i-stu"></select></div>'
         +'<div class="field full"><label>Title</label><input id="i-title" value="Term 1 Tuition"></div>'
         +'<div class="field"><label>Amount (KES)</label><input id="i-amount" type="number" value="15000"></div>'
         +'<div class="field"><label>Due date</label><input id="i-due" type="date"></div>'
         +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Create</button></div>');
+      wireSearchSelect(m.q("#i-stu"), m.q("#i-stu-search"), students, function(s){ return s.first_name+" "+s.last_name; });
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
         var rec={ school_id:schoolId, student_id:m.q("#i-stu").value, title:m.q("#i-title").value.trim()||"Invoice",
@@ -370,12 +391,13 @@
     }
     function issue(bk){
       if(!students.length){ toast("Add a student first."); return; }
-      var opts=students.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+' — '+esc(s.grade||"—")+'</option>'; }).join("");
       var m=modal('<h3>Issue “'+esc(bk.title)+'”</h3>'
-        +'<div class="grid2"><div class="field full"><label>Student</label><select id="l-stu">'+opts+'</select></div>'
+        +'<div class="grid2"><div class="field full"><label>Search student</label><input id="l-stu-search" placeholder="Type a name…"></div>'
+        +'<div class="field full"><label>Student</label><select id="l-stu"></select></div>'
         +'<div class="field"><label>Days borrowed</label><input id="l-days" type="number" value="14" min="1"></div>'
         +'<div class="field"><label>Return due</label><input id="l-due-preview" disabled></div></div>'
         +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Issue</button></div>');
+      wireSearchSelect(m.q("#l-stu"), m.q("#l-stu-search"), students, function(s){ return s.first_name+" "+s.last_name+" — "+(s.grade||"—"); });
       function preview(){
         var d=Number(m.q("#l-days").value)||14;
         m.q("#l-due-preview").value=new Date(Date.now()+d*864e5).toISOString().slice(0,10);
@@ -684,13 +706,14 @@
       var routes=await routesList();
       if(!students.length){ toast("Add a student first."); return; }
       if(!routes.length){ toast("Create a route first."); return; }
-      var sOpts=students.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+'</option>'; }).join("");
       var rOpts=routes.map(function(r){ return '<option value="'+r.id+'">'+esc(r.name)+'</option>'; }).join("");
       var m=modal('<h3>Assign student to transport</h3><div class="grid2">'
-        +'<div class="field full"><label>Student</label><select id="as-stu">'+sOpts+'</select></div>'
+        +'<div class="field full"><label>Search student</label><input id="as-stu-search" placeholder="Type a name…"></div>'
+        +'<div class="field full"><label>Student</label><select id="as-stu"></select></div>'
         +'<div class="field full"><label>Route</label><select id="as-route">'+rOpts+'</select></div>'
         +'<div class="field full"><label>Pickup stop</label><input id="as-stop"></div>'
         +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Assign</button></div>');
+      wireSearchSelect(m.q("#as-stu"), m.q("#as-stu-search"), students, function(s){ return s.first_name+" "+s.last_name; });
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
         var rec={ school_id:schoolId, student_id:m.q("#as-stu").value, route_id:m.q("#as-route").value, pickup_stop:m.q("#as-stop").value.trim()||null };
