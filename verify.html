@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Verify Report Card — Samaji</title>
 <meta name="robots" content="noindex">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
+  /* Self-hosted (assets/fonts/) — see the note in assets/styles.css.
+     This page doesn't load styles.css (self-contained public page),
+     so it needs its own copy of the same @font-face declarations. */
+  @font-face{font-family:'IBM Plex Sans';font-style:normal;font-weight:400 700;font-display:swap;src:url('assets/fonts/IBMPlexSans-Variable.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
+  @font-face{font-family:'IBM Plex Mono';font-style:normal;font-weight:500;font-display:swap;src:url('assets/fonts/IBMPlexMono-500.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
   :root{--teal:#0E9384;--teal-d:#0B6E63;--ink:#0E1424;--ink2:#475467;--muted:#7A8499;--line:#E9ECF1;--bg:#F6F8FA;--red:#C2410C;}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'IBM Plex Sans',system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;line-height:1.5;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
@@ -44,7 +48,7 @@
   <div class="foot">Samaji School System</div>
 </div>
 <script src="assets/config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="assets/vendor/supabase-js-2.112.2.min.js"></script>
 <script>
 (function(){
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); }

@@ -26,11 +26,36 @@ webapp/
 ├─ assets/
 │  ├─ config.js        ← the ONLY file you edit (Supabase keys)
 │  ├─ app.js           shared client + module metadata
-│  └─ styles.css       shared styles
+│  ├─ styles.css       shared styles (also declares the self-hosted fonts, see below)
+│  ├─ fonts/           self-hosted IBM Plex Sans/Mono (woff2)
+│  └─ vendor/          self-hosted, version-pinned @supabase/supabase-js
 ├─ setup.sql           run once in Supabase to create everything
 ├─ _headers, _redirects  Cloudflare Pages config
 └─ README.md
 ```
+
+### Self-hosted fonts and Supabase SDK
+
+Every page used to load IBM Plex Sans/Mono from Google Fonts and `@supabase/supabase-js`
+from `cdn.jsdelivr.net`. Both are now vendored locally (`assets/fonts/`, `assets/vendor/`) —
+faster first paint (no render-blocking cross-origin stylesheet), and one less external-outage
+single point of failure for schools on networks that block/throttle those CDNs.
+
+**Fonts** never need touching — they're a fixed set of `.woff2` files referenced by
+`@font-face` rules in `assets/styles.css` (and duplicated inline in `index.html`/`verify.html`,
+the two pages that don't load `styles.css`).
+
+**The Supabase SDK is pinned by filename**: `assets/vendor/supabase-js-2.112.2.min.js`.
+Upgrading is a deliberate, visible action, not silent CDN drift — to bump it:
+1. Download the new version's UMD build (e.g. from `https://registry.npmjs.org/@supabase/supabase-js/-/supabase-js-<version>.tgz`, `package/dist/umd/supabase.js`).
+2. Save it as `assets/vendor/supabase-js-<version>.min.js`.
+3. Update the `<script src="...">` tag in all six entry points (`admin/`, `school/`, `teacher/`,
+   `librarian/`, `parent/`, `verify.html`) to the new filename.
+4. Delete the old version's file.
+
+`_headers` caches both `assets/fonts/*` and `assets/vendor/*` for a year (`immutable`) since
+their filenames only ever change when their content does — unlike `assets/*.js`, which reuses
+the same filename on every deploy and stays on `must-revalidate`.
 
 ---
 
