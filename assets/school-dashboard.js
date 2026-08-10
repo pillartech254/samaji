@@ -97,7 +97,7 @@
     var PULSE = {}; // attendancePct, feePct, academicPct, defaulters, overdueBooks, lowAttendance, pendingMarks, stuckTx, unpaidLibCharges
     var allStudents = [];
     var currentClassFilter = "";
-    var dashAttendanceRows = null, dashFeeData = null, dashAcademic = null;
+    var dashAttendanceRows = null, dashFeeData = null;
 
     // ---------------------------------------------------------
     //  SCHOOL PULSE + ATTENTION REQUIRED — recomputed every time a
@@ -173,21 +173,34 @@
     }
 
     // ---------------------------------------------------------
-    //  HEADER — current academic year/term (real, via the shared
-    //  academics service; falls back to a plain label if the
-    //  Academics module isn't licensed for this school).
+    //  Academic context (current year/term) — loaded at most ONCE per
+    //  dashboard visit and shared by the header badge, Academic
+    //  Performance and Upcoming, via one memoized promise. Each of
+    //  those three used to call loadAcademicContext() independently,
+    //  which — since none of them awaited each other — raced: the
+    //  same 4 queries (academic_years+terms, assessment_types,
+    //  grading_schemes, teachers) could fire twice concurrently on
+    //  every single dashboard load.
+    // ---------------------------------------------------------
+    var academicContextPromise = null;
+    function getAcademicContext(){
+      if (!FLAGS["module.academics"] || !window.SamajiAcademics) return Promise.resolve(null);
+      if (!academicContextPromise) academicContextPromise = window.SamajiAcademics.loadAcademicContext(sb, schoolId).catch(function(){ return null; });
+      return academicContextPromise;
+    }
+
+    // ---------------------------------------------------------
+    //  HEADER — current academic year/term (real; falls back to a
+    //  plain label if the Academics module isn't licensed).
     // ---------------------------------------------------------
     (async function loadTerm(){
       var wrap = document.getElementById("dash-term-wrap");
       if (!wrap) return;
-      if (!FLAGS["module.academics"] || !window.SamajiAcademics) { wrap.innerHTML=""; return; }
-      try {
-        var academic = await window.SamajiAcademics.loadAcademicContext(sb, schoolId);
-        if (academic.defaultYear && academic.defaultTerm) {
-          wrap.innerHTML = '<span class="pill indigo" style="font-size:12.5px;">'+esc(academic.defaultTerm.name)+' &middot; '+academic.defaultYear.year+'</span>';
-          dashAcademic = academic; // read by loadAcademicPerformance()/loadUpcoming() below
-        }
-      } catch(e){}
+      var academic = await getAcademicContext();
+      if (!academic) { wrap.innerHTML=""; return; }
+      if (academic.defaultYear && academic.defaultTerm) {
+        wrap.innerHTML = '<span class="pill indigo" style="font-size:12.5px;">'+esc(academic.defaultTerm.name)+' &middot; '+academic.defaultYear.year+'</span>';
+      }
     })();
 
     // ---------------------------------------------------------
@@ -441,7 +454,7 @@
       if (!FLAGS["module.academics"]) return;
       var box = document.getElementById("dash-academic");
       try {
-        var academic = dashAcademic || (window.SamajiAcademics ? await window.SamajiAcademics.loadAcademicContext(sb, schoolId) : null);
+        var academic = await getAcademicContext();
         if (!academic || !academic.defaultTerm) {
           if (box) box.innerHTML = '<div class="panel"><strong style="font-size:15px;">Academic performance</strong><p class="muted" style="font-size:13px;margin-top:10px;">No academic year/term configured yet.</p></div>';
           return;
@@ -494,7 +507,7 @@
         var today = todayISO();
         var r = await sb.from("exams").select("name,subject,term,exam_date").eq("school_id",schoolId).gte("exam_date",today).order("exam_date").limit(6);
         var items = (r.data||[]).map(function(x){ return { date:x.exam_date, label:x.name+" — "+x.subject }; });
-        var academic = dashAcademic;
+        var academic = await getAcademicContext();
         if (academic && academic.defaultTerm && academic.defaultTerm.end_date && academic.defaultTerm.end_date>=today) {
           items.push({ date: academic.defaultTerm.end_date, label: academic.defaultTerm.name+" ends" });
         }
