@@ -2234,7 +2234,14 @@
       // sum of per-student positive balances — one student's overpayment
       // must never offset another's unpaid balance.
       var outstanding=0; students.forEach(function(s){ var t=(targetByLevel[levelOf(s)]||0)+(Number(s.opening_balance)||0), paid=paidByStudent[s.id]||0; outstanding+=Math.max(0,t-paid); });
-      var rate=billed?Math.round(collected/billed*100):0;
+      // Capped at 100 for the same reason as Fees & Invoicing's Collection
+      // rate card and the Dashboard's Fees Collection panel: a student with
+      // real payments but no fee structure for their level contributes to
+      // collected without adding to billed, which can push the raw ratio
+      // past 100% — a broken-looking number, not useful information. Feeds
+      // the KPI card, the "X% overall" chart sub-header, and the printed
+      // statement (all read this one value) — one clamp, everywhere.
+      var rate=billed?Math.min(100,Math.round(collected/billed*100)):0;
       // bus fare
       var busPaidByStudent={}; payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
       var busBilled=0, busCollected=0, busOutstanding=0;
@@ -2270,7 +2277,7 @@
         +kpi("collected","Tuition collected",money(collected),"#ECFDF3","#067647",icCash(),rate+"% of target")
         +kpi("outstanding","Tuition outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert(),(students.length-fullyPaid)+" with balance")
         +kpi("paid","Fully paid",fullyPaid+" / "+students.length,"#F1ECFE","#6D28D9",icChart(),"Avg fee "+money(avgFee))
-        +kpi("buscollected","Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus,(busBilled?Math.round(busCollected/busBilled*100):0)+"% of target")
+        +kpi("buscollected","Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus,(busBilled?Math.min(100,Math.round(busCollected/busBilled*100)):0)+"% of target")
         +kpi("busoutstanding","Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus,busBilled?money(busBilled)+" billed":"No assignments")
         +'</div>';
 
