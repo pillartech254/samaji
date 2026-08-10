@@ -621,12 +621,14 @@
       super_admin: "color:#6D28D9;background:#F2ECFE;",
       school_admin: "color:#4F46E5;background:#EEF0FF;",
       teacher: "color:#067647;background:#E7F8EF;",
+      librarian: "color:#0E9384;background:#E7F6F3;",
       parent: "color:#C2410C;background:#FFF4ED;"
     };
     var roleLabel = {
       super_admin: "Super Admin",
       school_admin: "School Admin",
       teacher: "Teacher",
+      librarian: "Librarian",
       parent: "Parent"
     };
 
@@ -814,7 +816,7 @@
       if (!curSchool) { toast("Select a school first."); return; }
       var m = modal(
         '<h3>Add User</h3>' +
-        '<label>Role</label><select id="au-role"><option value="school_admin">School Admin</option><option value="parent">Parent</option></select>' +
+        '<label>Role</label><select id="au-role"><option value="school_admin">School Admin</option><option value="librarian">Librarian</option><option value="parent">Parent</option></select>' +
         '<div id="au-admin-fields">' +
         '<label>Email</label><input id="au-email" type="email" placeholder="user@school.ac.ke">' +
         '<label>Full Name</label><input id="au-name" placeholder="Full name">' +

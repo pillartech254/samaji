@@ -1,15 +1,16 @@
 # Samaji — School Management Platform (deployable web app)
 
-A database-driven feature-flag licensing platform. **Four front-ends, one backend:**
+A database-driven feature-flag licensing platform. **Five front-ends, one backend:**
 
 | Portal | Path | Who | Sees |
 |---|---|---|---|
 | Admin console | `/admin/` | super_admin | every school, all flags, subscriptions |
 | School portal | `/school/` | school_admin | their school only — license-gated UI |
 | Teacher portal | `/teacher/` | teacher | their own classes/subjects, attendance, grading, report books and payslips only |
-| Parent portal | `/parent/` | parent | their own children's records, fees, and M-Pesa payments only |
+| Librarian portal | `/librarian/` | librarian | issuing/receiving books and marking lost books only — no catalogue add/delete, no charge waiving |
+| Parent portal | `/parent/` | parent | their own children's records, fees, library loans/charges, and M-Pesa/KCB payments only |
 
-All three are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
+All are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
 The licensing logic lives in the database as the `resolve_flags()` function, so there is
 **no server to run or maintain.** That makes it a perfect fit for **Cloudflare Pages** (free).
 
@@ -19,6 +20,7 @@ webapp/
 ├─ admin/index.html    provider console
 ├─ school/index.html   school portal
 ├─ teacher/index.html  teacher portal
+├─ librarian/index.html librarian portal (issue/return/lost only)
 ├─ parent/index.html   parent portal
 ├─ supabase/functions/ Edge Functions (admin user management, M-Pesa Daraja STK push, KCB Buni)
 ├─ assets/
@@ -106,6 +108,31 @@ shipped, tested, and merged on its own — not a single giant change):
 5. The KICD-style printable report card (coat of arms, signatures, QR code, A4 print) — same
    browser-print approach already used for payslips/receipts, no new server infrastructure.
 6. Principal/teacher dashboards and analytics.
+
+### Library module overhaul (`setup-modules-39.sql`)
+Run this after all the above (order doesn't matter relative to the CBC phases — it only
+touches `library_books`/`library_loans` and adds a new `library_charges` table):
+- **Lending lifecycle**: a librarian enters *days borrowed*, not a due date — `due_date` is
+  computed and stored automatically. Loans carry a `status` (`active`/`returned`/`lost`) and a
+  `class_at_borrow` snapshot so promotions never rewrite loan history.
+- **Lost books**: marking a loan lost raises a row in the new `library_charges` table —
+  **deliberately independent of `fee_structures`/`fee_items`** so a lost-book fine never shows
+  up as a fee-structure line item, in the admin console, the librarian portal, or the parent
+  portal. It's its own ledger, visible to admins/librarians (manage) and parents (read-only,
+  their own children only).
+- **Librarian role**: `is_librarian()` mirrors `is_school_admin()`'s allow-list shape
+  (setup-modules-22.sql), so a librarian account is automatically locked out of every table
+  gated by `is_school_admin()` (payroll, staff, exams, mpesa/kcb config, etc.) without touching
+  any of those policies. Create one from **Admin console → Users → + New user → Role: Librarian**
+  — it reuses the existing `admin_create_user()` RPC, no new backend plumbing required. They
+  then sign in at `/librarian/` with that email + password.
+- **Due/overdue visibility**: the School Portal's Library screen (School Portal → Library) gets
+  a *Due & overdue* tab and a *Charges* tab (mark paid/waived); the Librarian Portal's Dashboard
+  surfaces the same due/overdue list as its landing screen. There is no automated SMS/push
+  reminder yet — "notify when due" today means it's surfaced prominently in-app to the
+  librarian, the school admin, and the parent (a due/overdue status pill on each loan); wiring
+  an actual SMS reminder is a natural follow-up using the existing SMS module
+  (`sms_credit_ledger`/`sms_messages`) once you're ready for it.
 
 ## B. Configure the app
 Open **`assets/config.js`** and paste your two values:

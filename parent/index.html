@@ -346,6 +346,8 @@
   var dormMap = {};     // dormitory_id -> { name, gender }
   var teacherMap = {};  // class_id -> [ { name, subject } ]
   var attendanceMap = {}; // student_id -> { present, absent, late, total }
+  var libraryLoansMap = {};   // student_id -> [ active loan rows ]
+  var libraryChargesMap = {}; // student_id -> [ library_charges rows ] (independent of fees)
 
   // year set by app.js samajiYear()
 
@@ -643,7 +645,9 @@
       loadSupportingData(function(){
         loadFeeDataForChildren(function(){
           loadAttendanceData(function(){
-            renderChildren();
+            loadLibraryDataForChildren(function(){
+              renderChildren();
+            });
           });
         });
       });
@@ -725,6 +729,39 @@
       }
       cb();
     }).catch(function(){ cb(); });
+  }
+
+  function loadLibraryDataForChildren(cb) {
+    var studentIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+    libraryLoansMap = {}; libraryChargesMap = {};
+    if (studentIds.length === 0) { cb(); return; }
+
+    var pending = 2;
+    function check() { pending--; if (pending === 0) cb(); }
+
+    sb.from("library_loans").select("*, library_books(title)").in("student_id", studentIds).eq("status", "active").order("due_date").then(function(res){
+      var rows = res.data || [];
+      for (var i = 0; i < rows.length; i++) {
+        var sid = rows[i].student_id;
+        if (!libraryLoansMap[sid]) libraryLoansMap[sid] = [];
+        libraryLoansMap[sid].push(rows[i]);
+      }
+      check();
+    }).catch(function(){ check(); });
+
+    // Lost-book charges are deliberately loaded from their own table, not
+    // fee_structures/fee_items — they're billed independently of the fee
+    // structure and must read as their own, separate line to a parent.
+    sb.from("library_charges").select("*").in("student_id", studentIds).order("created_at", { ascending: false }).then(function(res){
+      var rows = res.data || [];
+      for (var i = 0; i < rows.length; i++) {
+        var sid = rows[i].student_id;
+        if (!libraryChargesMap[sid]) libraryChargesMap[sid] = [];
+        libraryChargesMap[sid].push(rows[i]);
+      }
+      check();
+    }).catch(function(){ check(); });
   }
 
   function loadFeeDataForChildren(cb) {
@@ -961,6 +998,48 @@
       html += '<div style="font-size:13px;color:#98A2B3;">No attendance records yet this year.</div>';
     }
     html += '</div>';
+
+    // Library section — borrowed books, then a separate Library Charges
+    // block for lost books. Deliberately its own section, not folded into
+    // Fee Summary above: a lost-book charge is billed independently of the
+    // fee structure, and must read that way to a parent too.
+    var loans = libraryLoansMap[c.id] || [];
+    var charges = libraryChargesMap[c.id] || [];
+    if (loans.length > 0 || charges.length > 0) {
+      html += '<div class="stu-section">';
+      html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z" stroke="#98A2B3" stroke-width="1.7" stroke-linejoin="round"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5v-13z" stroke="#98A2B3" stroke-width="1.7" stroke-linejoin="round"/></svg>Library</div>';
+
+      if (loans.length > 0) {
+        var today = new Date().toISOString().slice(0, 10);
+        var soon = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+        for (var li = 0; li < loans.length; li++) {
+          var ln = loans[li];
+          var cls = "green", label = "On time";
+          if (ln.due_date && ln.due_date < today) { cls = "red"; label = "Overdue"; }
+          else if (ln.due_date && ln.due_date <= soon) { cls = "amber"; label = "Due soon"; }
+          html += '<div class="fee-item-row"><span class="fi-name">' + escHtml(ln.library_books ? ln.library_books.title : "Book") +
+            ' <span class="muted" style="font-size:11.5px;">— due ' + escHtml(ln.due_date || "—") + '</span></span>' +
+            '<span class="pill ' + cls + '">' + label + '</span></div>';
+        }
+      } else {
+        html += '<div style="font-size:13px;color:#98A2B3;">No books currently borrowed.</div>';
+      }
+
+      var unpaidCharges = [];
+      for (var ci = 0; ci < charges.length; ci++) { if (charges[ci].status === "unpaid") unpaidCharges.push(charges[ci]); }
+      if (unpaidCharges.length > 0) {
+        var chargeTotal = 0;
+        for (var cj = 0; cj < unpaidCharges.length; cj++) { chargeTotal += Number(unpaidCharges[cj].amount) || 0; }
+        html += '<div style="margin-top:12px;padding:12px;border-radius:10px;background:#FFF6E8;border:1px solid #FDE7C0;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:13px;color:#B54708;">Library Charges (separate from fees)</strong><span style="font-weight:700;color:#B54708;">' + fmtMoney(chargeTotal) + '</span></div>';
+        for (var ck = 0; ck < unpaidCharges.length; ck++) {
+          html += '<div class="fee-item-row" style="border-color:#FDE7C0;"><span class="fi-name">' + escHtml(unpaidCharges[ck].book_title) + ' — ' + escHtml(unpaidCharges[ck].reason) + '</span><span class="fi-amt">' + fmtMoney(unpaidCharges[ck].amount) + '</span></div>';
+        }
+        html += '<div style="font-size:11.5px;color:#B54708;margin-top:6px;">Pay at the school office — not part of the M-Pesa/KCB fee payment above.</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
 
     html += '</div>'; // stu-body
     html += '</div>'; // stu-card

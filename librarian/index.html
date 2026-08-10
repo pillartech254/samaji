@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>(function(){try{var t=localStorage.getItem("samaji-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+<title>Samaji — Librarian Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/styles.css">
+<style>
+  #app{display:none;min-height:100vh;}
+  .layout{display:flex;min-height:100vh;}
+  aside{width:236px;flex:none;background:#fff;border-right:1px solid #EAECEF;padding:16px 12px;display:flex;flex-direction:column;}
+  .school{display:flex;align-items:center;gap:11px;padding:8px 8px 16px;}
+  .navitem{display:flex;align-items:center;gap:11px;padding:9px;border:none;border-radius:9px;background:none;cursor:pointer;font-family:inherit;text-align:left;width:100%;font-size:13.5px;font-weight:600;color:#344054;}
+  .navitem:hover{background:#F6F7F9;}
+  .navitem.active{background:#E7F6F3;color:#0E9384;}
+  .navitem .tile{flex:none;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;}
+  main{flex:1;min-width:0;padding:26px 30px 60px;}
+
+  /* ===== professional split login (matches Teacher/School Portal) ===== */
+  #auth{display:flex;min-height:100vh;background:#fff;}
+  .login-brand{flex:1;position:relative;overflow:hidden;background:linear-gradient(160deg,#0E9384 0%,#0B6E63 55%,#0A4F49 100%);color:#fff;padding:56px 56px 40px;display:flex;flex-direction:column;}
+  .login-brand .glow{position:absolute;border-radius:50%;filter:blur(8px);opacity:.18;background:#fff;}
+  .login-brand .g1{width:380px;height:380px;top:-120px;right:-120px;}
+  .login-brand .g2{width:260px;height:260px;bottom:-90px;left:-80px;opacity:.12;}
+  .login-brand .blogo{display:flex;align-items:center;gap:12px;position:relative;z-index:2;}
+  .login-brand .blogo .mark{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.16);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:19px;border:1px solid rgba(255,255,255,.25);}
+  .login-brand h2{position:relative;z-index:2;margin:auto 0 0;font-size:32px;font-weight:700;letter-spacing:-.025em;line-height:1.2;max-width:13ch;text-wrap:balance;}
+  .login-brand .lead{position:relative;z-index:2;margin:16px 0 28px;font-size:15px;line-height:1.6;color:rgba(255,255,255,.82);max-width:42ch;}
+  .trust{position:relative;z-index:2;display:flex;flex-direction:column;gap:13px;}
+  .trust .item{display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.92);font-weight:500;}
+  .trust .ic{flex:none;width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;}
+  .login-brand .bfoot{position:relative;z-index:2;margin-top:40px;font-size:12px;color:rgba(255,255,255,.6);}
+  .login-form{flex:none;width:480px;max-width:100%;display:flex;align-items:center;justify-content:center;padding:48px 56px;}
+  .login-inner{width:100%;max-width:340px;}
+  .login-inner .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0E9384;}
+  .login-inner h1{font-size:25px;font-weight:700;letter-spacing:-.02em;margin:8px 0 4px;color:#15171E;}
+  .login-inner .sub{font-size:13.5px;color:#667085;margin:0 0 26px;}
+  .login-inner label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:16px 0 6px;}
+  .login-inner input{width:100%;font-size:14px;color:#1A1D26;background:#fff;border:1px solid #DDE1E6;border-radius:10px;padding:12px 13px;outline:none;font-family:inherit;transition:border-color .12s, box-shadow .12s;}
+  .login-inner input:focus{border-color:#0E9384;box-shadow:0 0 0 3px rgba(14,147,132,.12);}
+  .login-inner .signin{width:100%;font-size:14px;font-weight:600;color:#fff;background:#0E9384;border:none;border-radius:10px;padding:13px;cursor:pointer;font-family:inherit;margin-top:22px;transition:background .12s;}
+  .login-inner .signin:hover{background:#0B7A6E;}
+  .login-inner .signin:disabled{opacity:.6;cursor:default;}
+  .login-inner .secure{display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;color:#98A2B3;margin-top:18px;}
+  .login-inner .pfoot{text-align:center;font-size:12px;color:#B0B5BE;margin-top:28px;padding-top:18px;border-top:1px solid #F0F1F4;}
+  @media (max-width:840px){
+    .login-brand{display:none;}
+    .login-form{flex:1;width:auto;}
+  }
+</style>
+</head>
+<body>
+
+  <!-- BOOT SPLASH (prevents login flash on reload while session resolves) -->
+  <div id="boot" style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#F4F6F8;">
+    <div style="display:flex;align-items:center;gap:11px;opacity:.7;">
+      <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div>
+      <strong style="font-size:16px;color:#0E1424;">Samaji</strong>
+    </div>
+  </div>
+
+  <!-- AUTH -->
+  <div id="auth" style="display:none;">
+    <div class="login-brand">
+      <span class="glow g1"></span><span class="glow g2"></span>
+      <div class="blogo"><div class="mark"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:block"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg></div><strong style="font-size:17px;letter-spacing:-.01em;">Samaji</strong></div>
+      <h2>The library, run properly</h2>
+      <p class="lead">Issue books, receive returns, and track what's due — with every loan tied to a student, a class and a date.</p>
+      <div class="trust">
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Scoped to issuing and receiving books only</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#fff" stroke-width="1.8"/><path d="M12 7v5l3 2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Due dates calculated automatically</div>
+        <div class="item"><span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H7l-3 3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></span>Lost books are logged, not guessed at</div>
+      </div>
+      <div class="bfoot">© <span id="year-b"></span> Pillartech Solutions. All rights reserved.</div>
+    </div>
+
+    <div class="login-form">
+      <div class="login-inner">
+        <div class="warn" id="config-warn" style="margin-bottom:18px;">⚠ Set your Supabase keys in <span class="mono">assets/config.js</span> first.</div>
+        <div class="eyebrow">Librarian Portal</div>
+        <h1>Welcome back</h1>
+        <p class="sub">Sign in with the email your school admin added you with.</p>
+        <label for="email">Email address</label>
+        <input id="email" type="email" placeholder="you@yourschool.ac.ke" autocomplete="email">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="Enter your password" autocomplete="current-password">
+        <button class="signin" id="submit">Sign in securely</button>
+        <div class="msg" id="msg"></div>
+        <div class="secure"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="#98A2B3" stroke-width="2"/></svg>Secured with end-to-end encryption</div>
+        <div class="pfoot">Powered by <strong>Pillartech Solutions</strong> &middot; <span id="year"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <div class="layout">
+      <button class="hamburger" id="hamburger" aria-label="Menu">☰</button>
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
+      <aside>
+        <div class="school"><div class="logo teal" id="school-logo">S</div>
+          <div style="min-width:0;"><div style="font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="lib-name">Librarian</div><div style="font-size:11px;color:#98A2B3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="school-name">—</div></div>
+        </div>
+        <button class="navitem" id="nav-dashboard"><span class="tile" style="background:#E7F6F3;color:#0E9384;" data-icon="dashboard"></span>Dashboard</button>
+        <button class="navitem" id="nav-catalogue"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="library"></span>Catalogue</button>
+        <button class="navitem" id="nav-loans"><span class="tile" style="background:#FFF6ED;color:#C2410C;" data-icon="attendance"></span>Loans</button>
+        <div style="flex:1;"></div>
+        <button class="ghost" id="signout" style="margin:8px;">Sign out</button>
+      </aside>
+      <main id="view"><!-- tab renders here --></main>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../assets/config.js"></script>
+<script src="../assets/icons.js"></script>
+<script src="../assets/app.js"></script>
+<script src="../assets/librarian-modules.js"></script>
+
+<script>
+  var $ = function(id){ return document.getElementById(id); };
+  if (window.SamajiIcons) window.SamajiIcons.fill();
+  if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
+  var sb = window.getSB();
+  var CTX = { schoolId:null, school:null, librarianId:null, flags:{} };
+  var _yr=new Date().getFullYear(); ["year","year-b"].forEach(function(id){ var e=document.getElementById(id); if(e) e.textContent=_yr; });
+  function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
+
+  $("submit").onclick = async function(){
+    if (!sb) { showMsg("Supabase keys not set — edit assets/config.js.", false); return; }
+    var email = $("email").value.trim(), password = $("password").value;
+    if (!email || !password) { showMsg("Enter an email and password.", false); return; }
+    $("submit").disabled = true;
+    var res = await sb.auth.signInWithPassword({ email: email, password: password });
+    if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
+    enterApp();
+  };
+  $("password").addEventListener("keydown", function(e){ if (e.key === "Enter") $("submit").click(); });
+
+  async function enterApp(){
+    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
+    var pr = await sb.from("profiles").select("role, school_id").eq("id", user.id).single();
+    var prof = pr.data;
+    if (!prof || prof.role !== "librarian" || !prof.school_id) {
+      showMsg("This account isn't registered as a librarian. Ask your school admin to create a Librarian login for you in the admin console.", false);
+      $("submit").disabled = false; await sb.auth.signOut(); showLogin(); return;
+    }
+    CTX.schoolId = prof.school_id;
+    CTX.librarianId = user.id;
+
+    var results = await Promise.all([
+      sb.from("schools").select("*").eq("id", CTX.schoolId).single(),
+      sb.rpc("resolve_flags", { p_school: CTX.schoolId })
+    ]);
+    var sc = results[0], r = results[1];
+
+    $("boot").style.display = "none";
+    $("auth").style.display = "none"; $("app").style.display = "block";
+    startIdleWatch();
+
+    CTX.school = sc.data || { name: CTX.schoolId };
+    $("school-name").textContent = CTX.school.name || CTX.schoolId;
+    $("school-logo").textContent = (CTX.school.name || "S").charAt(0);
+    $("lib-name").textContent = (user.user_metadata && user.user_metadata.full_name) || "Librarian";
+
+    CTX.flags = r.data || {};
+    if (!CTX.flags["module.library"]) {
+      $("view").innerHTML = '<div class="empty">The Library module isn\'t enabled for this school. Ask your school admin to enable it.</div>';
+      return;
+    }
+
+    showTab("dashboard");
+  }
+
+  function setActive(key){
+    document.querySelectorAll(".navitem").forEach(function(b){ b.classList.remove("active"); });
+    var el = $("nav-"+key); if (el) el.classList.add("active");
+  }
+  var RENDERERS = {
+    dashboard: function(){ return window.LibrarianModules.dashboard; },
+    catalogue: function(){ return window.LibrarianModules.catalogue; },
+    loans:     function(){ return window.LibrarianModules.loans; }
+  };
+  function showTab(key){
+    setActive(key);
+    var el = $("view"); el.innerHTML = "";
+    var fn = RENDERERS[key] && RENDERERS[key]();
+    if (fn) fn(sb, CTX, el);
+    else el.innerHTML = '<div class="empty">Not available.</div>';
+  }
+  $("nav-dashboard").onclick = function(){ showTab("dashboard"); };
+  $("nav-catalogue").onclick = function(){ showTab("catalogue"); };
+  $("nav-loans").onclick     = function(){ showTab("loans"); };
+
+  // Mobile sidebar toggle (same pattern as School/Teacher Portal)
+  (function(){
+    var ham = $("hamburger"), ovr = $("sidebar-overlay");
+    var aside = document.querySelector(".layout aside");
+    function openSidebar(){ aside.classList.add("open"); ovr.classList.add("open"); }
+    function closeSidebar(){ aside.classList.remove("open"); ovr.classList.remove("open"); }
+    ham.onclick = function(){ aside.classList.contains("open") ? closeSidebar() : openSidebar(); };
+    ovr.onclick = closeSidebar;
+    aside.addEventListener("click", function(e){
+      if (e.target.classList.contains("navitem") || e.target.closest(".navitem") || e.target.id === "signout") {
+        closeSidebar();
+      }
+    });
+  })();
+
+  // ---- session / idle-timeout security (same policy as other portals) ----
+  var IDLE_MINUTES = 5;
+  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
+  var ACT_KEY = "samaji_librarian_last_active";
+  var idleTimer = null;
+
+  function markActive(){ try{ localStorage.setItem(ACT_KEY, String(Date.now())); }catch(e){} }
+  function lastActive(){ var v = 0; try{ v = parseInt(localStorage.getItem(ACT_KEY)||"0",10); }catch(e){} return v || 0; }
+
+  async function doSignOut(reason){
+    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+    try{ localStorage.removeItem(ACT_KEY); }catch(e){}
+    try{ await sb.auth.signOut(); }catch(e){}
+    $("app").style.display = "none";
+    $("auth").style.display = "flex";
+    $("submit").disabled = false;
+    $("msg").className = "msg";
+    if (reason) showMsg(reason, false);
+  }
+
+  function startIdleWatch(){
+    markActive();
+    ["mousedown","keydown","scroll","touchstart","click","mousemove"].forEach(function(ev){
+      window.addEventListener(ev, markActive, { passive:true });
+    });
+    if (idleTimer) clearInterval(idleTimer);
+    idleTimer = setInterval(function(){
+      if (Date.now() - lastActive() > IDLE_MS) {
+        doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity.");
+      }
+    }, 15000);
+  }
+
+  function showLogin(){ $("boot").style.display = "none"; $("auth").style.display = "flex"; }
+
+  $("signout").onclick = function(){ doSignOut(); };
+
+  (async function(){
+    if (!sb) { showLogin(); return; }
+    var s = await sb.auth.getSession();
+    if (!s.data.session) { showLogin(); return; }
+    var la = lastActive();
+    if (la && (Date.now() - la > IDLE_MS)) {
+      try{ localStorage.removeItem(ACT_KEY); }catch(e){}
+      try{ await sb.auth.signOut(); }catch(e){}
+      showLogin();
+      showMsg("Your session expired. Please sign in again.", false);
+      return;
+    }
+    enterApp();
+  })();
+</script>
+</body>
+</html>
