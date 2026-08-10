@@ -1459,6 +1459,20 @@
       var busFareByStudent={}, busPaidByStudent={};
       try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) busFareByStudent[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e){}
       payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
+      // library charges — lost-book fines, deliberately kept in their own
+      // table (never fee_structures/fee_items) but rolled into the same
+      // combined Balance/Total Due column the ledger already uses for bus
+      // fare, so a cleared-fee student who loses a book doesn't read as
+      // "Cleared" here.
+      var libUnpaidByStudent={}, libItemsByStudent={};
+      try{
+        var lcRes=await cget(sb, schoolId, "library_charges", "*");
+        (lcRes||[]).forEach(function(c){
+          if(c.status!=="unpaid") return;
+          libUnpaidByStudent[c.student_id]=(libUnpaidByStudent[c.student_id]||0)+Number(c.amount);
+          (libItemsByStudent[c.student_id]=libItemsByStudent[c.student_id]||[]).push(c);
+        });
+      }catch(e){}
       // billed per student = structure total for their level (sum across active terms)
       var totalByLevelTerm={}; structures.forEach(function(s){ totalByLevelTerm[s.level]= (totalByLevelTerm[s.level]||0) + (s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
       // billed for a specific student = structure total for their level + any
@@ -1498,22 +1512,26 @@
         var scoped=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
         var billedTotal=0, collected=0, outstanding=0;
         var busBilled=0, busCollected=0, busOutstanding=0;
+        var libOutstanding=0;
         scoped.forEach(function(s){
           var billed=billedFor(s), paid=paidByStudent[s.id]||0;
           billedTotal+=billed; outstanding+=Math.max(0,billed-paid);
           var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0;
           busBilled+=bf; busCollected+=bp; busOutstanding+=Math.max(0,bf-bp);
+          libOutstanding+=libUnpaidByStudent[s.id]||0;
         });
         var scopedIds={}; scoped.forEach(function(s){ scopedIds[s.id]=true; });
         collected=payments.reduce(function(a,p){ return scopedIds[p.student_id]?a+tuitionOf(p):a; },0);
         var icBus='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="7.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><circle cx="16.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 11h18" stroke="currentColor" stroke-width="1.5"/></svg>';
+        var icLib='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5v-13z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
         document.getElementById("fee-stats").innerHTML=
           stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
           +stat("Tuition collected",money(collected),"#ECFDF3","#067647",icCash())
           +stat("Tuition outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert())
           +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart())
           +stat("Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus)
-          +stat("Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus);
+          +stat("Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus)
+          +stat("Library charges outstanding",money(libOutstanding),"#FFF6E8","#B54708",icLib);
       }
       refreshStats();
 
@@ -1526,11 +1544,17 @@
         if(!filtered.length){ body.innerHTML='<div class="empty">No students match "'+esc(query)+'".</div>'; return; }
         var pgData=window.paginate(filtered,ledgerPage);
         var pageRows=pgData.rows;
-        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Library</th><th>Total paid</th><th>Total due</th><th>Status</th><th></th></tr></thead><tbody>';
         pageRows.forEach(function(s){
           var billed=billedFor(s), paid=paidByStudent[s.id]||0, tBal=Math.max(0,billed-paid);
           var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0, bBal=Math.max(0,bf-bp);
-          var totalBal=tBal+bBal, totalOwed=billed+bf, totalPaid=paid+bp;
+          // Library charges — lost-book fines from the independent
+          // library_charges table (never fee_structures) — rolled into the
+          // same combined Total due/Status a parent and admin both see, so
+          // a fee-cleared student who loses a book no longer reads "Cleared".
+          var lib=libUnpaidByStudent[s.id]||0, libItems=libItemsByStudent[s.id]||[];
+          var libTitle=libItems.map(function(c){ return c.book_title+" — "+c.reason; }).join("; ");
+          var totalBal=tBal+bBal+lib, totalOwed=billed+bf+lib, totalPaid=paid+bp;
           var cleared=totalBal<=0&&totalOwed>0;
           var st= cleared?"green":(totalPaid>0?"amber":"red"), lbl= totalOwed===0?"No structure":(cleared?"Cleared":(totalPaid>0?"Partial":"Unpaid"));
           if(totalOwed===0) st="gray";
@@ -1538,8 +1562,9 @@
             +'<td>'+esc(s.grade||"—")+'</td>'
             +'<td>'+money(billed)+(paid>0?' <span style="color:#067647;font-size:11px;">paid '+money(paid)+'</span>':'')+'</td>'
             +'<td>'+(bf>0?money(bf)+(bp>0?' <span style="color:#067647;font-size:11px;">paid '+money(bp)+'</span>':''):'—')+'</td>'
+            +'<td'+(lib>0?' style="color:#B54708;font-weight:600;" title="'+esc(libTitle)+'"':'')+'>'+(lib>0?money(lib):'—')+'</td>'
             +'<td style="color:#067647;font-weight:600;">'+money(totalPaid)+'</td>'
-            +'<td style="font-weight:700;color:'+(totalBal>0?"#C2410C":"#067647")+';">'+money(totalBal)+'</td>'
+            +'<td style="font-weight:700;color:'+(totalBal>0?"#C2410C":"#067647")+';">'+money(totalBal)+(lib>0?'<div class="muted" style="font-size:10.5px;font-weight:500;">incl. '+money(lib)+' library</div>':'')+'</td>'
             +'<td><span class="pill '+st+'">'+lbl+'</span></td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-stmt="'+s.id+'">Statement</button> <button class="btn-primary" style="padding:6px 12px;font-size:12px;" data-pay="'+s.id+'">Collect</button></td></tr>';
         });
@@ -1749,7 +1774,9 @@
           var paid=paidByStudent[sid]||0;
           var bal=Math.max(0,billed-paid);
           var extra=(m.q("#p-bus").checked?transportFare:0);
-          m.q("#p-bal").innerHTML='Billed <strong>'+money(billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(bal)+'</strong>'+(billed===0?' <span class="muted">(no fee structure for '+esc(s?s.grade:"")+')</span>':'');
+          var lib=libUnpaidByStudent[sid]||0;
+          m.q("#p-bal").innerHTML='Billed <strong>'+money(billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(bal)+'</strong>'+(billed===0?' <span class="muted">(no fee structure for '+esc(s?s.grade:"")+')</span>':'')
+            +(lib>0?' <div style="margin-top:6px;color:#B54708;font-size:12px;">⚠ Also owes <strong>'+money(lib)+'</strong> in library charges (lost book) — collected separately, not part of this fee payment.</div>':'');
           if(!m.q("#p-amt").value&&(bal+extra)>0) m.q("#p-amt").value=bal+extra;
           refreshTermInfo();
         }

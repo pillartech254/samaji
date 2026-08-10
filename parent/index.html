@@ -820,6 +820,17 @@
   }
 
   // ---- RENDER: CHILDREN / DASHBOARD TAB ----
+  // Sum of unpaid library_charges (lost-book fines) for one child —
+  // deliberately read from its own table, never fee_structures/fee_items,
+  // but folded into the "Total Due" figures below so a cleared fee
+  // balance doesn't read as "nothing owed" when a book charge is open.
+  function libUnpaidTotal(studentId) {
+    var charges = libraryChargesMap[studentId] || [];
+    var t = 0;
+    for (var i = 0; i < charges.length; i++) { if (charges[i].status === "unpaid") t += Number(charges[i].amount) || 0; }
+    return t;
+  }
+
   function renderChildren() {
     var view = $("view");
     var html = "";
@@ -828,12 +839,15 @@
     var totalBilled = 0;
     var totalPaid = 0;
     var totalBalance = 0;
+    var totalLibDue = 0;
     for (var i = 0; i < CHILDREN.length; i++) {
       var fd = childFeeData[CHILDREN[i].id] || { billed: 0, paid: 0, balance: 0 };
       totalBilled += fd.billed;
       totalPaid += fd.paid;
       totalBalance += fd.balance;
+      totalLibDue += libUnpaidTotal(CHILDREN[i].id);
     }
+    var totalDue = totalBalance + totalLibDue;
 
     html += '<div class="welcome-banner">';
     html += '<div class="wb-glow"></div>';
@@ -842,7 +856,7 @@
     html += '<div class="welcome-stats">';
     html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBilled) + '</div><div class="ws-lbl">Total Fees</div></div>';
     html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalPaid) + '</div><div class="ws-lbl">Total Paid</div></div>';
-    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBalance) + '</div><div class="ws-lbl">Balance</div></div>';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalDue) + '</div><div class="ws-lbl">Total Due' + (totalLibDue > 0 ? '</div><div style="font-size:10px;opacity:.75;margin-top:1px;">incl. ' + fmtMoney(totalLibDue) + ' library</div>' : '</div>') + '</div>';
     html += '</div></div>';
 
     // Pay all button
@@ -945,8 +959,17 @@
     }
 
     // Fee summary section
+    var libDue = libUnpaidTotal(c.id);
     html += '<div class="stu-section">';
     html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M2 10h20" stroke="#98A2B3" stroke-width="2"/></svg>Fee Summary (' + new Date().getFullYear() + ')</div>';
+    // Only shown when a library charge is actually open — that's the case
+    // this exists for: a cleared fee Balance box below would otherwise
+    // read as "nothing owed" even though a lost-book charge is still due.
+    if (libDue > 0) {
+      html += '<div style="margin-bottom:12px;padding:10px 14px;border-radius:10px;background:#FEF1F0;border:1px solid #FBD5D2;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">'
+        + '<span style="font-size:12.5px;font-weight:600;color:#C2410C;">Total Amount Due &mdash; fees ' + fmtMoney(fd.balance) + ' + library ' + fmtMoney(libDue) + '</span>'
+        + '<span style="font-size:17px;font-weight:700;color:#C2410C;">' + fmtMoney(fd.balance + libDue) + '</span></div>';
+    }
     html += '<div class="fee-summary">';
     html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.billed) + '</div><div class="fb-lbl">Total Billed</div></div>';
     html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.paid) + '</div><div class="fb-lbl">Tuition Paid</div></div>';
@@ -1031,7 +1054,7 @@
         var chargeTotal = 0;
         for (var cj = 0; cj < unpaidCharges.length; cj++) { chargeTotal += Number(unpaidCharges[cj].amount) || 0; }
         html += '<div style="margin-top:12px;padding:12px;border-radius:10px;background:#FFF6E8;border:1px solid #FDE7C0;">';
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:13px;color:#B54708;">Library Charges (separate from fees)</strong><span style="font-weight:700;color:#B54708;">' + fmtMoney(chargeTotal) + '</span></div>';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:13px;color:#B54708;">Library Charges (billed separately from tuition)</strong><span style="font-weight:700;color:#B54708;">' + fmtMoney(chargeTotal) + '</span></div>';
         for (var ck = 0; ck < unpaidCharges.length; ck++) {
           html += '<div class="fee-item-row" style="border-color:#FDE7C0;"><span class="fi-name">' + escHtml(unpaidCharges[ck].book_title) + ' — ' + escHtml(unpaidCharges[ck].reason) + '</span><span class="fi-amt">' + fmtMoney(unpaidCharges[ck].amount) + '</span></div>';
         }
