@@ -1776,7 +1776,21 @@
           var extra=(m.q("#p-bus").checked?transportFare:0);
           var lib=libUnpaidByStudent[sid]||0;
           m.q("#p-bal").innerHTML='Billed <strong>'+money(billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(bal)+'</strong>'+(billed===0?' <span class="muted">(no fee structure for '+esc(s?s.grade:"")+')</span>':'')
-            +(lib>0?' <div style="margin-top:6px;color:#B54708;font-size:12px;">⚠ Also owes <strong>'+money(lib)+'</strong> in library charges (lost book) — collected separately, not part of this fee payment.</div>':'');
+            +(lib>0?' <div style="margin-top:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#B54708;font-size:12px;">⚠ Also owes <strong>'+money(lib)+'</strong> in library charges (lost book) — this is billed separately, do NOT add it to the amount below.'
+              +' <button type="button" class="btn-sm" id="p-lib-paid" style="padding:4px 10px;font-size:11.5px;">Mark KES '+lib+' library charge as paid (cash)</button></div>':'');
+          if(lib>0){
+            m.q("#p-lib-paid").onclick=async function(){
+              var items=libItemsByStudent[sid]||[];
+              if(!items.length) return;
+              if(!await window.SM_confirm("Mark "+money(lib)+" in library charges as paid in cash for "+(s?s.first_name+" "+s.last_name:"this student")+"? This is separate from the fee payment above and does not create a fee receipt.")) return;
+              var r=await sb.from("library_charges").update({status:"paid",paid_at:new Date().toISOString()}).in("id",items.map(function(c){return c.id;}));
+              if(r.error){ toast("Error: "+r.error.message); return; }
+              delete libUnpaidByStudent[sid]; delete libItemsByStudent[sid];
+              toast("Library charge marked paid.");
+              refreshBal(); refreshStats();
+              if(tab==="ledger") ledger(ledgerPage);
+            };
+          }
           if(!m.q("#p-amt").value&&(bal+extra)>0) m.q("#p-amt").value=bal+extra;
           refreshTermInfo();
         }
