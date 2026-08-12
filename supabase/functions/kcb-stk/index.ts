@@ -63,22 +63,30 @@ function jsonResponse(body: Record<string, unknown>, status = 200): Response {
 }
 
 // --------------- WSO2 OAuth2 (standard client_credentials grant) ---------------
-// CONFIRMED from the Buni portal's "MpesaExpressAPIService" > Subscriptions >
-// Sandbox OAuth2 Keys > Key Configurations panel — this is the token issuer
-// for ALL Buni APIs (identity is on a separate host from API invocation),
-// so it does not live in kcb_config and does not vary per school/API.
-// Production will use a different host — confirm it the same way (switch
-// the portal's environment selector to Production and re-check Key
-// Configurations) before going live; update KCB_TOKEN_URL accordingly
-// (or make it environment-aware here once the production value is known).
-const KCB_TOKEN_URL = "https://accounts.buni.kcbgroup.com/oauth2/token";
+// The token issuer lives on a separate host from API invocation, and that
+// host DIFFERS by environment — confirmed against the Buni portal itself
+// for both:
+//   sandbox:    https://accounts.buni.kcbgroup.com/oauth2/token
+//               (proven live: a full sandbox STK push completed end-to-end
+//               with a real M-Pesa receipt using this exact endpoint)
+//   production: https://api.buni.kcbgroup.com/token
+//               (confirmed from the live application's own Production Keys
+//               > OAuth2 Tokens > Key Configurations panel)
+// Selected by kcb_config.environment ("sandbox" | "production"), same as
+// base_url already is — not hardcoded to one value.
+const KCB_TOKEN_URLS: Record<string, string> = {
+  sandbox: "https://accounts.buni.kcbgroup.com/oauth2/token",
+  production: "https://api.buni.kcbgroup.com/token",
+};
 
 async function getWSO2Token(
   consumerKey: string,
-  consumerSecret: string
+  consumerSecret: string,
+  environment: string
 ): Promise<string> {
+  const tokenUrl = KCB_TOKEN_URLS[environment] || KCB_TOKEN_URLS.sandbox;
   const auth = btoa(consumerKey + ":" + consumerSecret);
-  const res = await fetch(KCB_TOKEN_URL, {
+  const res = await fetch(tokenUrl, {
     method: "POST",
     headers: {
       Authorization: "Basic " + auth,
@@ -164,7 +172,7 @@ async function handleInitiate(req: Request): Promise<Response> {
   }
 
   try {
-    const token = await getWSO2Token(config.consumer_key, config.consumer_secret);
+    const token = await getWSO2Token(config.consumer_key, config.consumer_secret, config.environment || "sandbox");
     const formattedPhone = formatPhone(phone);
     const callbackUrl =
       config.callback_url ||
