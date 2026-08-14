@@ -262,6 +262,10 @@
   //  same rendering the Teacher Portal uses, freeze + print)
   // ====================================================
   async function renderReportCardsAdmin(sb, schoolId, el){
+    // Kicked off now, awaited just before each place that actually prints —
+    // most visits to this console are just filtering/generating, not printing.
+    var reportCardLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/report-card.js") : Promise.resolve();
+    var qrLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/qrcode-gen.js") : Promise.resolve();
     var classes = await loadClasses(sb, schoolId);
     var academic = await window.SamajiAcademics.loadAcademicContext(sb, schoolId);
     var years = academic.years, allTypes = academic.allTypes, schemes = academic.schemes, teacherNameById = academic.teacherNameById;
@@ -333,6 +337,7 @@
     }
 
     async function printOne(row, year, term){
+      await reportCardLoad; await qrLoad;
       var snapRes = await sb.from("report_cards").select("*").eq("student_id",row.student.id).eq("term_id",term.id).eq("academic_year_id",year.id).maybeSingle();
       var opts = snapRes.data
         ? window.SamajiAcademics.buildSnapshotReportOpts(school, row.student, snapRes.data, row.cls, term, year, row.data.levels)
@@ -367,6 +372,7 @@
 
     document.getElementById("rc-print").onclick=async function(){
       if (!rows.length){ toast("Nothing to print yet."); return; }
+      await reportCardLoad; await qrLoad;
       var year = years.find(function(y){ return y.id===document.getElementById("rc-year").value; });
       var termId = document.getElementById("rc-term").value;
       var term = termId ? year.terms.find(function(t){ return t.id===termId; }) : null;
@@ -387,7 +393,113 @@
     load();
   }
 
+  // ====================================================
+  //  ACADEMIC PERFORMANCE (CBC analytics)
+  //  Appended to the existing Analytics Pro screen (enrollment/
+  //  finance/attendance, from school-modules.js) rather than a new
+  //  nav entry — same admin mental model, one Analytics screen with
+  //  more panels. Uses the exact same engine as Marks & Grading and
+  //  Report Cards, so "the class mean" here always matches what's on
+  //  the printed report cards.
+  // ====================================================
+  var legacyAnalytics = window.SchoolModules && window.SchoolModules["module.analytics"];
+  async function renderAcademicAnalytics(sb, schoolId, el){
+    if (legacyAnalytics) await legacyAnalytics(sb, schoolId, el);
+    var classes = await loadClasses(sb, schoolId);
+    var academic = await window.SamajiAcademics.loadAcademicContext(sb, schoolId);
+    var years = academic.years;
+    if (!classes.length || !years.length) return; // legacy panel already explains why (no classes/no year)
+
+    var section = document.createElement("div");
+    section.className = "panel";
+    section.style.marginTop = "18px";
+    section.innerHTML = '<div style="margin-bottom:12px;"><strong style="font-size:15px;">Academic Performance (CBC)</strong>'
+      + '<p class="muted" style="font-size:12.5px;margin-top:2px;">Class &amp; subject means, competency distribution and term trend — the same engine behind Marks &amp; Grading and Report Cards.</p></div>'
+      + '<div class="toolbar" style="margin-top:0;">'
+      + '<div class="field"><label>Academic year</label><select id="aa-year">'+years.map(function(y){ return '<option value="'+y.id+'"'+(y.id===academic.defaultYear.id?" selected":"")+'>'+y.year+'</option>'; }).join("")+'</select></div>'
+      + '<div class="field"><label>Term</label><select id="aa-term"></select></div>'
+      + '</div><div id="aa-body"><div class="empty">Loading…</div></div>';
+    (document.getElementById("an-body")||el).appendChild(section);
+
+    function populateTerms(){
+      var year = years.find(function(y){ return y.id===section.querySelector("#aa-year").value; });
+      var sel = section.querySelector("#aa-term");
+      sel.innerHTML = (year.terms||[]).map(function(t){ return '<option value="'+t.id+'"'+(academic.defaultTerm && t.id===academic.defaultTerm.id?" selected":"")+'>'+esc(t.name)+'</option>'; }).join("");
+      if (!year.terms.length) sel.innerHTML = '<option value="">No terms yet</option>';
+    }
+    populateTerms();
+
+    async function draw(){
+      var year = years.find(function(y){ return y.id===section.querySelector("#aa-year").value; });
+      var termId = section.querySelector("#aa-term").value;
+      var term = termId ? year.terms.find(function(t){ return t.id===termId; }) : null;
+      var body = section.querySelector("#aa-body");
+      if (!term){ body.innerHTML='<div class="empty">This academic year has no terms yet.</div>'; return; }
+      body.innerHTML = '<div class="empty">Crunching your data…</div>';
+
+      var classMeans = [], subjectAgg = {}, bandCounts = {};
+      for (var i=0;i<classes.length;i++){
+        var cls = classes[i];
+        var data = await window.SamajiAcademics.fetchClassReportData(sb, schoolId, cls, year, term, academic.allTypes, academic.schemes, false);
+        if (!data.students.length) continue;
+        var sum=0, n=0;
+        data.students.forEach(function(s){
+          var overall = window.SamajiAcademics.overallFromSummary(window.SamajiAcademics.testSummaryFor(data, s.id));
+          if (overall!=null){
+            sum+=overall; n++;
+            var lvl = window.SamajiGrading.levelFor(data.levels, overall);
+            var band = lvl ? (lvl.competency_code||lvl.grade_label||"—") : "Ungraded";
+            bandCounts[band]=(bandCounts[band]||0)+1;
+          }
+          data.subjects.forEach(function(sub){
+            var p = window.SamajiAcademics.subjectAvgPercent(data, sub, s.id);
+            if (p!=null){ subjectAgg[sub.name]=subjectAgg[sub.name]||{sum:0,n:0}; subjectAgg[sub.name].sum+=p; subjectAgg[sub.name].n++; }
+          });
+        });
+        if (n) classMeans.push({ label: classLabel(cls), value: Math.round(sum/n*10)/10 });
+      }
+      var subjectBars = Object.keys(subjectAgg).sort().map(function(name){
+        var a = subjectAgg[name]; return { label:name, value: Math.round(a.sum/a.n*10)/10 };
+      });
+      var bandBars = Object.keys(bandCounts).sort().map(function(b){ return { label:b, value: bandCounts[b] }; });
+
+      // Trend: mean of each term's *frozen* report_cards.overall_average
+      // across the whole year — cheap (one query) vs. recomputing live
+      // data for every class in every term.
+      var termIds = year.terms.map(function(t){ return t.id; });
+      var rcRes = termIds.length ? await sb.from("report_cards").select("term_id,overall_average").eq("school_id",schoolId).in("term_id",termIds) : { data:[] };
+      var trendAgg = {};
+      (rcRes.data||[]).forEach(function(r){ if (r.overall_average!=null){ trendAgg[r.term_id]=trendAgg[r.term_id]||{sum:0,n:0}; trendAgg[r.term_id].sum+=r.overall_average; trendAgg[r.term_id].n++; } });
+      var trendLine = year.terms.slice().sort(function(a,b){return a.sort-b.sort;}).map(function(t){
+        var a = trendAgg[t.id]; return { label:t.name, value: a&&a.n ? Math.round(a.sum/a.n*10)/10 : 0 };
+      });
+      var hasTrend = year.terms.some(function(t){ return trendAgg[t.id] && trendAgg[t.id].n; });
+
+      var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+      html += '<div class="panel"><strong style="font-size:14px;">Class mean — '+esc(term.name)+'</strong>'
+        + (classMeans.length ? window.SamajiCharts.bar(classMeans,{fmt:function(v){return v+"%";}}) : '<div class="muted" style="margin-top:10px;font-size:13px;">No marks recorded for this term yet.</div>')
+        + '</div>';
+      html += '<div class="panel"><strong style="font-size:14px;">Subject mean — '+esc(term.name)+'</strong>'
+        + (subjectBars.length ? window.SamajiCharts.bar(subjectBars,{fmt:function(v){return v+"%";}}) : '<div class="muted" style="margin-top:10px;font-size:13px;">No marks recorded for this term yet.</div>')
+        + '</div>';
+      html += '<div class="panel"><strong style="font-size:14px;">Competency distribution — '+esc(term.name)+'</strong>'
+        + (bandBars.length ? '<div style="display:flex;align-items:center;gap:18px;margin-top:10px;">'+window.SamajiCharts.donut(bandBars,{center:"Learners"})+window.SamajiCharts.legend(bandBars)+'</div>'
+          : '<div class="muted" style="margin-top:10px;font-size:13px;">No graded marks for this term yet.</div>')
+        + '</div>';
+      html += '<div class="panel"><strong style="font-size:14px;">Performance trend — '+year.year+'</strong>'
+        + (hasTrend ? window.SamajiCharts.line(trendLine,{}) : '<div class="muted" style="margin-top:10px;font-size:13px;">No published report cards yet this year — trend appears once report cards are generated for at least one term.</div>')
+        + '</div>';
+      html += '</div>';
+      body.innerHTML = html;
+    }
+
+    section.querySelector("#aa-year").onchange=function(){ populateTerms(); draw(); };
+    section.querySelector("#aa-term").onchange=draw;
+    draw();
+  }
+
   window.SchoolModules = window.SchoolModules || {};
   window.SchoolModules["module.exams"] = renderExamAnnouncements;
   window.SchoolModules["module.academics"] = renderReportCardsAdmin;
+  window.SchoolModules["module.analytics"] = renderAcademicAnalytics;
 })();

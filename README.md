@@ -1,15 +1,16 @@
 # Samaji — School Management Platform (deployable web app)
 
-A database-driven feature-flag licensing platform. **Four front-ends, one backend:**
+A database-driven feature-flag licensing platform. **Five front-ends, one backend:**
 
 | Portal | Path | Who | Sees |
 |---|---|---|---|
 | Admin console | `/admin/` | super_admin | every school, all flags, subscriptions |
 | School portal | `/school/` | school_admin | their school only — license-gated UI |
 | Teacher portal | `/teacher/` | teacher | their own classes/subjects, attendance, grading, report books and payslips only |
-| Parent portal | `/parent/` | parent | their own children's records, fees, and M-Pesa payments only |
+| Librarian portal | `/librarian/` | librarian | issuing/receiving books and marking lost books only — no catalogue add/delete, no charge waiving |
+| Parent portal | `/parent/` | parent | their own children's records, fees, library loans/charges, and M-Pesa/KCB payments only |
 
-All three are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
+All are **static HTML/JS** that talk directly to **Supabase** (hosted Postgres + Auth).
 The licensing logic lives in the database as the `resolve_flags()` function, so there is
 **no server to run or maintain.** That makes it a perfect fit for **Cloudflare Pages** (free).
 
@@ -19,16 +20,42 @@ webapp/
 ├─ admin/index.html    provider console
 ├─ school/index.html   school portal
 ├─ teacher/index.html  teacher portal
+├─ librarian/index.html librarian portal (issue/return/lost only)
 ├─ parent/index.html   parent portal
-├─ supabase/functions/ Edge Functions (admin user management, M-Pesa STK push)
+├─ supabase/functions/ Edge Functions (admin user management, M-Pesa Daraja STK push, KCB Buni)
 ├─ assets/
 │  ├─ config.js        ← the ONLY file you edit (Supabase keys)
 │  ├─ app.js           shared client + module metadata
-│  └─ styles.css       shared styles
+│  ├─ styles.css       shared styles (also declares the self-hosted fonts, see below)
+│  ├─ fonts/           self-hosted IBM Plex Sans/Mono (woff2)
+│  └─ vendor/          self-hosted, version-pinned @supabase/supabase-js
 ├─ setup.sql           run once in Supabase to create everything
 ├─ _headers, _redirects  Cloudflare Pages config
 └─ README.md
 ```
+
+### Self-hosted fonts and Supabase SDK
+
+Every page used to load IBM Plex Sans/Mono from Google Fonts and `@supabase/supabase-js`
+from `cdn.jsdelivr.net`. Both are now vendored locally (`assets/fonts/`, `assets/vendor/`) —
+faster first paint (no render-blocking cross-origin stylesheet), and one less external-outage
+single point of failure for schools on networks that block/throttle those CDNs.
+
+**Fonts** never need touching — they're a fixed set of `.woff2` files referenced by
+`@font-face` rules in `assets/styles.css` (and duplicated inline in `index.html`/`verify.html`,
+the two pages that don't load `styles.css`).
+
+**The Supabase SDK is pinned by filename**: `assets/vendor/supabase-js-2.112.2.min.js`.
+Upgrading is a deliberate, visible action, not silent CDN drift — to bump it:
+1. Download the new version's UMD build (e.g. from `https://registry.npmjs.org/@supabase/supabase-js/-/supabase-js-<version>.tgz`, `package/dist/umd/supabase.js`).
+2. Save it as `assets/vendor/supabase-js-<version>.min.js`.
+3. Update the `<script src="...">` tag in all six entry points (`admin/`, `school/`, `teacher/`,
+   `librarian/`, `parent/`, `verify.html`) to the new filename.
+4. Delete the old version's file.
+
+`_headers` caches both `assets/fonts/*` and `assets/vendor/*` for a year (`immutable`) since
+their filenames only ever change when their content does — unlike `assets/*.js`, which reuses
+the same filename on every deploy and stays on `must-revalidate`.
 
 ---
 
@@ -77,9 +104,14 @@ webapp/
     (principal/deputy_principal/dos — a title, not a login role) and
     `school_classes.class_teacher_id`. Manage all of it from **Settings → CBC Assessment** in the
     School Portal. Purely additive — doesn't touch `exams`/`exam_results`/`grades` yet.
-18. **Edge Functions**: deploy `supabase/functions/admin-users` and `supabase/functions/mpesa-stk`
-    (`supabase functions deploy admin-users` / `mpesa-stk`) and set their secrets
-    (`SUPABASE_SERVICE_ROLE_KEY`, M-Pesa Daraja credentials) in Project Settings → Edge Functions.
+18. **Edge Functions**: deploy `supabase/functions/admin-users`, `supabase/functions/mpesa-stk`
+    (Safaricom Daraja) and `supabase/functions/kcb-stk` (KCB Buni — a second, independent
+    payment rail; its `KCB_ENDPOINTS`/payload field names in `index.ts` are placeholders
+    until confirmed against KCB's actual API definition in the Buni portal)
+    (`supabase functions deploy admin-users` / `mpesa-stk` / `kcb-stk`, the latter two with
+    `--no-verify-jwt` so their callback routes are reachable) and set their secrets
+    (`SUPABASE_SERVICE_ROLE_KEY`; M-Pesa Daraja and KCB credentials live in the
+    `mpesa_config`/`kcb_config` tables, not as function secrets) in Project Settings → Edge Functions.
 19. **Authentication → Providers → Email**: enable it. For a fast demo, turn **off**
     "Confirm email" (re-enable for production).
 20. **Project Settings → API**: copy your **Project URL** and **anon public key**.
@@ -101,6 +133,31 @@ shipped, tested, and merged on its own — not a single giant change):
 5. The KICD-style printable report card (coat of arms, signatures, QR code, A4 print) — same
    browser-print approach already used for payslips/receipts, no new server infrastructure.
 6. Principal/teacher dashboards and analytics.
+
+### Library module overhaul (`setup-modules-39.sql`)
+Run this after all the above (order doesn't matter relative to the CBC phases — it only
+touches `library_books`/`library_loans` and adds a new `library_charges` table):
+- **Lending lifecycle**: a librarian enters *days borrowed*, not a due date — `due_date` is
+  computed and stored automatically. Loans carry a `status` (`active`/`returned`/`lost`) and a
+  `class_at_borrow` snapshot so promotions never rewrite loan history.
+- **Lost books**: marking a loan lost raises a row in the new `library_charges` table —
+  **deliberately independent of `fee_structures`/`fee_items`** so a lost-book fine never shows
+  up as a fee-structure line item, in the admin console, the librarian portal, or the parent
+  portal. It's its own ledger, visible to admins/librarians (manage) and parents (read-only,
+  their own children only).
+- **Librarian role**: `is_librarian()` mirrors `is_school_admin()`'s allow-list shape
+  (setup-modules-22.sql), so a librarian account is automatically locked out of every table
+  gated by `is_school_admin()` (payroll, staff, exams, mpesa/kcb config, etc.) without touching
+  any of those policies. Create one from **Admin console → Users → + New user → Role: Librarian**
+  — it reuses the existing `admin_create_user()` RPC, no new backend plumbing required. They
+  then sign in at `/librarian/` with that email + password.
+- **Due/overdue visibility**: the School Portal's Library screen (School Portal → Library) gets
+  a *Due & overdue* tab and a *Charges* tab (mark paid/waived); the Librarian Portal's Dashboard
+  surfaces the same due/overdue list as its landing screen. There is no automated SMS/push
+  reminder yet — "notify when due" today means it's surfaced prominently in-app to the
+  librarian, the school admin, and the parent (a due/overdue status pill on each loan); wiring
+  an actual SMS reminder is a natural follow-up using the existing SMS module
+  (`sms_credit_ledger`/`sms_messages`) once you're ready for it.
 
 ## B. Configure the app
 Open **`assets/config.js`** and paste your two values:

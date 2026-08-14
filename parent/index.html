@@ -5,11 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>(function(){try{var t=localStorage.getItem("samaji-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <title>Samaji — Parent Portal</title>
-<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/styles.css">
+<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co"><link rel="stylesheet" href="../assets/styles.css">
 <style>
   *{box-sizing:border-box;}
   body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:#F4F6F8;color:#1A1D26;}
@@ -173,6 +169,9 @@
   .btn-pay-all{width:100%;padding:14px;background:#0A4F49;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:18px;min-height:48px;transition:background .12s;}
   .btn-pay-all:hover{background:#083E3A;}
 
+  .btn-kcb{background:#1B4D2E;}
+  .btn-kcb:hover{background:#123A21;}
+
   /* ===== TABLE ===== */
   .data-table{width:100%;border-collapse:collapse;font-size:13px;}
   .data-table th{text-align:left;font-size:11.5px;font-weight:700;color:#98A2B3;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid #EAECEF;}
@@ -322,9 +321,10 @@
 
   <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../assets/vendor/supabase-js-2.112.2.min.js"></script>
 <script src="../assets/config.js"></script>
 <script src="../assets/app.js"></script>
+<script src="../assets/idb-cache.js"></script>
 <script>
 (function(){
   "use strict";
@@ -342,6 +342,8 @@
   var dormMap = {};     // dormitory_id -> { name, gender }
   var teacherMap = {};  // class_id -> [ { name, subject } ]
   var attendanceMap = {}; // student_id -> { present, absent, late, total }
+  var libraryLoansMap = {};   // student_id -> [ active loan rows ]
+  var libraryChargesMap = {}; // student_id -> [ library_charges rows ] (independent of fees)
 
   // year set by app.js samajiYear()
 
@@ -639,7 +641,9 @@
       loadSupportingData(function(){
         loadFeeDataForChildren(function(){
           loadAttendanceData(function(){
-            renderChildren();
+            loadLibraryDataForChildren(function(){
+              renderChildren();
+            });
           });
         });
       });
@@ -723,9 +727,41 @@
     }).catch(function(){ cb(); });
   }
 
+  function loadLibraryDataForChildren(cb) {
+    var studentIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+    libraryLoansMap = {}; libraryChargesMap = {};
+    if (studentIds.length === 0) { cb(); return; }
+
+    var pending = 2;
+    function check() { pending--; if (pending === 0) cb(); }
+
+    sb.from("library_loans").select("*, library_books(title)").in("student_id", studentIds).eq("status", "active").order("due_date").then(function(res){
+      var rows = res.data || [];
+      for (var i = 0; i < rows.length; i++) {
+        var sid = rows[i].student_id;
+        if (!libraryLoansMap[sid]) libraryLoansMap[sid] = [];
+        libraryLoansMap[sid].push(rows[i]);
+      }
+      check();
+    }).catch(function(){ check(); });
+
+    // Lost-book charges are deliberately loaded from their own table, not
+    // fee_structures/fee_items — they're billed independently of the fee
+    // structure and must read as their own, separate line to a parent.
+    sb.from("library_charges").select("*").in("student_id", studentIds).order("created_at", { ascending: false }).then(function(res){
+      var rows = res.data || [];
+      for (var i = 0; i < rows.length; i++) {
+        var sid = rows[i].student_id;
+        if (!libraryChargesMap[sid]) libraryChargesMap[sid] = [];
+        libraryChargesMap[sid].push(rows[i]);
+      }
+      check();
+    }).catch(function(){ check(); });
+  }
+
   function loadFeeDataForChildren(cb) {
     var pending = CHILDREN.length;
-    var currentYear = new Date().getFullYear();
     childFeeData = {};
 
     for (var i = 0; i < CHILDREN.length; i++) {
@@ -735,7 +771,10 @@
         var openingBalance = Number(child.opening_balance) || 0;
         childFeeData[sid] = { billed: openingBalance, paid: 0, balance: 0, items: [], transportPaid: 0, openingBalance: openingBalance };
 
-        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(fsRes){
+        // No year filter — matches how the school admin's own Fees screen
+        // computes a student's billed total (assets/school-plus.js), so
+        // parent and admin always agree on the same balance.
+        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).then(function(fsRes){
           var structures = fsRes.data || [];
           if (structures.length === 0) {
             loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
@@ -777,6 +816,17 @@
   }
 
   // ---- RENDER: CHILDREN / DASHBOARD TAB ----
+  // Sum of unpaid library_charges (lost-book fines) for one child —
+  // deliberately read from its own table, never fee_structures/fee_items,
+  // but folded into the "Total Due" figures below so a cleared fee
+  // balance doesn't read as "nothing owed" when a book charge is open.
+  function libUnpaidTotal(studentId) {
+    var charges = libraryChargesMap[studentId] || [];
+    var t = 0;
+    for (var i = 0; i < charges.length; i++) { if (charges[i].status === "unpaid") t += Number(charges[i].amount) || 0; }
+    return t;
+  }
+
   function renderChildren() {
     var view = $("view");
     var html = "";
@@ -785,12 +835,15 @@
     var totalBilled = 0;
     var totalPaid = 0;
     var totalBalance = 0;
+    var totalLibDue = 0;
     for (var i = 0; i < CHILDREN.length; i++) {
       var fd = childFeeData[CHILDREN[i].id] || { billed: 0, paid: 0, balance: 0 };
       totalBilled += fd.billed;
       totalPaid += fd.paid;
       totalBalance += fd.balance;
+      totalLibDue += libUnpaidTotal(CHILDREN[i].id);
     }
+    var totalDue = totalBalance + totalLibDue;
 
     html += '<div class="welcome-banner">';
     html += '<div class="wb-glow"></div>';
@@ -799,7 +852,7 @@
     html += '<div class="welcome-stats">';
     html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBilled) + '</div><div class="ws-lbl">Total Fees</div></div>';
     html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalPaid) + '</div><div class="ws-lbl">Total Paid</div></div>';
-    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalBalance) + '</div><div class="ws-lbl">Balance</div></div>';
+    html += '<div class="ws-item"><div class="ws-val">' + fmtMoney(totalDue) + '</div><div class="ws-lbl">Total Due' + (totalLibDue > 0 ? '</div><div style="font-size:10px;opacity:.75;margin-top:1px;">incl. ' + fmtMoney(totalLibDue) + ' library</div>' : '</div>') + '</div>';
     html += '</div></div>';
 
     // Pay all button
@@ -809,7 +862,8 @@
       if (fd2.balance > 0) childrenWithBalance.push(CHILDREN[i]);
     }
     if (childrenWithBalance.length > 1 && totalBalance > 0) {
-      html += '<button class="btn-pay-all" onclick="window._payAll()">Pay for all children &mdash; ' + fmtMoney(totalBalance) + '</button>';
+      html += '<button class="btn-pay-all" onclick="window._payAll(\'mpesa\')">Pay for all children via M-Pesa &mdash; ' + fmtMoney(totalBalance) + '</button>';
+      html += '<button class="btn-pay-all btn-kcb" onclick="window._payAll(\'kcb\')">Pay for all children via KCB &mdash; ' + fmtMoney(totalBalance) + '</button>';
     }
 
     // Student cards
@@ -901,8 +955,17 @@
     }
 
     // Fee summary section
+    var libDue = libUnpaidTotal(c.id);
     html += '<div class="stu-section">';
-    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M2 10h20" stroke="#98A2B3" stroke-width="2"/></svg>Fee Summary (' + yr + ')</div>';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="2" y="5" width="20" height="14" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M2 10h20" stroke="#98A2B3" stroke-width="2"/></svg>Fee Summary (' + new Date().getFullYear() + ')</div>';
+    // Only shown when a library charge is actually open — that's the case
+    // this exists for: a cleared fee Balance box below would otherwise
+    // read as "nothing owed" even though a lost-book charge is still due.
+    if (libDue > 0) {
+      html += '<div style="margin-bottom:12px;padding:10px 14px;border-radius:10px;background:#FEF1F0;border:1px solid #FBD5D2;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;">'
+        + '<span style="font-size:12.5px;font-weight:600;color:#C2410C;">Total Amount Due &mdash; fees ' + fmtMoney(fd.balance) + ' + library ' + fmtMoney(libDue) + '</span>'
+        + '<span style="font-size:17px;font-weight:700;color:#C2410C;">' + fmtMoney(fd.balance + libDue) + '</span></div>';
+    }
     html += '<div class="fee-summary">';
     html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.billed) + '</div><div class="fb-lbl">Total Billed</div></div>';
     html += '<div class="fee-box"><div class="fb-val">' + fmtMoney(fd.paid) + '</div><div class="fb-lbl">Tuition Paid</div></div>';
@@ -927,14 +990,15 @@
     }
 
     if (fd.balance > 0) {
-      html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\')">Pay via M-Pesa &mdash; ' + fmtMoney(fd.balance) + '</button>';
+      html += '<button class="btn-mpesa" onclick="window._payChild(\'' + c.id + '\',\'mpesa\')">Pay via M-Pesa &mdash; ' + fmtMoney(fd.balance) + '</button>';
+      html += '<button class="btn-mpesa btn-kcb" onclick="window._payChild(\'' + c.id + '\',\'kcb\')">Pay via KCB &mdash; ' + fmtMoney(fd.balance) + '</button>';
     }
     html += '</div>';
 
     // Attendance section
     var att = attendanceMap[c.id];
     html += '<div class="stu-section">';
-    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="#98A2B3" stroke-width="2"/></svg>Attendance (' + yr + ')</div>';
+    html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="18" rx="2" stroke="#98A2B3" stroke-width="2"/><path d="M16 2v4M8 2v4M3 10h18" stroke="#98A2B3" stroke-width="2"/></svg>Attendance (' + new Date().getFullYear() + ')</div>';
     if (att && att.total > 0) {
       var pctPresent = Math.round((att.present / att.total) * 100);
       var pctAbsent = Math.round((att.absent / att.total) * 100);
@@ -954,6 +1018,48 @@
     }
     html += '</div>';
 
+    // Library section — borrowed books, then a separate Library Charges
+    // block for lost books. Deliberately its own section, not folded into
+    // Fee Summary above: a lost-book charge is billed independently of the
+    // fee structure, and must read that way to a parent too.
+    var loans = libraryLoansMap[c.id] || [];
+    var charges = libraryChargesMap[c.id] || [];
+    if (loans.length > 0 || charges.length > 0) {
+      html += '<div class="stu-section">';
+      html += '<div class="stu-section-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z" stroke="#98A2B3" stroke-width="1.7" stroke-linejoin="round"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5v-13z" stroke="#98A2B3" stroke-width="1.7" stroke-linejoin="round"/></svg>Library</div>';
+
+      if (loans.length > 0) {
+        var today = new Date().toISOString().slice(0, 10);
+        var soon = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10);
+        for (var li = 0; li < loans.length; li++) {
+          var ln = loans[li];
+          var cls = "green", label = "On time";
+          if (ln.due_date && ln.due_date < today) { cls = "red"; label = "Overdue"; }
+          else if (ln.due_date && ln.due_date <= soon) { cls = "amber"; label = "Due soon"; }
+          html += '<div class="fee-item-row"><span class="fi-name">' + escHtml(ln.library_books ? ln.library_books.title : "Book") +
+            ' <span class="muted" style="font-size:11.5px;">— due ' + escHtml(ln.due_date || "—") + '</span></span>' +
+            '<span class="pill ' + cls + '">' + label + '</span></div>';
+        }
+      } else {
+        html += '<div style="font-size:13px;color:#98A2B3;">No books currently borrowed.</div>';
+      }
+
+      var unpaidCharges = [];
+      for (var ci = 0; ci < charges.length; ci++) { if (charges[ci].status === "unpaid") unpaidCharges.push(charges[ci]); }
+      if (unpaidCharges.length > 0) {
+        var chargeTotal = 0;
+        for (var cj = 0; cj < unpaidCharges.length; cj++) { chargeTotal += Number(unpaidCharges[cj].amount) || 0; }
+        html += '<div style="margin-top:12px;padding:12px;border-radius:10px;background:#FFF6E8;border:1px solid #FDE7C0;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="font-size:13px;color:#B54708;">Library Charges (billed separately from tuition)</strong><span style="font-weight:700;color:#B54708;">' + fmtMoney(chargeTotal) + '</span></div>';
+        for (var ck = 0; ck < unpaidCharges.length; ck++) {
+          html += '<div class="fee-item-row" style="border-color:#FDE7C0;"><span class="fi-name">' + escHtml(unpaidCharges[ck].book_title) + ' — ' + escHtml(unpaidCharges[ck].reason) + '</span><span class="fi-amt">' + fmtMoney(unpaidCharges[ck].amount) + '</span></div>';
+        }
+        html += '<div style="font-size:11.5px;color:#B54708;margin-top:6px;">Pay at the school office — not part of the M-Pesa/KCB fee payment above.</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
     html += '</div>'; // stu-body
     html += '</div>'; // stu-card
 
@@ -966,18 +1072,25 @@
     return d.innerHTML;
   }
 
-  // ---- MPESA PAYMENT ----
-  window._payChild = function(studentId) {
+  // ---- PAYMENT (M-Pesa via Daraja, or KCB via Buni — same flow shape,
+  // parameterized by provider so the two integrations share one path
+  // instead of drifting into two copies of the same bugs) ----
+  var PAY_PROVIDERS = {
+    mpesa: { label: "M-Pesa", txTable: "mpesa_transactions", fnName: "mpesa-stk", receiptField: "mpesa_receipt_no" },
+    kcb:   { label: "KCB",    txTable: "kcb_transactions",    fnName: "kcb-stk",    receiptField: "receipt_no" }
+  };
+
+  window._payChild = function(studentId, providerKey) {
     var child = null;
     for (var i = 0; i < CHILDREN.length; i++) {
       if (CHILDREN[i].id === studentId) { child = CHILDREN[i]; break; }
     }
     if (!child) return;
     var fd = childFeeData[studentId] || { balance: 0 };
-    openMpesaModal([child], fd.balance);
+    openPayModal(PAY_PROVIDERS[providerKey] || PAY_PROVIDERS.mpesa, [child], fd.balance);
   };
 
-  window._payAll = function() {
+  window._payAll = function(providerKey) {
     var total = 0;
     var kids = [];
     for (var i = 0; i < CHILDREN.length; i++) {
@@ -988,10 +1101,10 @@
       }
     }
     if (kids.length === 0) return;
-    openMpesaModal(kids, total);
+    openPayModal(PAY_PROVIDERS[providerKey] || PAY_PROVIDERS.mpesa, kids, total);
   };
 
-  function openMpesaModal(students, totalBalance) {
+  function openPayModal(provider, students, totalBalance) {
     var box = $("mpesa-box");
     var names = [];
     var sids = [];
@@ -1000,12 +1113,12 @@
       sids.push(students[i].id);
     }
 
-    var html = '<h2>Pay fees via M-Pesa</h2>';
-    html += '<p class="modal-sub">Send an M-Pesa payment for ' + escHtml(names.join(", ")) + '</p>';
+    var html = '<h2>Pay fees via ' + escHtml(provider.label) + '</h2>';
+    html += '<p class="modal-sub">Send a ' + escHtml(provider.label) + ' payment for ' + escHtml(names.join(", ")) + '</p>';
     html += '<div style="display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;border-bottom:1px solid #F0F1F4;"><span style="color:#667085;">Total balance</span><span style="font-weight:600;">' + fmtMoney(totalBalance) + '</span></div>';
     html += '<label for="mpesa-amount">Amount to pay (KES)</label>';
     html += '<input id="mpesa-amount" type="number" value="' + Math.max(0, totalBalance) + '" min="1">';
-    html += '<label for="mpesa-phone">M-Pesa phone number</label>';
+    html += '<label for="mpesa-phone">' + escHtml(provider.label) + ' phone number</label>';
     html += '<input id="mpesa-phone" type="tel" value="' + escHtml(PARENT.phone || "") + '">';
     html += '<button class="modal-btn" id="mpesa-pay">Pay now</button>';
     html += '<div class="modal-msg" id="mpesa-msg"></div>';
@@ -1035,7 +1148,7 @@
       var studentIdArr = [];
       for (var j = 0; j < sids.length; j++) { studentIdArr.push(sids[j]); }
 
-      sb.from("mpesa_transactions").insert({
+      sb.from(provider.txTable).insert({
         school_id: SCHOOL,
         parent_id: USER.id,
         phone: phone,
@@ -1051,8 +1164,8 @@
         }
         var txId = res.data.id;
         // Trigger the STK push via the edge function
-        var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/mpesa-stk";
-        var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+        var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/" + provider.fnName;
+        var token = window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
         fetch(stkUrl, {
           method: "POST",
           headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
@@ -1070,9 +1183,9 @@
             $("mpesa-pay").disabled = false;
             return;
           }
-          showMpesaPolling(txId);
-        }).catch(function(){
-          $("mpesa-msg").textContent = "Failed to send STK push. Please try again.";
+          showPayPolling(provider, txId, students);
+        }).catch(function(e){
+          $("mpesa-msg").textContent = "Failed to send STK push: " + String(e && e.message || e);
           $("mpesa-msg").className = "modal-msg err";
           $("mpesa-pay").disabled = false;
         });
@@ -1084,11 +1197,11 @@
     };
   }
 
-  function showMpesaPolling(txId) {
+  function showPayPolling(provider, txId, students) {
     var box = $("mpesa-box");
     var html = '<div style="text-align:center;padding:20px 0;">';
     html += '<div class="spinner" style="width:32px;height:32px;margin:0 auto 16px;border-width:3px;"></div>';
-    html += '<h2 style="font-size:17px;">STK Push sent to your phone</h2>';
+    html += '<h2 style="font-size:17px;">' + escHtml(provider.label) + ' request sent to your phone</h2>';
     html += '<p class="modal-sub">Enter your M-Pesa PIN to complete payment.</p>';
     html += '<div class="modal-msg" id="mpesa-poll-msg">Waiting for confirmation...</div>';
     html += '</div>';
@@ -1105,25 +1218,15 @@
         $("mpesa-poll-msg").className = "modal-msg err";
         return;
       }
-      sb.from("mpesa_transactions").select("status, mpesa_receipt_no").eq("id", txId).single().then(function(res){
+      sb.from(provider.txTable).select("*").eq("id", txId).single().then(function(res){
         if (res.error) return;
         var tx = res.data;
         if (tx.status === "completed") {
           clearInterval(pollTimer);
-          var successHtml = '<div style="text-align:center;padding:20px 0;">';
-          successHtml += '<div style="width:48px;height:48px;border-radius:50%;background:#E7F6F3;color:#0E9384;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:24px;">&#10003;</div>';
-          successHtml += '<h2 style="font-size:17px;">Payment successful!</h2>';
-          successHtml += '<p class="modal-sub">Receipt: ' + escHtml(tx.mpesa_receipt_no || "-") + '</p>';
-          successHtml += '<button class="modal-btn" id="mpesa-done">Done</button>';
-          successHtml += '</div>';
-          box.innerHTML = successHtml;
-          $("mpesa-done").onclick = function(){
-            $("mpesa-modal").style.display = "none";
-            loadChildren();
-          };
-        } else if (tx.status === "failed") {
+          showReceiptScreen(provider, tx, students);
+        } else if (tx.status === "failed" || tx.status === "cancelled") {
           clearInterval(pollTimer);
-          $("mpesa-poll-msg").textContent = "Payment failed. Please try again.";
+          $("mpesa-poll-msg").textContent = "Payment " + tx.status + (tx.result_desc ? ": " + tx.result_desc : ". Please try again.");
           $("mpesa-poll-msg").className = "modal-msg err";
         }
       });
@@ -1132,6 +1235,53 @@
     $("mpesa-poll-cancel").onclick = function(){
       clearInterval(pollTimer);
       $("mpesa-modal").style.display = "none";
+    };
+  }
+
+  // Auto-shown the moment a payment's status flips to "completed" — a
+  // printable receipt for what was just paid, not a full fee statement
+  // (that already exists in the admin/school portal; this is proof of
+  // THIS payment for the parent to keep).
+  function showReceiptScreen(provider, tx, students) {
+    var box = $("mpesa-box");
+    var names = [];
+    for (var i = 0; i < students.length; i++) { names.push(studentName(students[i])); }
+    var receiptNo = tx[provider.receiptField] || tx.id.slice(0, 8).toUpperCase();
+    var when = new Date();
+
+    var html = '<div style="text-align:center;padding:10px 0 4px;">';
+    html += '<div style="width:44px;height:44px;border-radius:50%;background:#E7F6F3;color:#0E9384;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:22px;">&#10003;</div>';
+    html += '<h2 style="font-size:16px;margin:0;">Payment successful!</h2>';
+    html += '</div>';
+
+    html += '<div id="print-area"><div class="rcpt" style="width:100%;box-shadow:none;border:1px solid #EAECEF;">';
+    var schoolName = ($("school-name") && $("school-name").textContent) || "School";
+    html += '<div class="rc-top"><div class="rc-logo">' + escHtml(schoolName) + '</div>';
+    html += '<div class="rc-school">Payment Receipt</div><div class="rc-sub">via ' + escHtml(provider.label) + '</div>';
+    html += '<div class="rc-stamp">PAID</div></div>';
+    html += '<div class="rc-body"><div class="rc-meta">';
+    html += '<div><div class="k">Receipt No</div><div class="v">' + escHtml(receiptNo) + '</div></div>';
+    html += '<div><div class="k">Date</div><div class="v">' + when.toLocaleDateString() + '</div></div>';
+    html += '<div><div class="k">Student' + (students.length > 1 ? "s" : "") + '</div><div class="v">' + escHtml(names.join(", ")) + '</div></div>';
+    html += '<div><div class="k">Phone</div><div class="v">' + escHtml(tx.phone || "-") + '</div></div>';
+    html += '<div><div class="k">Method</div><div class="v">' + escHtml(provider.label) + '</div></div>';
+    html += '<div><div class="k">Paid by</div><div class="v">' + escHtml(PARENT.full_name || "-") + '</div></div>';
+    html += '</div>';
+    html += '<div class="rc-amt"><div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#067647;">Amount Paid</div><div class="big">' + fmtMoney(tx.amount) + '</div></div>';
+    html += '<svg width="36" height="36" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#067647"/><path d="M8 12.5l2.5 2.5L16 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
+    html += '</div><div class="rc-foot">Thank you. This is a computer-generated receipt &mdash; ' + escHtml(receiptNo) + '<br>Powered by Samaji &middot; Pillartech Solutions</div>';
+    html += '</div></div>';
+
+    html += '<div style="display:flex;gap:10px;margin-top:14px;">';
+    html += '<button style="flex:1;background:none;border:1px solid #DDE1E6;border-radius:10px;color:#344054;font-size:13px;cursor:pointer;padding:12px;font-family:inherit;" id="mpesa-done">Done</button>';
+    html += '<button class="modal-btn" style="flex:1;" id="mpesa-print">Print receipt</button>';
+    html += '</div>';
+
+    box.innerHTML = html;
+    $("mpesa-print").onclick = function(){ window.print(); };
+    $("mpesa-done").onclick = function(){
+      $("mpesa-modal").style.display = "none";
+      loadChildren();
     };
   }
 

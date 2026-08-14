@@ -18,6 +18,26 @@
   }
   window.SM_toast = toast;
 
+  // Turns a plain <select> full of students into a searchable one: pass the
+  // select element, a search <input> placed above it, the full list, and a
+  // label function. Options are rebuilt on every keystroke from the filtered
+  // list — the select's id/.value contract is unchanged, so every existing
+  // caller keeps working untouched.
+  function wireSearchSelect(selectEl, searchEl, list, labelFn){
+    function draw(){
+      var q=(searchEl.value||"").trim().toLowerCase();
+      var filtered = !q ? list : list.filter(function(s){ return labelFn(s).toLowerCase().indexOf(q)>=0; });
+      var cur = selectEl.value;
+      selectEl.innerHTML = filtered.length
+        ? filtered.map(function(s){ return '<option value="'+s.id+'">'+esc(labelFn(s))+'</option>'; }).join("")
+        : '<option value="">No matches</option>';
+      if (filtered.some(function(s){ return String(s.id)===cur; })) selectEl.value = cur;
+    }
+    searchEl.oninput = draw;
+    draw();
+  }
+  window.SM_wireSearchSelect = wireSearchSelect;
+
   // ====================================================
   //  STUDENTS / SIS
   // ====================================================
@@ -201,14 +221,15 @@
     }
     document.getElementById("fee-new").onclick=function(){
       if(!students.length){ toast("Add a student first."); return; }
-      var opts=students.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+'</option>'; }).join("");
       var m=modal('<h3>New invoice</h3>'
         +'<div class="grid2">'
-        +'<div class="field full"><label>Student</label><select id="i-stu">'+opts+'</select></div>'
+        +'<div class="field full"><label>Search student</label><input id="i-stu-search" placeholder="Type a name…"></div>'
+        +'<div class="field full"><label>Student</label><select id="i-stu"></select></div>'
         +'<div class="field full"><label>Title</label><input id="i-title" value="Term 1 Tuition"></div>'
         +'<div class="field"><label>Amount (KES)</label><input id="i-amount" type="number" value="15000"></div>'
         +'<div class="field"><label>Due date</label><input id="i-due" type="date"></div>'
         +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Create</button></div>');
+      wireSearchSelect(m.q("#i-stu"), m.q("#i-stu-search"), students, function(s){ return s.first_name+" "+s.last_name; });
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
         var rec={ school_id:schoolId, student_id:m.q("#i-stu").value, title:m.q("#i-title").value.trim()||"Invoice",
@@ -222,17 +243,23 @@
   }
 
   // ====================================================
-  //  LIBRARY  (catalog + lending)
+  //  LIBRARY  (catalog, lending lifecycle, lost-book charges)
   // ====================================================
   async function renderLibrary(sb, schoolId, el){
-    el.innerHTML='<div class="mod-head"><div><h2>Library</h2><p>Catalogue, issue and return books.</p></div>'
+    el.innerHTML='<div class="mod-head"><div><h2>Library</h2><p>Catalogue, issue and return books, and track lost-book charges.</p></div>'
       +'<button class="btn-primary" id="lib-add">+ Add book</button></div>'
-      +'<div class="toolbar"><div class="seg" id="lib-tabs"><button data-tab="catalog" class="on-present">Catalogue</button><button data-tab="loans">On loan</button></div>'
-      +'<div style="flex:1;"></div><span class="muted" id="lib-sum" style="font-size:12.5px;"></span></div>'
+      +'<div class="toolbar"><div class="seg" id="lib-tabs">'
+      +'<button data-tab="catalog" class="on-present">Catalogue</button>'
+      +'<button data-tab="loans">On loan</button>'
+      +'<button data-tab="due">Due &amp; overdue</button>'
+      +'<button data-tab="charges">Charges</button>'
+      +'</div><div style="flex:1;"></div><span class="muted" id="lib-sum" style="font-size:12.5px;"></span></div>'
       +'<div id="lib-body"></div>';
-    var tab="catalog", students=[];
-    var sr=await sb.from("students").select("id,first_name,last_name").eq("school_id",schoolId);
-    students=sr.data||[]; var nameOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; });
+    var tab="catalog", students=[], nameOf={}, gradeOf={}, whoami="";
+    var sr=await sb.from("students").select("id,first_name,last_name,grade").eq("school_id",schoolId);
+    students=sr.data||[];
+    students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; gradeOf[s.id]=s.grade||"—"; });
+    try { var u=await sb.auth.getUser(); whoami=(u.data.user&&u.data.user.id)||""; } catch(e){}
 
     document.getElementById("lib-add").onclick=function(){ addBook(); };
     document.querySelectorAll("#lib-tabs button").forEach(function(b){
@@ -242,7 +269,21 @@
       };
     });
 
-    async function render(){ tab==="catalog"?catalog():loans(); }
+    function render(){
+      if(tab==="catalog") return catalog();
+      if(tab==="loans") return loans(false);
+      if(tab==="due") return loans(true);
+      return charges();
+    }
+
+    function todayStr(){ return new Date().toISOString().slice(0,10); }
+    function dueStatus(dueDate){
+      if(!dueDate) return {label:"No due date",cls:"gray"};
+      var today=todayStr(), soon=new Date(Date.now()+3*864e5).toISOString().slice(0,10);
+      if(dueDate<today) return {label:"Overdue",cls:"red"};
+      if(dueDate<=soon) return {label:"Due soon",cls:"amber"};
+      return {label:"On time",cls:"green"};
+    }
 
     async function catalog(){
       var r=await sb.from("library_books").select("*").eq("school_id",schoolId).order("title");
@@ -250,11 +291,12 @@
       var books=r.data||[];
       document.getElementById("lib-sum").textContent=books.length+" titles";
       if(!books.length){ document.getElementById("lib-body").innerHTML='<div class="empty">No books yet. Click <strong>+ Add book</strong>.</div>'; return; }
-      var html='<table class="data"><thead><tr><th>Title</th><th>Author</th><th>Category</th><th>Available</th><th></th></tr></thead><tbody>';
+      var html='<table class="data"><thead><tr><th>Title</th><th>Author</th><th>Category</th><th>Shelf</th><th>Replacement cost</th><th>Available</th><th></th></tr></thead><tbody>';
       books.forEach(function(bk){
         var can=bk.copies_available>0;
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(bk.title)+'<div class="mono muted" style="font-size:11px;">'+esc(bk.isbn||"")+'</div></td>'
-          +'<td>'+esc(bk.author||"—")+'</td><td>'+esc(bk.category||"—")+'</td>'
+          +'<td>'+esc(bk.author||"—")+'</td><td>'+esc(bk.category||"—")+'</td><td>'+esc(bk.shelf_location||"—")+'</td>'
+          +'<td>'+money(bk.replacement_cost)+'</td>'
           +'<td><span class="pill '+(can?"green":"red")+'">'+bk.copies_available+' / '+bk.copies_total+'</span></td>'
           +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-issue="'+bk.id+'"'+(can?"":" disabled")+'>Issue</button> <button class="btn-sm danger" data-del="'+bk.id+'">Delete</button></td></tr>';
       });
@@ -268,24 +310,59 @@
       };});
     }
 
-    async function loans(){
-      var r=await sb.from("library_loans").select("*, library_books(title)").eq("school_id",schoolId).is("returned_at",null).order("due_date");
+    async function loans(dueOnly){
+      var r=await sb.from("library_loans").select("*, library_books(title)").eq("school_id",schoolId).eq("status","active").order("due_date");
       if(r.error){ document.getElementById("lib-body").innerHTML='<div class="empty">'+esc(r.error.message)+'</div>'; return; }
       var ln=r.data||[];
-      document.getElementById("lib-sum").textContent=ln.length+" on loan";
-      if(!ln.length){ document.getElementById("lib-body").innerHTML='<div class="empty">Nothing on loan right now.</div>'; return; }
-      var today=new Date().toISOString().slice(0,10);
-      var html='<table class="data"><thead><tr><th>Book</th><th>Student</th><th>Borrowed</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>';
+      if(dueOnly){
+        var today=todayStr(), soon=new Date(Date.now()+3*864e5).toISOString().slice(0,10);
+        ln=ln.filter(function(l){ return l.due_date && l.due_date<=soon; });
+      }
+      document.getElementById("lib-sum").textContent=ln.length+(dueOnly?" due soon / overdue":" on loan");
+      if(!ln.length){ document.getElementById("lib-body").innerHTML='<div class="empty">'+(dueOnly?"Nothing due soon — the shelf is current.":"Nothing on loan right now.")+'</div>'; return; }
+      var html='<table class="data"><thead><tr><th>Book</th><th>Student</th><th>Class</th><th>Borrowed</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>';
       ln.forEach(function(l){
-        var overdue=l.due_date && l.due_date<today;
+        var st=dueStatus(l.due_date);
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(l.library_books?l.library_books.title:"—")+'</td><td>'+esc(nameOf[l.student_id]||"—")+'</td>'
+          +'<td>'+esc(l.class_at_borrow||gradeOf[l.student_id]||"—")+'</td>'
           +'<td>'+esc(l.borrowed_at)+'</td><td>'+esc(l.due_date||"—")+'</td>'
-          +'<td><span class="pill '+(overdue?"red":"green")+'">'+(overdue?"Overdue":"On time")+'</span></td>'
-          +'<td style="text-align:right;"><button class="btn-sm" data-return="'+l.id+'" data-book="'+l.book_id+'">Return</button></td></tr>';
+          +'<td><span class="pill '+st.cls+'">'+st.label+'</span></td>'
+          +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-return="'+l.id+'" data-book="'+l.book_id+'">Return</button> <button class="btn-sm danger" data-lost="'+l.id+'" data-book="'+l.book_id+'">Mark lost</button></td></tr>';
       });
       html+='</tbody></table>';
       var t=document.getElementById("lib-body"); t.innerHTML=html;
       t.querySelectorAll("[data-return]").forEach(function(b){ b.onclick=function(){ ret(b.getAttribute("data-return"), b.getAttribute("data-book")); }; });
+      t.querySelectorAll("[data-lost]").forEach(function(b){ b.onclick=function(){ markLost(ln.find(function(x){return x.id===b.getAttribute("data-lost");})); }; });
+    }
+
+    async function charges(){
+      var r=await sb.from("library_charges").select("*").eq("school_id",schoolId).order("created_at",{ascending:false});
+      if(r.error){ document.getElementById("lib-body").innerHTML='<div class="empty">'+esc(r.error.message)+'</div>'; return; }
+      var ch=r.data||[];
+      var unpaid=ch.filter(function(c){return c.status==="unpaid";}).length;
+      document.getElementById("lib-sum").textContent=ch.length+" charges ("+unpaid+" unpaid)";
+      if(!ch.length){ document.getElementById("lib-body").innerHTML='<div class="empty">No lost-book charges recorded. These are billed independently of the fee structure.</div>'; return; }
+      var html='<table class="data"><thead><tr><th>Student</th><th>Book</th><th>Reason</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>';
+      ch.forEach(function(c){
+        var cls=c.status==="paid"?"green":(c.status==="waived"?"gray":"red");
+        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(nameOf[c.student_id]||"—")+'</td><td>'+esc(c.book_title)+'</td>'
+          +'<td>'+esc(c.reason)+'</td><td>'+money(c.amount)+'</td>'
+          +'<td><span class="pill '+cls+'">'+esc(c.status)+'</span></td>'
+          +'<td style="text-align:right;white-space:nowrap;">'+(c.status==="unpaid"
+            ?'<button class="btn-sm" data-paid="'+c.id+'">Mark paid</button> <button class="btn-sm" data-waive="'+c.id+'">Waive</button>'
+            :'—')+'</td></tr>';
+      });
+      html+='</tbody></table>';
+      var t=document.getElementById("lib-body"); t.innerHTML=html;
+      t.querySelectorAll("[data-paid]").forEach(function(b){ b.onclick=async function(){
+        var r=await sb.from("library_charges").update({status:"paid",paid_at:new Date().toISOString()}).eq("id",b.getAttribute("data-paid"));
+        if(r.error){ toast("Error: "+r.error.message); return; } toast("Marked paid"); charges();
+      };});
+      t.querySelectorAll("[data-waive]").forEach(function(b){ b.onclick=async function(){
+        if(!await window.SM_confirm("Waive this charge? The parent will no longer owe it."))return;
+        var r=await sb.from("library_charges").update({status:"waived"}).eq("id",b.getAttribute("data-waive"));
+        if(r.error){ toast("Error: "+r.error.message); return; } toast("Charge waived"); charges();
+      };});
     }
 
     function addBook(){
@@ -295,13 +372,17 @@
         +'<div class="field"><label>Author</label><input id="b-author"></div>'
         +'<div class="field"><label>Category</label><input id="b-cat" placeholder="Textbook"></div>'
         +'<div class="field"><label>ISBN</label><input id="b-isbn"></div>'
+        +'<div class="field"><label>Shelf location</label><input id="b-shelf" placeholder="e.g. A3"></div>'
         +'<div class="field"><label>Copies</label><input id="b-copies" type="number" value="1" min="1"></div>'
+        +'<div class="field"><label>Replacement cost (KES)</label><input id="b-cost" type="number" value="0" min="0"></div>'
         +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Add</button></div>');
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
         var n=Number(m.q("#b-copies").value)||1;
         var rec={ school_id:schoolId, title:m.q("#b-title").value.trim(), author:m.q("#b-author").value.trim()||null,
-          category:m.q("#b-cat").value.trim()||null, isbn:m.q("#b-isbn").value.trim()||null, copies_total:n, copies_available:n };
+          category:m.q("#b-cat").value.trim()||null, isbn:m.q("#b-isbn").value.trim()||null,
+          shelf_location:m.q("#b-shelf").value.trim()||null, replacement_cost:Number(m.q("#b-cost").value)||0,
+          copies_total:n, copies_available:n };
         if(!rec.title){ toast("Title is required."); return; }
         var r=await sb.from("library_books").insert(rec);
         if(r.error){ toast("Error: "+r.error.message); return; }
@@ -310,27 +391,67 @@
     }
     function issue(bk){
       if(!students.length){ toast("Add a student first."); return; }
-      var due=new Date(Date.now()+14*864e5).toISOString().slice(0,10);
-      var opts=students.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+'</option>'; }).join("");
       var m=modal('<h3>Issue “'+esc(bk.title)+'”</h3>'
-        +'<div class="grid2"><div class="field full"><label>Student</label><select id="l-stu">'+opts+'</select></div>'
-        +'<div class="field full"><label>Due date</label><input id="l-due" type="date" value="'+due+'"></div></div>'
+        +'<div class="grid2"><div class="field full"><label>Search student</label><input id="l-stu-search" placeholder="Type a name…"></div>'
+        +'<div class="field full"><label>Student</label><select id="l-stu"></select></div>'
+        +'<div class="field"><label>Days borrowed</label><input id="l-days" type="number" value="14" min="1"></div>'
+        +'<div class="field"><label>Return due</label><input id="l-due-preview" disabled></div></div>'
         +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Issue</button></div>');
+      wireSearchSelect(m.q("#l-stu"), m.q("#l-stu-search"), students, function(s){ return s.first_name+" "+s.last_name+" — "+(s.grade||"—"); });
+      function preview(){
+        var d=Number(m.q("#l-days").value)||14;
+        m.q("#l-due-preview").value=new Date(Date.now()+d*864e5).toISOString().slice(0,10);
+      }
+      m.q("#l-days").oninput=preview; preview();
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
-        var ins=await sb.from("library_loans").insert({ school_id:schoolId, book_id:bk.id, student_id:m.q("#l-stu").value, due_date:m.q("#l-due").value||null });
+        var days=Number(m.q("#l-days").value)||14;
+        var studentId=m.q("#l-stu").value;
+        var due=new Date(Date.now()+days*864e5).toISOString().slice(0,10);
+        var ins=await sb.from("library_loans").insert({
+          school_id:schoolId, book_id:bk.id, student_id:studentId,
+          class_at_borrow:gradeOf[studentId]||null, days_allowed:days, due_date:due,
+          status:"active", issued_by:whoami||null
+        });
         if(ins.error){ toast("Error: "+ins.error.message); return; }
         await sb.from("library_books").update({ copies_available: bk.copies_available-1 }).eq("id",bk.id);
-        m.close(); toast("Book issued"); render();
+        m.close(); toast("Book issued — due "+due); render();
       };
     }
     async function ret(loanId, bookId){
-      var today=new Date().toISOString().slice(0,10);
-      var r=await sb.from("library_loans").update({ returned_at:today }).eq("id",loanId);
+      var today=todayStr();
+      var r=await sb.from("library_loans").update({ returned_at:today, status:"returned", returned_by:whoami||null }).eq("id",loanId);
       if(r.error){ toast("Error: "+r.error.message); return; }
       var bk=await sb.from("library_books").select("copies_available,copies_total").eq("id",bookId).single();
       if(bk.data){ await sb.from("library_books").update({ copies_available: Math.min(bk.data.copies_total, bk.data.copies_available+1) }).eq("id",bookId); }
-      toast("Book returned"); loans();
+      toast("Book returned"); loans(tab==="due");
+    }
+    function markLost(loan){
+      if(!loan) return;
+      var bkTitle=(loan.library_books&&loan.library_books.title)||"this book";
+      sb.from("library_books").select("*").eq("id",loan.book_id).single().then(function(bkr){
+        var bk=bkr.data||{};
+        var m=modal('<h3>Mark “'+esc(bkTitle)+'” lost</h3>'
+          +'<p class="muted" style="font-size:12.5px;margin:0 0 10px;">This charges <strong>'+esc(nameOf[loan.student_id]||"the student")+'</strong> independently of the fee structure — it will appear to the parent as a separate Library Charge, not a fee item.</p>'
+          +'<div class="field full"><label>Charge amount (KES)</label><input id="lost-amt" type="number" min="0" value="'+(bk.replacement_cost||0)+'"></div>'
+          +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Confirm lost</button></div>');
+        m.q("#c").onclick=m.close;
+        m.q("#s").onclick=async function(){
+          var amt=Number(m.q("#lost-amt").value)||0;
+          var today=todayStr();
+          var upd=await sb.from("library_loans").update({ status:"lost", lost_at:today, lost_charge:amt }).eq("id",loan.id);
+          if(upd.error){ toast("Error: "+upd.error.message); return; }
+          if(amt>0){
+            var ins=await sb.from("library_charges").insert({
+              school_id:schoolId, student_id:loan.student_id, loan_id:loan.id,
+              book_title:bkTitle, amount:amt, reason:"Lost book", status:"unpaid", recorded_by:whoami||null
+            });
+            if(ins.error){ toast("Loan marked lost, but charge failed: "+ins.error.message); m.close(); render(); return; }
+          }
+          if(bk.id){ await sb.from("library_books").update({ copies_total: Math.max(0,(bk.copies_total||1)-1) }).eq("id",bk.id); }
+          m.close(); toast("Book marked lost"+(amt>0?" — KES "+amt+" charged":"")); render();
+        };
+      });
     }
 
     render();
@@ -585,13 +706,14 @@
       var routes=await routesList();
       if(!students.length){ toast("Add a student first."); return; }
       if(!routes.length){ toast("Create a route first."); return; }
-      var sOpts=students.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+'</option>'; }).join("");
       var rOpts=routes.map(function(r){ return '<option value="'+r.id+'">'+esc(r.name)+'</option>'; }).join("");
       var m=modal('<h3>Assign student to transport</h3><div class="grid2">'
-        +'<div class="field full"><label>Student</label><select id="as-stu">'+sOpts+'</select></div>'
+        +'<div class="field full"><label>Search student</label><input id="as-stu-search" placeholder="Type a name…"></div>'
+        +'<div class="field full"><label>Student</label><select id="as-stu"></select></div>'
         +'<div class="field full"><label>Route</label><select id="as-route">'+rOpts+'</select></div>'
         +'<div class="field full"><label>Pickup stop</label><input id="as-stop"></div>'
         +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Assign</button></div>');
+      wireSearchSelect(m.q("#as-stu"), m.q("#as-stu-search"), students, function(s){ return s.first_name+" "+s.last_name; });
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
         var rec={ school_id:schoolId, student_id:m.q("#as-stu").value, route_id:m.q("#as-route").value, pickup_stop:m.q("#as-stop").value.trim()||null };
@@ -662,6 +784,11 @@
   async function renderPayroll(sb, schoolId, el){
     var tab="staff";
     var school = { name: schoolId };
+    // Kicked off now, awaited inside render() below — payslip.js isn't
+    // needed by every admin session, so it's not paid for until Payroll
+    // is actually opened. Resolves instantly on every render() after the
+    // first (loadScriptOnce memoizes), so this stays cheap on every tab switch.
+    var payslipLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/payslip.js") : Promise.resolve();
     var sc = await sb.from("schools").select("name").eq("id",schoolId).single();
     if (sc.data) school.name = sc.data.name;
 
@@ -671,7 +798,8 @@
     document.querySelectorAll("#pr-tabs button").forEach(function(b){
       b.onclick=function(){ tab=b.getAttribute("data-tab"); document.querySelectorAll("#pr-tabs button").forEach(function(x){x.className="";}); b.className="on-present"; render(); };
     });
-    function render(){
+    async function render(){
+      await payslipLoad;
       var add=document.getElementById("pr-addwrap");
       if(tab==="staff"){ add.innerHTML='<button class="btn-primary" id="pr-add">+ New staff</button>'; document.getElementById("pr-add").onclick=function(){ staffForm(); }; drawStaff(); }
       else if(tab==="loans"){ add.innerHTML='<button class="btn-primary" id="pr-add">+ New loan/advance</button>'; document.getElementById("pr-add").onclick=function(){ loanForm(); }; drawLoans(); }
@@ -682,11 +810,14 @@
     async function loadTeachers(){ var r=await sb.from("teachers").select("id,name,email").eq("school_id",schoolId).order("name"); return r.data||[]; }
 
     // ---- STAFF ----
-    async function drawStaff(){
+    var staffPage=1;
+    async function drawStaff(pg){
+      if(typeof pg==="number") staffPage=pg; else staffPage=1;
       var rows=await loadStaff();
       if(!rows.length){ document.getElementById("pr-body").innerHTML='<div class="empty">No staff yet. Click <strong>+ New staff</strong>.</div>'; return; }
+      var pgData=window.paginate?window.paginate(rows,staffPage,25):{rows:rows,html:""};
       var html='<table class="data"><thead><tr><th>Name</th><th>Role</th><th>KRA PIN</th><th>Basic</th><th>Allowances</th><th>Net (est.)</th><th></th></tr></thead><tbody>';
-      rows.forEach(function(s){
+      pgData.rows.forEach(function(s){
         var ps=window.SamajiPayslip.compute(s.basic_salary, s.house_allowance, s.transport_allowance, s.allowances, []);
         var totalAllow=(s.house_allowance||0)+(s.transport_allowance||0)+(s.allowances||0);
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.full_name)+(s.active?"":' <span class="pill gray">inactive</span>')+(s.teacher_id?' <span class="pill green" title="Linked to a teacher-portal login">portal</span>':'')+'</td><td>'+esc(s.role||"—")+'</td>'
@@ -694,10 +825,11 @@
           +'<td style="font-weight:600;">'+money(ps.net)+'</td>'
           +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
       });
-      html+='</tbody></table>';
+      html+='</tbody></table>'+pgData.html;
       var t=document.getElementById("pr-body"); t.innerHTML=html;
       t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ staffForm(rows.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
       t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this staff member?"))return; var r=await sb.from("staff").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); drawStaff(); }; });
+      if(pgData.onAttach) pgData.onAttach(t,function(p){ drawStaff(p); });
     }
     async function staffForm(s){
       s=s||{};

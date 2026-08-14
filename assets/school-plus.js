@@ -84,34 +84,13 @@
   window.SamajiCharts={ bar:barChart, line:lineChart, donut:donut, legend:legend, targetBars:targetBars, PAL:PAL };
 
   // ====================================================
-  //  Cache layer — instant page switches + login preload
+  //  Cache layer — instant page switches + login preload.
+  //  window.SamajiCache itself now lives in assets/idb-cache.js
+  //  (IndexedDB-backed, stale-while-revalidate, loaded before this
+  //  file on every portal) — kept as a plain reference here so this
+  //  file still works even if loaded standalone in an old cached tab.
   // ====================================================
-  var SamajiCache=(function(){
-    var store={}, TTL=90000;
-    function k(table,sel){ return table+"|"+(sel||"*"); }
-    async function get(sb, schoolId, table, sel){
-      var key=k(table,sel), hit=store[key];
-      if(hit && Date.now()-hit.t<TTL) return hit.data;
-      var r=await sb.from(table).select(sel||"*").eq("school_id",schoolId);
-      store[key]={t:Date.now(), data:r.data||[]};
-      return store[key].data;
-    }
-    return {
-      get:get,
-      invalidate:function(table){ Object.keys(store).forEach(function(key){ if(!table||key.indexOf(table+"|")===0) delete store[key]; }); },
-      clear:function(){ store={}; },
-      preload:function(sb, schoolId){
-        return Promise.all([
-          get(sb,schoolId,"students","*"),
-          get(sb,schoolId,"school_classes","*"),
-          get(sb,schoolId,"dormitories","*"),
-          get(sb,schoolId,"fee_structures","*, fee_items(amount)"),
-          get(sb,schoolId,"fee_payments","*")
-        ]).catch(function(){});
-      }
-    };
-  })();
-  window.SamajiCache=SamajiCache;
+  var SamajiCache = window.SamajiCache;
   function cget(sb, schoolId, table, sel){ return SamajiCache.get(sb, schoolId, table, sel); }
 
   // ====================================================
@@ -177,6 +156,7 @@
       +'<button data-t="profile">School Profile</button>'
       +'<button data-t="classes" class="on">Classes &amp; Streams</button>'
       +'<button data-t="subjects">Subjects</button>'
+      +'<button data-t="pathways">Pathways</button>'
       +'<button data-t="teachers">Teachers</button>'
       +'<button data-t="dorms">Dormitories</button>'
       +'<button data-t="fees">Fee Structures</button>'
@@ -184,7 +164,7 @@
       +'<button data-t="activity">Activity Log</button>'
       +'</div><div id="set-body" style="margin-top:18px;"></div>';
     el.querySelectorAll("#set-tabs button").forEach(function(b){ b.onclick=function(){ tab=b.getAttribute("data-t"); el.querySelectorAll("#set-tabs button").forEach(function(x){x.classList.remove("on");}); b.classList.add("on"); render(); }; });
-    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
+    function render(){ if(tab==="profile") profileTab(); else if(tab==="classes") classes(); else if(tab==="subjects") subjects(); else if(tab==="pathways") pathwaysTab(); else if(tab==="teachers") teachersTab(); else if(tab==="dorms") dorms(); else if(tab==="fees") fees(); else if(tab==="activity") activityLog(); else cbcSetup(); }
 
     // ---------- Activity Log: read-only trail of who changed what ----
     // (audit_log is populated entirely by DB triggers — see
@@ -277,13 +257,16 @@
       var t=document.getElementById("cls-table");
       if(!list.length){ t.innerHTML='<div class="empty">No classes yet. Click <strong>Load Kenyan CBC defaults</strong> to populate PP1–Grade 9, or add your own.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Level</th><th>Stream</th><th>Curriculum</th><th>Capacity</th><th>Students</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Level</th><th>Stream</th><th>Curriculum</th><th>Pathway</th><th>Capacity</th><th>Students</th><th></th></tr></thead><tbody>';
         // count students per class
         var cr=await sb.from("students").select("class_id").eq("school_id",schoolId);
         var counts={}; (cr.data||[]).forEach(function(s){ if(s.class_id) counts[s.class_id]=(counts[s.class_id]||0)+1; });
+        var pr2=await sb.from("pathways").select("id,name").eq("school_id",schoolId); var pathwayName={}; (pr2.data||[]).forEach(function(p){ pathwayName[p.id]=p.name; });
         list.forEach(function(c){
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(c.level)+'</td><td>'+(c.stream?esc(c.stream):'<span class="muted">—</span>')+'</td>'
-            +'<td><span class="pill gray">'+esc(c.curriculum)+'</span></td><td>'+c.capacity+'</td><td>'+(counts[c.id]||0)+'</td>'
+            +'<td><span class="pill gray">'+esc(c.curriculum)+'</span></td>'
+            +'<td>'+(c.pathway_id&&pathwayName[c.pathway_id]?esc(pathwayName[c.pathway_id]):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+c.capacity+'</td><td>'+(counts[c.id]||0)+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-csub="'+c.id+'">Subjects &amp; teachers</button> <button class="btn-sm" data-edit="'+c.id+'">Edit</button> <button class="btn-sm danger" data-del="'+c.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
@@ -293,24 +276,27 @@
       }
       document.getElementById("add-class").onclick=function(){ classForm(null); };
       document.getElementById("seed-cbc").onclick=async function(){
-        var levels=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
+        var levels=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"];
         var rows=levels.map(function(lv,i){ return { school_id:schoolId, level:lv, stream:null, curriculum:"CBC", sort:i }; });
         var r=await sb.from("school_classes").upsert(rows,{ onConflict:"school_id,level,stream", ignoreDuplicates:true });
         if(r.error){ toast("Error: "+r.error.message); return; } toast("Kenyan CBC classes loaded"); classes();
       };
     }
-    function classForm(c){
+    async function classForm(c){
       c=c||{};
+      var pr=await sb.from("pathways").select("id,name").eq("school_id",schoolId).order("sort"); var allPathways=pr.data||[];
+      var pathwayOpts='<option value="">— none —</option>'+allPathways.map(function(p){ return '<option value="'+p.id+'"'+(c.pathway_id===p.id?" selected":"")+'>'+esc(p.name)+'</option>'; }).join("");
       var m=modal('<h3>'+(c.id?"Edit class":"Add class")+'</h3>'
         +'<div class="grid2">'
         +'<div class="field"><label>Level</label><input id="c-level" value="'+esc(c.level||"")+'" placeholder="Grade 6"></div>'
         +'<div class="field"><label>Stream (optional)</label><input id="c-stream" value="'+esc(c.stream||"")+'" placeholder="East / A / Blue"></div>'
         +'<div class="field"><label>Curriculum</label><select id="c-cur"><option'+(c.curriculum!=="8-4-4"?" selected":"")+'>CBC</option><option'+(c.curriculum==="8-4-4"?" selected":"")+'>8-4-4</option></select></div>'
         +'<div class="field"><label>Capacity</label><input id="c-cap" type="number" value="'+(c.capacity||40)+'"></div>'
+        +'<div class="field full"><label>Pathway (Senior School only, optional)</label><select id="c-pathway">'+pathwayOpts+'</select></div>'
         +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>');
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
-        var rec={ school_id:schoolId, level:m.q("#c-level").value.trim(), stream:m.q("#c-stream").value.trim()||null, curriculum:m.q("#c-cur").value, capacity:Number(m.q("#c-cap").value)||40 };
+        var rec={ school_id:schoolId, level:m.q("#c-level").value.trim(), stream:m.q("#c-stream").value.trim()||null, curriculum:m.q("#c-cur").value, capacity:Number(m.q("#c-cap").value)||40, pathway_id:m.q("#c-pathway").value||null };
         if(!rec.level){ toast("Level is required."); return; }
         var r=c.id? await sb.from("school_classes").update(rec).eq("id",c.id) : await sb.from("school_classes").insert(rec);
         if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"That level + stream already exists.":r.error.message)); return; }
@@ -359,17 +345,83 @@
       };
     }
 
+    // ----- Kenyan CBC subject catalog (PP1 – Grade 12) -----
+    // Illustrative starter catalog per the MoE CBC learning areas — schools
+    // are free to edit, delete or add to every row; nothing here is hardcoded
+    // into the assessment/grading/report-card engine itself.
+    var CBC_SUBJECT_CATALOG=[
+      // PP1 - PP2
+      {name:"Language Activities",code:"LANG-ACT",learning_area:"Languages",grades:["PP1","PP2"]},
+      {name:"Mathematical Activities",code:"MATH-ACT",learning_area:"Mathematics",grades:["PP1","PP2"]},
+      {name:"Environmental Activities",code:"ENV-ACT",learning_area:"Environmental Studies",grades:["PP1","PP2","Grade 1","Grade 2","Grade 3"]},
+      {name:"Psychomotor and Creative Activities",code:"PSY-ACT",learning_area:"Creative Arts",grades:["PP1","PP2"]},
+      {name:"Religious Education Activities",code:"RE-ACT",learning_area:"Religious Education",grades:["PP1","PP2"]},
+      // Lower Primary (Grade 1-3)
+      {name:"English Language",code:"ENG",learning_area:"Languages",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Kiswahili Language",code:"KIS",learning_area:"Languages",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Mathematics",code:"MATH",learning_area:"Mathematics",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Religious Education",code:"RE",learning_area:"Religious Education",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6"]},
+      {name:"Creative Arts",code:"CRE-ART",learning_area:"Creative Arts",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6"]},
+      {name:"Physical and Health Education",code:"PHE",learning_area:"Physical Education",grades:["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Indigenous Language",code:"IND-LANG",learning_area:"Languages",grades:["Grade 1","Grade 2","Grade 3"],optional:true},
+      // Upper Primary (Grade 4-6)
+      {name:"Science and Technology",code:"SCI-TECH",learning_area:"Science",grades:["Grade 4","Grade 5","Grade 6"]},
+      {name:"Social Studies",code:"SOC-ST",learning_area:"Social Studies",grades:["Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"]},
+      {name:"Agriculture and Nutrition",code:"AGR-NUT",learning_area:"Agriculture",grades:["Grade 4","Grade 5","Grade 6"]},
+      // Junior School (Grade 7-9)
+      {name:"Integrated Science",code:"INT-SCI",learning_area:"Science",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Pre-Technical Studies",code:"PRE-TECH",learning_area:"Pre-Technical & Pre-Career",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Agriculture",code:"AGR",learning_area:"Agriculture",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Christian Religious Education",code:"CRE",learning_area:"Religious Education",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Islamic Religious Education",code:"IRE",learning_area:"Religious Education",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Hindu Religious Education",code:"HRE",learning_area:"Religious Education",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Business Studies",code:"BUS",learning_area:"Business Studies",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]},
+      {name:"Life Skills Education",code:"LIFE",learning_area:"Life Skills",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Visual Arts",code:"VIS-ART",learning_area:"Creative Arts",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"Performing Arts",code:"PERF-ART",learning_area:"Creative Arts",grades:["Grade 7","Grade 8","Grade 9"]},
+      {name:"French",code:"FRE",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"German",code:"GER",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Arabic",code:"ARA",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Mandarin",code:"MAN",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      {name:"Kenyan Sign Language",code:"KSL",learning_area:"Languages",grades:["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"],optional:true},
+      // Senior School core (Grade 10-12)
+      {name:"Community Service Learning",code:"CSL",learning_area:"Life Skills",grades:["Grade 10","Grade 11","Grade 12"]},
+      // Senior School — STEM pathway
+      {name:"Biology",code:"BIO",learning_area:"Pure Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Chemistry",code:"CHEM",learning_area:"Pure Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Physics",code:"PHY",learning_area:"Pure Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Computer Studies",code:"COMP",learning_area:"Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Home Science",code:"HSC",learning_area:"Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Drawing and Design",code:"DRAW",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Building and Construction",code:"BUILD",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Electrical Technology",code:"ELEC",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Power Mechanics",code:"POWM",learning_area:"Technical & Applied Sciences",department:"STEM",grades:["Grade 10","Grade 11","Grade 12"]},
+      // Senior School — Social Sciences pathway
+      {name:"History and Citizenship",code:"HIST",learning_area:"Humanities",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Geography",code:"GEO",learning_area:"Humanities",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Literature in English",code:"LIT-ENG",learning_area:"Languages & Literature",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Fasihi ya Kiswahili",code:"FASIHI",learning_area:"Languages & Literature",department:"Social Sciences",grades:["Grade 10","Grade 11","Grade 12"]},
+      // Senior School — Arts & Sports Science pathway
+      {name:"Sports Science",code:"SPORT-SCI",learning_area:"Sports Science",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Music",code:"MUS",learning_area:"Performing Arts",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Fine Arts",code:"FINE-ART",learning_area:"Visual Arts",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]},
+      {name:"Theatre and Film",code:"THEATRE",learning_area:"Performing Arts",department:"Arts & Sports Science",grades:["Grade 10","Grade 11","Grade 12"]}
+    ];
+
     // ----- subjects catalog -----
     async function subjects(){
       var body=document.getElementById("set-body");
-      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The subject catalog for this school — used when assigning subjects to a class.</span><button class="btn-primary" id="add-subject">+ Add subject</button></div><div id="subj-table"></div>';
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The subject catalog for this school — used when assigning subjects to a class.</span><button class="btn-sm" id="seed-subjects">Load Kenyan CBC subjects</button><button class="btn-primary" id="add-subject">+ Add subject</button></div><div id="subj-table"></div>';
       var r=await sb.from("subjects").select("*").eq("school_id",schoolId).order("name");
       var list=r.data||[], t=document.getElementById("subj-table");
-      if(!list.length){ t.innerHTML='<div class="empty">No subjects yet. Add one, e.g. Mathematics.</div>'; }
+      if(!list.length){ t.innerHTML='<div class="empty">No subjects yet. Click <strong>Load Kenyan CBC subjects</strong> to populate the PP1–Grade 12 catalog, or add your own.</div>'; }
       else {
-        var html='<table class="data"><thead><tr><th>Name</th><th>Code</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Name</th><th>Code</th><th>Learning area</th><th>Compulsory</th><th>Grades</th><th></th></tr></thead><tbody>';
         list.forEach(function(s){
           html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.name)+'</td><td>'+(s.code?esc(s.code):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(s.learning_area?esc(s.learning_area):'<span class="muted">—</span>')+'</td>'
+            +'<td>'+(s.is_compulsory?'<span class="pill green">Yes</span>':'<span class="pill amber">Optional</span>')+'</td>'
+            +'<td>'+(s.applicable_grades&&s.applicable_grades.length?esc(s.applicable_grades.join(", ")):'<span class="muted">All</span>')+'</td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn-sm danger" data-del="'+s.id+'">Delete</button></td></tr>';
         });
         t.innerHTML=html+'</tbody></table>';
@@ -377,20 +429,124 @@
         t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this subject? It will be removed from any classes it's assigned to."))return; var r=await sb.from("subjects").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); subjects(); }; });
       }
       document.getElementById("add-subject").onclick=function(){ subjectForm(null); };
+      document.getElementById("seed-subjects").onclick=async function(){
+        var rows=CBC_SUBJECT_CATALOG.map(function(s){ return { school_id:schoolId, name:s.name, code:s.code, learning_area:s.learning_area,
+          department:s.department||null, is_compulsory:!s.optional, is_optional:!!s.optional, applicable_grades:s.grades }; });
+        var r=await sb.from("subjects").upsert(rows,{ onConflict:"school_id,name", ignoreDuplicates:true });
+        if(r.error){ toast("Error: "+r.error.message); return; } toast("Kenyan CBC subject catalog loaded"); subjects();
+      };
     }
     function subjectForm(s){
       s=s||{};
       var m=modal('<h3>'+(s.id?"Edit subject":"Add subject")+'</h3><div class="grid2">'
         +'<div class="field"><label>Name</label><input id="sj-name" value="'+esc(s.name||"")+'" placeholder="Mathematics"></div>'
         +'<div class="field"><label>Code (optional)</label><input id="sj-code" value="'+esc(s.code||"")+'" placeholder="MATH"></div>'
-        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>');
+        +'<div class="field"><label>Learning area (optional)</label><input id="sj-area" value="'+esc(s.learning_area||"")+'" placeholder="Mathematics"></div>'
+        +'<div class="field"><label>Department (optional)</label><input id="sj-dept" value="'+esc(s.department||"")+'" placeholder="STEM"></div>'
+        +'<div class="field"><label>Compulsory</label><select id="sj-compulsory"><option value="true"'+(s.is_compulsory!==false?" selected":"")+'>Yes</option><option value="false"'+(s.is_compulsory===false?" selected":"")+'>No (optional)</option></select></div>'
+        +'<div class="field"><label>Total competencies (optional)</label><input id="sj-comp" type="number" value="'+(s.total_competencies!=null?s.total_competencies:"")+'"></div>'
+        +'<div class="field full"><label>Applicable grades (comma separated, blank = all)</label><input id="sj-grades" value="'+esc((s.applicable_grades||[]).join(", "))+'" placeholder="Grade 4, Grade 5, Grade 6"></div>'
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="sv">Save</button></div>', true);
       m.q("#c").onclick=m.close;
       m.q("#sv").onclick=async function(){
-        var rec={ school_id:schoolId, name:m.q("#sj-name").value.trim(), code:m.q("#sj-code").value.trim()||null };
+        var gradesRaw=m.q("#sj-grades").value.trim();
+        var compRaw=m.q("#sj-comp").value.trim();
+        var isCompulsory=m.q("#sj-compulsory").value==="true";
+        var rec={ school_id:schoolId, name:m.q("#sj-name").value.trim(), code:m.q("#sj-code").value.trim()||null,
+          learning_area:m.q("#sj-area").value.trim()||null, department:m.q("#sj-dept").value.trim()||null,
+          is_compulsory:isCompulsory, is_optional:!isCompulsory,
+          total_competencies: compRaw?Number(compRaw):null,
+          applicable_grades: gradesRaw ? gradesRaw.split(",").map(function(x){return x.trim();}).filter(Boolean) : null };
         if(!rec.name){ toast("Name is required."); return; }
         var r=s.id? await sb.from("subjects").update(rec).eq("id",s.id) : await sb.from("subjects").insert(rec);
         if(r.error){ toast("Error: "+(r.error.message.indexOf("duplicate")>=0?"That subject already exists.":r.error.message)); return; }
         m.close(); toast("Saved"); subjects();
+      };
+    }
+
+    // ----- Senior School pathways -----
+    var DEFAULT_PATHWAYS=[
+      {name:"Science, Technology, Engineering and Mathematics",code:"STEM"},
+      {name:"Social Sciences",code:"SOC"},
+      {name:"Arts and Sports Science",code:"ARTS"}
+    ];
+    async function pathwaysTab(){
+      var body=document.getElementById("set-body");
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Senior School (Grade 10–12) pathways. Assign subjects to each pathway, then tag Senior School classes with their pathway in Classes &amp; Streams.</span><button class="btn-sm" id="seed-pathways">Load Kenyan pathways</button><button class="btn-primary" id="add-pathway">+ Add pathway</button></div><div id="pathway-list"></div>';
+      var r=await sb.from("pathways").select("*").eq("school_id",schoolId).order("sort");
+      var list=r.data||[]; var wrap=document.getElementById("pathway-list");
+      if(!list.length){ wrap.innerHTML='<div class="empty">No pathways yet. Click <strong>Load Kenyan pathways</strong> for STEM / Social Sciences / Arts &amp; Sports Science, or add your own.</div>'; }
+      else {
+        var sr=await sb.from("senior_school_subjects").select("pathway_id").in("pathway_id",list.map(function(p){return p.id;}));
+        var subjCount={}; (sr.data||[]).forEach(function(x){ subjCount[x.pathway_id]=(subjCount[x.pathway_id]||0)+1; });
+        wrap.innerHTML=list.map(function(p){
+          return '<div class="panel" style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;">'
+            +'<div><strong style="font-size:14px;">'+esc(p.name)+'</strong>'+(p.code?' <span class="pill gray">'+esc(p.code)+'</span>':'')
+            +'<div class="muted" style="font-size:12px;margin-top:3px;">'+(subjCount[p.id]||0)+' subject(s) assigned'+(p.description?' — '+esc(p.description):'')+'</div></div>'
+            +'<div style="display:flex;gap:8px;"><button class="btn-sm" data-subj="'+p.id+'">Subjects</button> <button class="btn-sm" data-edit="'+p.id+'">Edit</button> <button class="btn-sm danger" data-del="'+p.id+'">Delete</button></div>'
+            +'</div>';
+        }).join("");
+        wrap.querySelectorAll("[data-subj]").forEach(function(b){ b.onclick=function(){ pathwaySubjectsForm(list.find(function(x){return x.id===b.getAttribute("data-subj");})); }; });
+        wrap.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ pathwayForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+        wrap.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this pathway? Subjects assigned to it will lose that assignment."))return; var r=await sb.from("pathways").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); pathwaysTab(); }; });
+      }
+      document.getElementById("add-pathway").onclick=function(){ pathwayForm(); };
+      document.getElementById("seed-pathways").onclick=async function(){
+        var rows=DEFAULT_PATHWAYS.map(function(p,i){ return { school_id:schoolId, name:p.name, code:p.code, sort:i }; });
+        var r=await sb.from("pathways").upsert(rows,{ onConflict:"school_id,name", ignoreDuplicates:true });
+        if(r.error){ toast("Error: "+r.error.message); return; } toast("Kenyan pathways loaded"); pathwaysTab();
+      };
+    }
+    function pathwayForm(p){
+      p=p||{};
+      var m=modal('<h3>'+(p.id?"Edit":"Add")+' pathway</h3><div class="grid2">'
+        +'<div class="field full"><label>Name</label><input id="pw-name" value="'+esc(p.name||"")+'" placeholder="Science, Technology, Engineering and Mathematics"></div>'
+        +'<div class="field"><label>Code (optional)</label><input id="pw-code" value="'+esc(p.code||"")+'" placeholder="STEM"></div>'
+        +'<div class="field"><label>Sort order</label><input id="pw-sort" type="number" value="'+(p.sort||0)+'"></div>'
+        +'<div class="field full"><label>Description (optional)</label><input id="pw-desc" value="'+esc(p.description||"")+'"></div>'
+        +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+      m.q("#c").onclick=m.close;
+      m.q("#s").onclick=async function(){
+        var rec={ school_id:schoolId, name:m.q("#pw-name").value.trim(), code:m.q("#pw-code").value.trim()||null,
+          sort:Number(m.q("#pw-sort").value)||0, description:m.q("#pw-desc").value.trim()||null };
+        if(!rec.name){ toast("Name is required."); return; }
+        var r=p.id? await sb.from("pathways").update(rec).eq("id",p.id) : await sb.from("pathways").insert(rec);
+        if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That pathway already exists.":("Error: "+r.error.message)); return; }
+        m.close(); toast("Saved"); pathwaysTab();
+      };
+    }
+    async function pathwaySubjectsForm(p){
+      var sr=await sb.from("subjects").select("id,name").eq("school_id",schoolId).order("name"); var allSubjects=sr.data||[];
+      if(!allSubjects.length){ toast("Add subjects first, in the Subjects tab."); return; }
+      var asr=await sb.from("senior_school_subjects").select("*").eq("pathway_id",p.id); var assigned={}; (asr.data||[]).forEach(function(x){ assigned[x.subject_id]=x; });
+      var rows=allSubjects.map(function(s){
+        var a=assigned[s.id]; var checked=!!a;
+        return '<div class="cst-row" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-2);">'
+          +'<label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;font-size:13px;"><input type="checkbox" class="ps-chk" data-sid="'+s.id+'"'+(checked?" checked":"")+'> '+esc(s.name)+'</label>'
+          +'<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);"><input type="checkbox" class="ps-core" data-sid="'+s.id+'"'+(a&&a.is_core?" checked":"")+(checked?"":" disabled")+'> Core</label>'
+          +'<input class="ps-cluster" data-sid="'+s.id+'" placeholder="Cluster (optional)" value="'+esc((a&&a.cluster)||"")+'" style="min-width:160px;font-size:12.5px;padding:6px 8px;border:1.5px solid var(--line);border-radius:8px;"'+(checked?"":" disabled")+'>'
+          +'</div>';
+      }).join("");
+      var m=modal('<h3>Subjects — '+esc(p.name)+'</h3><p class="muted" style="font-size:12.5px;margin:0 0 6px;">Tick the subjects offered under this pathway. Mark core subjects and optionally group them into a cluster (e.g. Pure Sciences, Applied Sciences).</p>'
+        +'<div style="max-height:400px;overflow:auto;">'+rows+'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+      m.q("#c").onclick=m.close;
+      m.qa(".ps-chk").forEach(function(chk){ chk.onchange=function(){ var sid=chk.getAttribute("data-sid");
+        var coreChk=m.el.querySelector('.ps-core[data-sid="'+sid+'"]'); var clusterInp=m.el.querySelector('.ps-cluster[data-sid="'+sid+'"]');
+        coreChk.disabled=!chk.checked; clusterInp.disabled=!chk.checked; }; });
+      m.q("#s").onclick=async function(){
+        var checkedIds=[]; m.qa(".ps-chk").forEach(function(chk){ if(chk.checked) checkedIds.push(chk.getAttribute("data-sid")); });
+        var del=await sb.from("senior_school_subjects").delete().eq("pathway_id",p.id);
+        if(del.error){ toast("Error: "+del.error.message); return; }
+        if(checkedIds.length){
+          var rows=checkedIds.map(function(sid){
+            var coreChk=m.el.querySelector('.ps-core[data-sid="'+sid+'"]'); var clusterInp=m.el.querySelector('.ps-cluster[data-sid="'+sid+'"]');
+            return { subject_id:sid, pathway_id:p.id, is_core:coreChk.checked, cluster:clusterInp.value.trim()||null };
+          });
+          var ins=await sb.from("senior_school_subjects").insert(rows);
+          if(ins.error){ toast("Error: "+ins.error.message); return; }
+        }
+        m.close(); toast("Saved"); pathwaysTab();
       };
     }
 
@@ -480,9 +636,9 @@
     async function cbcSetup(){
       var body=document.getElementById("set-body");
       var sub="years";
-      body.innerHTML='<div class="toolbar" style="margin-top:0;"><div class="seg" id="cbc-tabs"><button data-s="years" class="on-present">Years &amp; Terms</button><button data-s="assess">Assessment Types</button><button data-s="grading">Grading Schemes</button></div></div><div id="cbc-body" style="margin-top:14px;"></div>';
+      body.innerHTML='<div class="toolbar" style="margin-top:0;"><div class="seg" id="cbc-tabs"><button data-s="years" class="on-present">Years &amp; Terms</button><button data-s="assess">Assessment Types</button><button data-s="grading">Grading Schemes</button><button data-s="competency">Competency Levels</button></div></div><div id="cbc-body" style="margin-top:14px;"></div>';
       body.querySelectorAll("#cbc-tabs button").forEach(function(b){ b.onclick=function(){ sub=b.getAttribute("data-s"); body.querySelectorAll("#cbc-tabs button").forEach(function(x){x.className="";}); b.className="on-present"; draw(); }; });
-      function draw(){ if(sub==="years") yearsTermsTab(); else if(sub==="assess") assessmentTypesTab(); else gradingSchemesTab(); }
+      function draw(){ if(sub==="years") yearsTermsTab(); else if(sub==="assess") assessmentTypesTab(); else if(sub==="grading") gradingSchemesTab(); else competencyLevelsTab(); }
 
       // ----- years & terms -----
       async function yearsTermsTab(){
@@ -549,17 +705,21 @@
       // ----- assessment types -----
       async function assessmentTypesTab(){
         var cb=document.getElementById("cbc-body");
-        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The assessment types teachers can record marks against (CAT 1, Project, End Term Exam…), each with a weight toward the final subject score.</span><button class="btn-primary" id="add-assess">+ Add assessment type</button></div><div id="assess-table"></div>';
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">The assessment types teachers can record marks against (CAT 1, Project, End Term Exam…), each with a weight toward the final subject score.</span><button class="btn-primary" id="add-assess">+ Add assessment type</button></div><div id="assess-weight" style="margin:8px 0;"></div><div id="assess-table"></div>';
         var r=await sb.from("assessment_types").select("*").eq("school_id",schoolId).order("name");
         var list=r.data||[]; var t=document.getElementById("assess-table");
+        var totalWeight=list.reduce(function(sum,a){ return sum+(Number(a.weight_percent)||0); },0);
+        var wEl=document.getElementById("assess-weight");
+        wEl.innerHTML='<span class="pill '+(totalWeight===100?"green":"amber")+'">Total weight: '+totalWeight+'%'+(totalWeight===100?"":" — should add up to 100%")+'</span>';
         if(!list.length){ t.innerHTML='<div class="empty">No assessment types yet.</div>'; }
         else {
           list=list.slice().sort(function(a,b){ return (a.sort||0)-(b.sort||0) || (a.name<b.name?-1:1); });
-          var html='<table class="data"><thead><tr><th style="text-align:right;">Order</th><th>Name</th><th style="text-align:right;">Max marks</th><th style="text-align:right;">Weight</th><th>Counts to final</th><th>Grades</th><th></th></tr></thead><tbody>';
+          var html='<table class="data"><thead><tr><th style="text-align:right;">Order</th><th>Name</th><th style="text-align:right;">Max marks</th><th style="text-align:right;">Weight</th><th>Counts to final</th><th>On report card</th><th>Grades</th><th></th></tr></thead><tbody>';
           list.forEach(function(a){
             html+='<tr><td style="text-align:right;color:#98A2B3;">'+(a.sort||0)+'</td><td style="font-weight:600;color:#1A1D26;">'+esc(a.name)+(a.is_system?' <span class="pill gray">default</span>':'')+'</td>'
               +'<td style="text-align:right;">'+a.max_marks+'</td><td style="text-align:right;">'+a.weight_percent+'%</td>'
               +'<td>'+(a.contributes_to_final?'<span class="pill green">Yes</span>':'<span class="pill gray">No</span>')+'</td>'
+              +'<td>'+(a.show_on_report_card!==false?'<span class="pill green">Yes</span>':'<span class="pill gray">No</span>')+'</td>'
               +'<td>'+(a.applicable_grades&&a.applicable_grades.length?esc(a.applicable_grades.join(", ")):'<span class="muted">All</span>')+'</td>'
               +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+a.id+'">Edit</button> <button class="btn-sm danger" data-del="'+a.id+'">Delete</button></td></tr>';
           });
@@ -569,26 +729,46 @@
         }
         document.getElementById("add-assess").onclick=function(){ assessmentForm(); };
       }
-      function assessmentForm(a){
+      async function assessmentForm(a){
         a=a||{};
+        var sr=await sb.from("subjects").select("id,name").eq("school_id",schoolId).order("name"); var allSubjects=sr.data||[];
+        var assignedSubjectIds=[];
+        if(a.id){ var asr=await sb.from("assessment_type_subjects").select("subject_id").eq("assessment_type_id",a.id); assignedSubjectIds=(asr.data||[]).map(function(x){return x.subject_id;}); }
+        var subjectRows=allSubjects.length? allSubjects.map(function(s){
+          var checked=assignedSubjectIds.indexOf(s.id)>=0;
+          return '<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer;"><input type="checkbox" class="as-subj-chk" value="'+s.id+'"'+(checked?" checked":"")+'> '+esc(s.name)+'</label>';
+        }).join("") : '<div class="muted" style="font-size:12.5px;">No subjects set up yet — leave blank to apply to all subjects.</div>';
         var m=modal('<h3>'+(a.id?"Edit":"Add")+' assessment type</h3><div class="grid2">'
           +'<div class="field full"><label>Name</label><input id="as-name" value="'+esc(a.name||"")+'" placeholder="CAT 1"></div>'
           +'<div class="field"><label>Max marks</label><input id="as-max" type="number" value="'+(a.max_marks||100)+'"></div>'
           +'<div class="field"><label>Weight toward final (%)</label><input id="as-weight" type="number" value="'+(a.weight_percent!=null?a.weight_percent:100)+'"></div>'
           +'<div class="field"><label>Counts toward final score</label><select id="as-contrib"><option value="true"'+(a.contributes_to_final!==false?" selected":"")+'>Yes</option><option value="false"'+(a.contributes_to_final===false?" selected":"")+'>No</option></select></div>'
+          +'<div class="field"><label>Show on report card</label><select id="as-report"><option value="true"'+(a.show_on_report_card!==false?" selected":"")+'>Yes</option><option value="false"'+(a.show_on_report_card===false?" selected":"")+'>No</option></select></div>'
           +'<div class="field"><label>Test order (sets First/Second/Third Test on the report card)</label><input id="as-sort" type="number" value="'+(a.sort||0)+'"></div>'
-          +'<div class="field"><label>Applicable grades (comma separated, blank = all)</label><input id="as-grades" value="'+esc((a.applicable_grades||[]).join(", "))+'" placeholder="Grade 1, Grade 2"></div>'
+          +'<div class="field full"><label>Applicable grades (comma separated, blank = all)</label><input id="as-grades" value="'+esc((a.applicable_grades||[]).join(", "))+'" placeholder="Grade 1, Grade 2"></div>'
+          +'<div class="field full"><label>Applicable subjects (blank = all)</label><div style="max-height:180px;overflow:auto;border:1px solid var(--line-2);border-radius:8px;padding:8px 10px;">'+subjectRows+'</div></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
         m.q("#c").onclick=m.close;
         m.q("#s").onclick=async function(){
           var gradesRaw=m.q("#as-grades").value.trim();
           var rec={ school_id:schoolId, name:m.q("#as-name").value.trim(), max_marks:Number(m.q("#as-max").value)||100,
             weight_percent:Number(m.q("#as-weight").value)||0, contributes_to_final:m.q("#as-contrib").value==="true",
+            show_on_report_card:m.q("#as-report").value==="true",
             sort:Number(m.q("#as-sort").value)||0,
             applicable_grades: gradesRaw ? gradesRaw.split(",").map(function(s){return s.trim();}).filter(Boolean) : null };
           if(!rec.name){ toast("Name is required."); return; }
-          var r=a.id? await sb.from("assessment_types").update(rec).eq("id",a.id) : await sb.from("assessment_types").insert(rec);
+          var r=a.id? await sb.from("assessment_types").update(rec).eq("id",a.id) : await sb.from("assessment_types").insert(rec).select().single();
           if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That assessment type already exists.":("Error: "+r.error.message)); return; }
+          var typeId=a.id||(r.data&&r.data.id);
+          var checkedSubjIds=[]; m.el.querySelectorAll(".as-subj-chk").forEach(function(chk){ if(chk.checked) checkedSubjIds.push(chk.value); });
+          if(typeId){
+            var delS=await sb.from("assessment_type_subjects").delete().eq("assessment_type_id",typeId);
+            if(delS.error){ toast("Error: "+delS.error.message); return; }
+            if(checkedSubjIds.length){
+              var insS=await sb.from("assessment_type_subjects").insert(checkedSubjIds.map(function(sid){ return { assessment_type_id:typeId, subject_id:sid }; }));
+              if(insS.error){ toast("Error: "+insS.error.message); return; }
+            }
+          }
           m.close(); toast("Saved"); assessmentTypesTab();
         };
       }
@@ -641,8 +821,10 @@
           m.close(); toast("Saved"); gradingSchemesTab();
         };
       }
-      function levelForm(schemeId, l){
+      async function levelForm(schemeId, l){
         l=l||{};
+        var clr=await sb.from("competency_levels").select("id,code,label").eq("school_id",schoolId).order("sort"); var allLevels=clr.data||[];
+        var levelOpts='<option value="">— none —</option>'+allLevels.map(function(c){ return '<option value="'+c.id+'"'+(l.competency_level_id===c.id?" selected":"")+'>'+esc(c.code)+' — '+esc(c.label)+'</option>'; }).join("");
         var m=modal('<h3>'+(l.id?"Edit":"Add")+' grading band</h3><div class="grid2">'
           +'<div class="field"><label>Min score</label><input id="lv-min" type="number" value="'+(l.min_score!=null?l.min_score:0)+'"></div>'
           +'<div class="field"><label>Max score</label><input id="lv-max" type="number" value="'+(l.max_score!=null?l.max_score:100)+'"></div>'
@@ -650,6 +832,7 @@
           +'<div class="field"><label>Competency code (optional)</label><input id="lv-code" value="'+esc(l.competency_code||"")+'" placeholder="EE1"></div>'
           +'<div class="field"><label>Points (optional)</label><input id="lv-points" type="number" step="0.5" value="'+(l.points!=null?l.points:"")+'" placeholder="4.0"></div>'
           +'<div class="field full"><label>Competency label (optional)</label><input id="lv-label" value="'+esc(l.competency_label||"")+'" placeholder="Exceeding Expectation"></div>'
+          +'<div class="field full"><label>Competency level catalog link (optional)</label><select id="lv-catlevel">'+levelOpts+'</select></div>'
           +'<div class="field"><label>Remark (optional)</label><input id="lv-remark" value="'+esc(l.remark||"")+'" placeholder="Excellent"></div>'
           +'<div class="field"><label>Badge color</label><input id="lv-color" type="color" value="'+esc(l.color||"#0E9384")+'" style="height:38px;padding:4px;"></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
@@ -660,10 +843,52 @@
           var pointsRaw=m.q("#lv-points").value.trim();
           var rec={ scheme_id:schemeId, min_score:minS, max_score:maxS, grade_label:m.q("#lv-grade").value.trim()||null,
             competency_code:m.q("#lv-code").value.trim()||null, competency_label:m.q("#lv-label").value.trim()||null, remark:m.q("#lv-remark").value.trim()||null,
-            points: pointsRaw?Number(pointsRaw):null, color:m.q("#lv-color").value||null };
+            points: pointsRaw?Number(pointsRaw):null, color:m.q("#lv-color").value||null,
+            competency_level_id: m.q("#lv-catlevel").value||null };
           var r=l.id? await sb.from("grading_levels").update(rec).eq("id",l.id) : await sb.from("grading_levels").insert(rec);
           if(r.error){ toast("Error: "+r.error.message); return; }
           m.close(); toast("Saved"); gradingSchemesTab();
+        };
+      }
+
+      // ----- competency levels catalog -----
+      async function competencyLevelsTab(){
+        var cb=document.getElementById("cbc-body");
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">A reusable, school-wide catalog of competency levels (e.g. EE, ME, AE, BE). Link grading bands to these from Grading Schemes.</span><button class="btn-primary" id="add-complvl">+ Add competency level</button></div><div id="complvl-table"></div>';
+        var r=await sb.from("competency_levels").select("*").eq("school_id",schoolId).order("sort");
+        var list=r.data||[]; var t=document.getElementById("complvl-table");
+        if(!list.length){ t.innerHTML='<div class="empty">No competency levels yet. Click <strong>+ Add competency level</strong>.</div>'; }
+        else {
+          var html='<table class="data"><thead><tr><th style="text-align:right;">Order</th><th>Code</th><th>Label</th><th>Description</th><th></th></tr></thead><tbody>';
+          list.forEach(function(c){
+            html+='<tr><td style="text-align:right;color:#98A2B3;">'+(c.sort||0)+'</td>'
+              +'<td style="font-weight:600;color:#1A1D26;"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+esc(c.color||"#98A2B3")+';margin-right:6px;"></span>'+esc(c.code)+'</td>'
+              +'<td>'+esc(c.label)+'</td><td>'+esc(c.description||"—")+'</td>'
+              +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-edit="'+c.id+'">Edit</button> <button class="btn-sm danger" data-del="'+c.id+'">Delete</button></td></tr>';
+          });
+          html+='</tbody></table>'; t.innerHTML=html;
+          t.querySelectorAll("[data-edit]").forEach(function(b){ b.onclick=function(){ competencyLevelForm(list.find(function(x){return x.id===b.getAttribute("data-edit");})); }; });
+          t.querySelectorAll("[data-del]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this competency level?"))return; var r=await sb.from("competency_levels").delete().eq("id",b.getAttribute("data-del")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); competencyLevelsTab(); }; });
+        }
+        document.getElementById("add-complvl").onclick=function(){ competencyLevelForm(); };
+      }
+      function competencyLevelForm(c){
+        c=c||{};
+        var m=modal('<h3>'+(c.id?"Edit":"Add")+' competency level</h3><div class="grid2">'
+          +'<div class="field"><label>Code</label><input id="cl-code" value="'+esc(c.code||"")+'" placeholder="EE"></div>'
+          +'<div class="field"><label>Sort order</label><input id="cl-sort" type="number" value="'+(c.sort||0)+'"></div>'
+          +'<div class="field full"><label>Label</label><input id="cl-label" value="'+esc(c.label||"")+'" placeholder="Exceeding Expectation"></div>'
+          +'<div class="field full"><label>Description (optional)</label><input id="cl-desc" value="'+esc(c.description||"")+'"></div>'
+          +'<div class="field"><label>Color</label><input id="cl-color" type="color" value="'+esc(c.color||"#0E9384")+'" style="height:38px;padding:4px;"></div>'
+          +'</div><div class="modal-actions"><button class="btn-sm" id="cn">Cancel</button><button class="btn-primary" id="s">Save</button></div>', true);
+        m.q("#cn").onclick=m.close;
+        m.q("#s").onclick=async function(){
+          var rec={ school_id:schoolId, code:m.q("#cl-code").value.trim(), label:m.q("#cl-label").value.trim(),
+            description:m.q("#cl-desc").value.trim()||null, sort:Number(m.q("#cl-sort").value)||0, color:m.q("#cl-color").value||null };
+          if(!rec.code||!rec.label){ toast("Code and label are required."); return; }
+          var r=c.id? await sb.from("competency_levels").update(rec).eq("id",c.id) : await sb.from("competency_levels").insert(rec);
+          if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That code already exists.":("Error: "+r.error.message)); return; }
+          m.close(); toast("Saved"); competencyLevelsTab();
         };
       }
 
@@ -958,9 +1183,15 @@
       var m=modal('<h3>'+(s.id?"Edit student":"New student")+'</h3><p class="muted" style="font-size:12.5px;margin:0;">Full enrollment record.</p>'
         +'<div class="modal-body"><div class="grid3">'
         +'<div class="section-h">Identity</div>'
+        +(s.id?'<div class="field full" style="grid-column:span 3;display:flex;align-items:center;gap:14px;">'
+          +'<div id="stu-photo-preview" style="width:64px;height:78px;border-radius:6px;border:2px dashed #DDE1E6;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;background:#F8FAFB;">'
+          +(s.photo_url?'<img src="'+esc(s.photo_url)+'" style="width:100%;height:100%;object-fit:cover;">':'<span class="muted" style="font-size:9px;text-align:center;">No photo</span>')
+          +'</div><label class="btn-sm" style="cursor:pointer;"><input type="file" id="stu-photo-file" accept="image/*" style="display:none;"> ⬆ Upload photo</label>'
+          +'</div>':'')
         +'<div class="field"><label>First name</label><input id="f-first" value="'+esc(s.first_name||"")+'"></div>'
         +'<div class="field"><label>Last name</label><input id="f-last" value="'+esc(s.last_name||"")+'"></div>'
         +'<div class="field"><label>Admission no</label><input id="f-adm" value="'+esc(s.admission_no||nextAdm())+'"></div>'
+        +'<div class="field"><label>UPI (NEMIS)</label><input id="f-upi" value="'+esc(s.upi||"")+'" placeholder="Unique Personal Identifier"></div>'
         +'<div class="field"><label>Gender</label><select id="f-gender"><option value="">—</option><option'+(s.gender==="M"?" selected":"")+'>M</option><option'+(s.gender==="F"?" selected":"")+'>F</option></select></div>'
         +'<div class="field"><label>Date of birth</label><input id="f-dob" type="date" value="'+esc(s.date_of_birth||"")+'"></div>'
         +'<div class="field"><label>Admission date</label><input id="f-admdate" type="date" value="'+esc(s.admission_date||new Date().toISOString().slice(0,10))+'"></div>'
@@ -990,13 +1221,28 @@
       // auto-select grade text from class for legacy 'grade' column
       m.q("#cancel").onclick=m.close;
       m.q("#f-bus").onchange=function(){ m.q("#f-route").disabled=(m.q("#f-bus").value!=="yes"); };
+      if(m.q("#stu-photo-file")) m.q("#stu-photo-file").onchange=async function(e){
+        var file=e.target.files[0]; if(!file) return;
+        if(file.size>500*1024){ toast("Photo must be under 500 KB."); return; }
+        var ext=(file.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"")||"jpg";
+        var path=schoolId+"/students/"+s.id+"."+ext;
+        var up=await sb.storage.from("student-photos").upload(path, file, {upsert:true, cacheControl:"3600", contentType:file.type||undefined});
+        if(up.error){ toast("Photo upload failed: "+up.error.message); return; }
+        var pub=sb.storage.from("student-photos").getPublicUrl(path);
+        var publicUrl=(pub.data&&pub.data.publicUrl)?pub.data.publicUrl+"?v="+Date.now():"";
+        var pr=await sb.from("students").update({photo_url:publicUrl}).eq("id",s.id);
+        if(pr.error){ toast("Photo uploaded but couldn't be saved: "+pr.error.message); return; }
+        s.photo_url=publicUrl;
+        m.q("#stu-photo-preview").innerHTML='<img src="'+esc(publicUrl)+'" style="width:100%;height:100%;object-fit:cover;">';
+        toast("Photo saved");
+      };
       m.q("#save").onclick=async function(){
         var clsId=m.q("#f-class").value||null;
         var cls=classes.find(function(c){return c.id===clsId;});
         var usesBus=m.q("#f-bus").value==="yes", routeId=m.q("#f-route").value||null;
         if(usesBus && !routeId){ toast("Select a bus route, or set transport to No."); return; }
         var rec={ school_id:schoolId, first_name:m.q("#f-first").value.trim(), last_name:m.q("#f-last").value.trim(),
-          admission_no:m.q("#f-adm").value.trim()||null, gender:m.q("#f-gender").value||null,
+          admission_no:m.q("#f-adm").value.trim()||null, upi:m.q("#f-upi").value.trim()||null, gender:m.q("#f-gender").value||null,
           date_of_birth:m.q("#f-dob").value||null, admission_date:m.q("#f-admdate").value||null,
           class_id:clsId, grade:cls?cls.level:(s.grade||null), residence:m.q("#f-res").value,
           dormitory_id:m.q("#f-dorm").value||null, status:m.q("#f-status").value,
@@ -1023,7 +1269,7 @@
       if(!classes.length){ toast("Set up classes first (Settings → Classes & Streams)."); return; }
       form(null);
     };
-    document.getElementById("stu-search").oninput=draw;
+    document.getElementById("stu-search").oninput=window.debounce(draw,150);
     document.getElementById("stu-class-filter").onchange=draw;
 
     // ---------- promote to next class ----------
@@ -1213,6 +1459,20 @@
       var busFareByStudent={}, busPaidByStudent={};
       try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) busFareByStudent[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e){}
       payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
+      // library charges — lost-book fines, deliberately kept in their own
+      // table (never fee_structures/fee_items) but rolled into the same
+      // combined Balance/Total Due column the ledger already uses for bus
+      // fare, so a cleared-fee student who loses a book doesn't read as
+      // "Cleared" here.
+      var libUnpaidByStudent={}, libItemsByStudent={};
+      try{
+        var lcRes=await cget(sb, schoolId, "library_charges", "*");
+        (lcRes||[]).forEach(function(c){
+          if(c.status!=="unpaid") return;
+          libUnpaidByStudent[c.student_id]=(libUnpaidByStudent[c.student_id]||0)+Number(c.amount);
+          (libItemsByStudent[c.student_id]=libItemsByStudent[c.student_id]||[]).push(c);
+        });
+      }catch(e){}
       // billed per student = structure total for their level (sum across active terms)
       var totalByLevelTerm={}; structures.forEach(function(s){ totalByLevelTerm[s.level]= (totalByLevelTerm[s.level]||0) + (s.fee_items||[]).reduce(function(a,i){return a+Number(i.amount);},0); });
       // billed for a specific student = structure total for their level + any
@@ -1237,7 +1497,7 @@
       // On the Receipts tab, name/class filtering is folded into the
       // explicit "Search receipts" query instead of refetching on every
       // keystroke — so only Ledger/Fee reports live-update here.
-      document.getElementById("fee-search").oninput=function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); if(tab!=="receipts") renderTab(); };
+      document.getElementById("fee-search").oninput=window.debounce(function(e){ query=e.target.value.trim().toLowerCase(); refreshStats(); if(tab!=="receipts") renderTab(); },150);
       document.getElementById("fee-class").onchange=function(e){ classFilter=e.target.value; refreshStats(); if(tab!=="receipts") renderTab(); };
 
       function matches(name, adm, cls){
@@ -1252,22 +1512,32 @@
         var scoped=students.filter(function(s){ return matches(s.first_name+" "+s.last_name, s.admission_no, s.grade); });
         var billedTotal=0, collected=0, outstanding=0;
         var busBilled=0, busCollected=0, busOutstanding=0;
+        var libOutstanding=0;
         scoped.forEach(function(s){
           var billed=billedFor(s), paid=paidByStudent[s.id]||0;
           billedTotal+=billed; outstanding+=Math.max(0,billed-paid);
           var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0;
           busBilled+=bf; busCollected+=bp; busOutstanding+=Math.max(0,bf-bp);
+          libOutstanding+=libUnpaidByStudent[s.id]||0;
         });
         var scopedIds={}; scoped.forEach(function(s){ scopedIds[s.id]=true; });
         collected=payments.reduce(function(a,p){ return scopedIds[p.student_id]?a+tuitionOf(p):a; },0);
         var icBus='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="7.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><circle cx="16.5" cy="19" r="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M3 11h18" stroke="currentColor" stroke-width="1.5"/></svg>';
+        var icLib='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5v-13z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
         document.getElementById("fee-stats").innerHTML=
           stat("Billed (term)",money(billedTotal),"#EEF0FF","#4F46E5",icDoc())
           +stat("Tuition collected",money(collected),"#ECFDF3","#067647",icCash())
           +stat("Tuition outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert())
-          +stat("Collection rate",(billedTotal?Math.round(collected/billedTotal*100):0)+"%","#F1ECFE","#6D28D9",icChart())
+          // Capped at 100 — students with real payments but no fee structure
+          // for their grade (billedFor()===0) can push the raw ratio well
+          // past 100%, which reads as a broken number rather than useful
+          // information. The Dashboard's Attention Required list is where
+          // that specific gap (payments with no matching structure) gets
+          // surfaced actionably instead.
+          +stat("Collection rate",(billedTotal?Math.min(100,Math.round(collected/billedTotal*100)):0)+"%","#F1ECFE","#6D28D9",icChart())
           +stat("Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus)
-          +stat("Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus);
+          +stat("Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus)
+          +stat("Library charges outstanding",money(libOutstanding),"#FFF6E8","#B54708",icLib);
       }
       refreshStats();
 
@@ -1280,11 +1550,17 @@
         if(!filtered.length){ body.innerHTML='<div class="empty">No students match "'+esc(query)+'".</div>'; return; }
         var pgData=window.paginate(filtered,ledgerPage);
         var pageRows=pgData.rows;
-        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Total paid</th><th>Balance</th><th>Status</th><th></th></tr></thead><tbody>';
+        var html='<table class="data"><thead><tr><th>Student</th><th>Class</th><th>Tuition</th><th>Bus fare</th><th>Library</th><th>Total paid</th><th>Total due</th><th>Status</th><th></th></tr></thead><tbody>';
         pageRows.forEach(function(s){
           var billed=billedFor(s), paid=paidByStudent[s.id]||0, tBal=Math.max(0,billed-paid);
           var bf=busFareByStudent[s.id]||0, bp=busPaidByStudent[s.id]||0, bBal=Math.max(0,bf-bp);
-          var totalBal=tBal+bBal, totalOwed=billed+bf, totalPaid=paid+bp;
+          // Library charges — lost-book fines from the independent
+          // library_charges table (never fee_structures) — rolled into the
+          // same combined Total due/Status a parent and admin both see, so
+          // a fee-cleared student who loses a book no longer reads "Cleared".
+          var lib=libUnpaidByStudent[s.id]||0, libItems=libItemsByStudent[s.id]||[];
+          var libTitle=libItems.map(function(c){ return c.book_title+" — "+c.reason; }).join("; ");
+          var totalBal=tBal+bBal+lib, totalOwed=billed+bf+lib, totalPaid=paid+bp;
           var cleared=totalBal<=0&&totalOwed>0;
           var st= cleared?"green":(totalPaid>0?"amber":"red"), lbl= totalOwed===0?"No structure":(cleared?"Cleared":(totalPaid>0?"Partial":"Unpaid"));
           if(totalOwed===0) st="gray";
@@ -1292,8 +1568,9 @@
             +'<td>'+esc(s.grade||"—")+'</td>'
             +'<td>'+money(billed)+(paid>0?' <span style="color:#067647;font-size:11px;">paid '+money(paid)+'</span>':'')+'</td>'
             +'<td>'+(bf>0?money(bf)+(bp>0?' <span style="color:#067647;font-size:11px;">paid '+money(bp)+'</span>':''):'—')+'</td>'
+            +'<td'+(lib>0?' style="color:#B54708;font-weight:600;" title="'+esc(libTitle)+'"':'')+'>'+(lib>0?money(lib):'—')+'</td>'
             +'<td style="color:#067647;font-weight:600;">'+money(totalPaid)+'</td>'
-            +'<td style="font-weight:700;color:'+(totalBal>0?"#C2410C":"#067647")+';">'+money(totalBal)+'</td>'
+            +'<td style="font-weight:700;color:'+(totalBal>0?"#C2410C":"#067647")+';">'+money(totalBal)+(lib>0?'<div class="muted" style="font-size:10.5px;font-weight:500;">incl. '+money(lib)+' library</div>':'')+'</td>'
             +'<td><span class="pill '+st+'">'+lbl+'</span></td>'
             +'<td style="text-align:right;white-space:nowrap;"><button class="btn-sm" data-stmt="'+s.id+'">Statement</button> <button class="btn-primary" style="padding:6px 12px;font-size:12px;" data-pay="'+s.id+'">Collect</button></td></tr>';
         });
@@ -1386,7 +1663,6 @@
       function canCollect(stu){ return !stu || hasStructure(stu.grade) || Number(stu.opening_balance)>0; }
       function collectForm(preId){
         if(preId){ var ps=students.find(function(x){return x.id===preId;}); if(!canCollect(ps)){ window.SM_confirm("No fee structure has been set up for "+esc(ps.grade||"this class")+". Please create a fee structure in Settings → Fee Structures before collecting fees."); return; } }
-        var opts=students.map(function(s){ return '<option value="'+s.id+'"'+(preId===s.id?" selected":"")+'>'+esc(s.first_name+" "+s.last_name)+(s.admission_no?" ("+esc(s.admission_no)+")":"")+'</option>'; }).join("");
         var idemKey=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():("idem-"+Date.now()+"-"+Math.random().toString(36).slice(2));
         var transportFare=0;
         var curYear=new Date().getFullYear();
@@ -1425,7 +1701,8 @@
           return null;
         }
         var m=modal('<h3>Collect payment</h3><div class="grid2">'
-          +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':opts)+'</select></div>'
+          +(preId?'':'<div class="field full"><label>Search student</label><input id="p-stu-search" placeholder="Type a name…"></div>')
+          +'<div class="field full"><label>Student</label><select id="p-stu"'+(preId?' disabled':'')+'>'+(preId?'<option value="'+preId+'" selected>'+esc((function(){var s=students.find(function(x){return x.id===preId;});return s?(s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":"")):"Student";})())+'</option>':'')+'</select></div>'
           +'<div class="field full"><div id="p-bal" style="background:#F8FAFB;border:1px solid #EEF0F2;border-radius:10px;padding:11px 13px;font-size:12.5px;"></div></div>'
           +'<div class="field full"><div id="p-term-info" style="font-size:12px;"></div></div>'
           +'<div class="field full" id="p-bus-wrap" style="display:none;">'
@@ -1438,6 +1715,7 @@
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
           +'<div class="field full"><div id="p-spill" style="display:none;background:#FEF9C3;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"></div></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Record &amp; print receipt</button></div>');
+        if(!preId) window.SM_wireSearchSelect(m.q("#p-stu"), m.q("#p-stu-search"), students, function(s){ return s.first_name+" "+s.last_name+(s.admission_no?" ("+s.admission_no+")":""); });
         function refreshTermInfo(){
           var sid=preId||m.q("#p-stu").value;
           var s0=students.find(function(x){return x.id===sid;});
@@ -1502,7 +1780,23 @@
           var paid=paidByStudent[sid]||0;
           var bal=Math.max(0,billed-paid);
           var extra=(m.q("#p-bus").checked?transportFare:0);
-          m.q("#p-bal").innerHTML='Billed <strong>'+money(billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(bal)+'</strong>'+(billed===0?' <span class="muted">(no fee structure for '+esc(s?s.grade:"")+')</span>':'');
+          var lib=libUnpaidByStudent[sid]||0;
+          m.q("#p-bal").innerHTML='Billed <strong>'+money(billed)+'</strong> &nbsp;·&nbsp; Paid <strong style="color:#067647;">'+money(paid)+'</strong> &nbsp;·&nbsp; Balance <strong style="color:#C2410C;">'+money(bal)+'</strong>'+(billed===0?' <span class="muted">(no fee structure for '+esc(s?s.grade:"")+')</span>':'')
+            +(lib>0?' <div style="margin-top:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#B54708;font-size:12px;">⚠ Also owes <strong>'+money(lib)+'</strong> in library charges (lost book) — this is billed separately, do NOT add it to the amount below.'
+              +' <button type="button" class="btn-sm" id="p-lib-paid" style="padding:4px 10px;font-size:11.5px;">Mark KES '+lib+' library charge as paid (cash)</button></div>':'');
+          if(lib>0){
+            m.q("#p-lib-paid").onclick=async function(){
+              var items=libItemsByStudent[sid]||[];
+              if(!items.length) return;
+              if(!await window.SM_confirm("Mark "+money(lib)+" in library charges as paid in cash for "+(s?s.first_name+" "+s.last_name:"this student")+"? This is separate from the fee payment above and does not create a fee receipt.")) return;
+              var r=await sb.from("library_charges").update({status:"paid",paid_at:new Date().toISOString()}).in("id",items.map(function(c){return c.id;}));
+              if(r.error){ toast("Error: "+r.error.message); return; }
+              delete libUnpaidByStudent[sid]; delete libItemsByStudent[sid];
+              toast("Library charge marked paid.");
+              refreshBal(); refreshStats();
+              if(tab==="ledger") ledger(ledgerPage);
+            };
+          }
           if(!m.q("#p-amt").value&&(bal+extra)>0) m.q("#p-amt").value=bal+extra;
           refreshTermInfo();
         }
@@ -1940,7 +2234,14 @@
       // sum of per-student positive balances — one student's overpayment
       // must never offset another's unpaid balance.
       var outstanding=0; students.forEach(function(s){ var t=(targetByLevel[levelOf(s)]||0)+(Number(s.opening_balance)||0), paid=paidByStudent[s.id]||0; outstanding+=Math.max(0,t-paid); });
-      var rate=billed?Math.round(collected/billed*100):0;
+      // Capped at 100 for the same reason as Fees & Invoicing's Collection
+      // rate card and the Dashboard's Fees Collection panel: a student with
+      // real payments but no fee structure for their level contributes to
+      // collected without adding to billed, which can push the raw ratio
+      // past 100% — a broken-looking number, not useful information. Feeds
+      // the KPI card, the "X% overall" chart sub-header, and the printed
+      // statement (all read this one value) — one clamp, everywhere.
+      var rate=billed?Math.min(100,Math.round(collected/billed*100)):0;
       // bus fare
       var busPaidByStudent={}; payments.forEach(function(p){ if(Number(p.transport_amount)>0) busPaidByStudent[p.student_id]=(busPaidByStudent[p.student_id]||0)+Number(p.transport_amount); });
       var busBilled=0, busCollected=0, busOutstanding=0;
@@ -1976,7 +2277,7 @@
         +kpi("collected","Tuition collected",money(collected),"#ECFDF3","#067647",icCash(),rate+"% of target")
         +kpi("outstanding","Tuition outstanding",money(outstanding),"#FFF6ED","#C2410C",icAlert(),(students.length-fullyPaid)+" with balance")
         +kpi("paid","Fully paid",fullyPaid+" / "+students.length,"#F1ECFE","#6D28D9",icChart(),"Avg fee "+money(avgFee))
-        +kpi("buscollected","Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus,(busBilled?Math.round(busCollected/busBilled*100):0)+"% of target")
+        +kpi("buscollected","Bus fare collected",money(busCollected),"#EEF7FF","#0369A1",icBus,(busBilled?Math.min(100,Math.round(busCollected/busBilled*100)):0)+"% of target")
         +kpi("busoutstanding","Bus fare outstanding",money(busOutstanding),"#FFF1F2","#BE123C",icBus,busBilled?money(busBilled)+" billed":"No assignments")
         +'</div>';
 

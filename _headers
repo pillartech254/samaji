@@ -6,6 +6,17 @@
 # instead: cheap (a 304) when nothing changed, instant when it did.
 /assets/*
   Cache-Control: public, max-age=0, must-revalidate
+
+# Fonts never change content under their filename, and the vendored
+# Supabase SDK's version is baked into its own filename
+# (supabase-js-2.112.2.min.js) — bumping versions means a new
+# filename, not overwriting this one. Both can safely be cached for a
+# year with no revalidation, unlike the mutable /assets/*.js above.
+/assets/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+/assets/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /*
   X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin

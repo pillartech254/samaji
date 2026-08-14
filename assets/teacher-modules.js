@@ -201,7 +201,7 @@
       + '<div class="field"><label>Class &amp; subject</label><select id="gb-pair">'+pairs.map(function(a,i){ return '<option value="'+i+'">'+esc(classLabel(a.school_classes))+' — '+esc(a.subjects.name)+'</option>'; }).join("")+'</select></div>'
       + '<div class="field"><label>Academic year</label><select id="gb-year">'+years.map(function(y){ return '<option value="'+y.id+'"'+(y.id===defaultYear.id?" selected":"")+'>'+y.year+'</option>'; }).join("")+'</select></div>'
       + '<div class="field"><label>Term</label><select id="gb-term"></select></div>'
-      + '<div style="flex:1;"></div><button class="btn-primary indigo" id="gb-save">Save scores</button></div>'
+      + '<div style="flex:1;"></div><button class="btn-sm" id="gb-import">Import CSV</button><button class="btn-primary indigo" id="gb-save">Save scores</button></div>'
       + '<div id="gb-banner"></div><div id="gb-grid"></div>';
 
     function populateTerms(){
@@ -290,6 +290,7 @@
     function draw(){
       var grid = document.getElementById("gb-grid");
       document.getElementById("gb-save").style.display = state.editable ? "" : "none";
+      document.getElementById("gb-import").style.display = (state.editable && state.types.length) ? "" : "none";
       if (!state.students.length){ grid.innerHTML='<div class="empty">No active students in this class.</div>'; return; }
       if (!state.types.length){
         grid.innerHTML='<div class="empty">No exam has been announced for '+esc(state.pair.subjects.name)+' — '+esc(classLabel(state.pair.school_classes))+' this term yet.'
@@ -346,9 +347,86 @@
       });
     }
 
+    // ---------- bulk import (CSV) ----------
+    // Fills the same in-memory state.scores the manual grid edits, then
+    // redraws — "Save scores" (below) does the actual write, so an import
+    // gets exactly the same out-of persistence, weighting and grading as
+    // typing scores in by hand, for free.
+    function openImportModal(){
+      if (!state.editable || !state.types.length) return;
+      var header = "admission_no," + state.types.map(function(t){ return csvSafe(t.name); }).join(",");
+      var sampleRow = state.students.slice(0,1).map(function(s){ return s.admission_no||"ADM-0101"; })[0] || "ADM-0101";
+      var tplCsv = header + "\n" + sampleRow + "," + state.types.map(function(){ return ""; }).join(",") + "\n";
+      var m = modal('<h3>Import scores from CSV</h3>'
+        + '<p class="muted" style="font-size:12.5px;margin:0;">Header row required: <code>' + esc(header) + '</code> — matched by admission number. Leave a cell blank to skip that score.</p>'
+        + '<div class="field full" style="margin-top:12px;"><input type="file" id="gbim-file" accept=".csv,text/csv"></div>'
+        + '<div id="gbim-preview" style="margin-top:12px;max-height:300px;overflow:auto;"></div>'
+        + '<div class="modal-actions"><a id="gbim-template" download="marks-template.csv" style="margin-right:auto;align-self:center;font-size:12.5px;">Download template</a><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s" disabled>Apply</button></div>', true);
+      m.q("#gbim-template").href = "data:text/csv;charset=utf-8," + encodeURIComponent(tplCsv);
+      m.q("#c").onclick = m.close;
+      var byAdm = {}; state.students.forEach(function(s){ if (s.admission_no) byAdm[s.admission_no.trim().toLowerCase()] = s; });
+      var parsed = [];
+      function parseCsv(text){
+        var lines = text.split(/\r?\n/).filter(function(l){ return l.trim().length; });
+        if (!lines.length) return { rows:[], errors:["Empty file."] };
+        var cols = lines[0].split(",").map(function(h){ return h.trim().toLowerCase(); });
+        var typeColIdx = state.types.map(function(t){ return cols.indexOf(t.name.toLowerCase()); });
+        var rows = [], errors = [];
+        for (var i=1;i<lines.length;i++){
+          var cells = lines[i].split(",").map(function(c){ return c.trim(); });
+          var adm = cells[cols.indexOf("admission_no")] || "";
+          if (!adm){ errors.push("Row "+(i+1)+": missing admission_no — skipped."); continue; }
+          var stu = byAdm[adm.toLowerCase()];
+          if (!stu){ errors.push("Row "+(i+1)+": no student with admission no \""+adm+"\" in this class — skipped."); continue; }
+          var scores = {};
+          state.types.forEach(function(t, ti){
+            var idx = typeColIdx[ti]; if (idx<0) return;
+            var raw = cells[idx];
+            if (raw==="" || raw==null) return;
+            var n = Number(raw);
+            if (isNaN(n)){ errors.push("Row "+(i+1)+": \""+raw+"\" for "+t.name+" is not a number — skipped."); return; }
+            scores[t.id] = n;
+          });
+          if (Object.keys(scores).length) rows.push({ student:stu, scores:scores });
+        }
+        return { rows:rows, errors:errors };
+      }
+      m.q("#gbim-file").onchange = function(e){
+        var f = e.target.files[0]; if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function(){
+          var res = parseCsv(String(reader.result));
+          parsed = res.rows;
+          var html = "";
+          if (res.errors.length) html += '<div class="empty" style="border-color:#FDE68A;background:#FFFBEB;color:#92400E;margin-bottom:10px;">'+res.errors.map(esc).join("<br>")+'</div>';
+          if (parsed.length){
+            html += '<table class="data"><thead><tr><th>Name</th>'+state.types.map(function(t){ return '<th>'+esc(t.name)+'</th>'; }).join("")+'</tr></thead><tbody>'
+              + parsed.slice(0,50).map(function(p){ return '<tr><td>'+esc(p.student.first_name+" "+p.student.last_name)+'</td>'
+                + state.types.map(function(t){ return '<td>'+(p.scores[t.id]!=null?p.scores[t.id]:'<span class="muted">—</span>')+'</td>'; }).join("")+'</tr>'; }).join("")
+              + '</tbody></table>' + (parsed.length>50?'<p class="muted" style="font-size:11.5px;">+'+(parsed.length-50)+' more rows…</p>':'');
+          } else html += '<div class="empty">No valid rows found.</div>';
+          m.q("#gbim-preview").innerHTML = html;
+          m.q("#s").disabled = !parsed.length;
+          m.q("#s").textContent = "Apply "+parsed.length+" row"+(parsed.length===1?"":"s");
+        };
+        reader.readAsText(f);
+      };
+      m.q("#s").onclick = function(){
+        if (!parsed.length) return;
+        parsed.forEach(function(p){
+          state.scores[p.student.id] = state.scores[p.student.id] || {};
+          Object.keys(p.scores).forEach(function(tid){ state.scores[p.student.id][tid] = p.scores[tid]; });
+        });
+        m.close(); draw();
+        toast("Imported scores for "+parsed.length+" student"+(parsed.length===1?"":"s")+" — review and click Save scores.");
+      };
+    }
+    function csvSafe(s){ return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+
     document.getElementById("gb-pair").onchange=load;
     document.getElementById("gb-year").onchange=function(){ populateTerms(); load(); };
     document.getElementById("gb-term").onchange=load;
+    document.getElementById("gb-import").onclick=openImportModal;
     document.getElementById("gb-save").onclick=async function(){
       if (!state.editable || !state.students.length || !state.types.length) return;
       var levels = state.scheme ? (state.scheme.grading_levels||[]) : [];
@@ -389,6 +467,11 @@
   //  built directly from Marks & Grading's per-test scores)
   // ====================================================
   async function renderReportBooks(sb, ctx, el){
+    // Kicked off now, awaited just before each place that actually uses
+    // window.SamajiReportCard (Ratings modal, Print) — most sessions open
+    // Report Books to skim the summary table without ever printing.
+    var reportCardLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/report-card.js") : Promise.resolve();
+    var qrLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/qrcode-gen.js") : Promise.resolve();
     var assignments = await loadMyAssignments(sb, ctx);
     var classes = myClasses(assignments);
     var ctRes = await sb.from("school_classes").select("*").eq("class_teacher_id", ctx.teacher.id);
@@ -464,7 +547,8 @@
       var codes = Array.from(new Set((current.levels||[]).map(function(l){ return l.competency_code; }).filter(Boolean)));
       return '<option value="">—</option>'+codes.map(function(c){ return '<option value="'+c+'"'+(selected===c?" selected":"")+'>'+c+'</option>'; }).join("");
     }
-    function ratingsModal(s){
+    async function ratingsModal(s){
+      await reportCardLoad;
       var ratings = current.ratingsByStudent[s.id]||{ competency:{}, value:{}, psychomotor:{} };
       var remark = current.remarksByStudent[s.id]||{};
       var canEditRatings = current.isClassTeacher, canEditPrincipal = current.isPublisher;
@@ -482,6 +566,7 @@
         + section("Psychomotor Skills","psychomotor")
         + '<div class="field full"><label>Teacher\'s remark</label>'+(canEditRatings?'<textarea id="rt-teacher-remark" rows="3" style="width:100%;font-family:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:9px 11px;">'+esc(remark.teacher_remark||"")+'</textarea>':'<div class="muted">'+esc(remark.teacher_remark||"—")+'</div>')+'</div>'
         + '<div class="field full"><label>Head Teacher\'s remark</label>'+(canEditPrincipal?'<textarea id="rt-principal-remark" rows="3" style="width:100%;font-family:inherit;font-size:13px;border:1.5px solid var(--line);border-radius:9px;padding:9px 11px;">'+esc(remark.principal_remark||"")+'</textarea>':'<div class="muted">'+esc(remark.principal_remark||"—")+'</div>')+'</div>'
+        + '<div class="field full"><label>Promotion status</label>'+(canEditPrincipal?'<select id="rt-promotion"><option value=""'+(!remark.promotion_status?" selected":"")+'>—</option><option value="Promoted"'+(remark.promotion_status==="Promoted"?" selected":"")+'>Promoted</option><option value="Repeat"'+(remark.promotion_status==="Repeat"?" selected":"")+'>Repeat</option><option value="On Probation"'+(remark.promotion_status==="On Probation"?" selected":"")+'>On Probation</option></select>':'<div class="muted">'+esc(remark.promotion_status||"—")+'</div>')+'</div>'
         + '</div><div class="modal-actions"><button class="btn-sm" id="c">Close</button>'+((canEditRatings||canEditPrincipal)?'<button class="btn-primary" id="sv">Save</button>':'')+'</div>', true);
       m.q("#c").onclick=m.close;
       if (m.q("#sv")) m.q("#sv").onclick=async function(){
@@ -492,7 +577,8 @@
         }
         var remRec = { school_id:ctx.schoolId, student_id:s.id, term_id:current.term.id, academic_year_id:current.year.id,
           teacher_remark: canEditRatings ? (m.q("#rt-teacher-remark").value.trim()||null) : (remark.teacher_remark||null),
-          principal_remark: canEditPrincipal ? (m.q("#rt-principal-remark").value.trim()||null) : (remark.principal_remark||null) };
+          principal_remark: canEditPrincipal ? (m.q("#rt-principal-remark").value.trim()||null) : (remark.principal_remark||null),
+          promotion_status: canEditPrincipal ? (m.q("#rt-promotion").value||null) : (remark.promotion_status||null) };
         var rr = await sb.from("report_remarks").upsert(remRec,{ onConflict:"student_id,term_id,academic_year_id" });
         if (rr.error){ toast("Error: "+rr.error.message); return; }
         m.close(); toast("Saved"); load();
@@ -510,6 +596,7 @@
       return window.SamajiAcademics.buildSnapshotReportOpts(ctx.school, s, d, current.cls, current.term, current.year, current.levels);
     }
     async function printOne(s){
+      await reportCardLoad; await qrLoad;
       var snapRes = await sb.from("report_cards").select("*").eq("student_id",s.id).eq("term_id",current.term.id).eq("academic_year_id",current.year.id).maybeSingle();
       var opts = snapRes.data ? snapshotOpts(snapRes.data, s) : reportOpts(s);
       var html = window.SamajiReportCard.studentReportHTML(opts);
@@ -521,6 +608,7 @@
     document.getElementById("rb-term").onchange=load;
     document.getElementById("rb-print").onclick=async function(){
       if (!current.students.length){ toast("Nothing to print yet."); return; }
+      await reportCardLoad; await qrLoad;
       var studentIds = current.students.map(function(s){ return s.id; });
       var snapRes = await sb.from("report_cards").select("*").in("student_id",studentIds).eq("term_id",current.term.id).eq("academic_year_id",current.year.id);
       var snapByStudent = {}; (snapRes.data||[]).forEach(function(r){ snapByStudent[r.student_id]=r; });
@@ -538,6 +626,9 @@
   // ====================================================
   async function renderPayroll(sb, ctx, el){
     el.innerHTML = '<div class="mod-head"><div><h2>My Payroll</h2><p>Your payslips and annual tax deduction card (P9).</p></div></div><div id="pay-body"></div>';
+    // Kicked off now, awaited just before draw() — payslip.js isn't needed
+    // by every session, so it's not paid for until Payroll is actually opened.
+    var payslipLoad = window.loadScriptOnce ? window.loadScriptOnce("../assets/payslip.js") : Promise.resolve();
     var sres = await sb.from("staff").select("*").eq("teacher_id",ctx.teacher.id).maybeSingle();
     var staffRow = sres.data;
     var body = document.getElementById("pay-body");
@@ -547,6 +638,7 @@
     }
     var pres = await sb.from("payslips").select("*, payroll_runs(period,status)").eq("staff_id",staffRow.id);
     var slips = (pres.data||[]).filter(function(p){ return p.payroll_runs; }).sort(function(a,b){ return a.payroll_runs.period < b.payroll_runs.period ? 1 : -1; });
+    await payslipLoad;
 
     var tab="slip";
     body.innerHTML = '<div class="toolbar" style="margin-top:0;"><div class="seg" id="pay-tabs"><button data-t="slip" class="on-present">Payslip</button><button data-t="p9">P9 Form</button></div></div><div id="pay-view" style="margin-top:14px;"></div>';

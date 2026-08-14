@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>(function(){try{var t=localStorage.getItem("samaji-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <title>Samaji — Teacher Portal</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../assets/styles.css">
 <style>
   #app{display:none;min-height:100vh;}
@@ -121,15 +120,17 @@
 
   <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../assets/vendor/supabase-js-2.112.2.min.js"></script>
 <script src="../assets/config.js"></script>
 <script src="../assets/icons.js"></script>
 <script src="../assets/app.js"></script>
-<script src="../assets/payslip.js"></script>
+<script src="../assets/idb-cache.js"></script>
 <script src="../assets/grading.js"></script>
 <script src="../assets/academics-core.js"></script>
-<script src="../assets/report-card.js"></script>
 <script src="../assets/teacher-modules.js"></script>
+<!-- assets/payslip.js and assets/report-card.js load on demand (Payroll /
+     Report Books tabs) via window.loadScriptOnce — see assets/app.js -->
+
 <script>
   var $ = function(id){ return document.getElementById(id); };
   if (window.SamajiIcons) window.SamajiIcons.fill();
@@ -172,7 +173,15 @@
     }
     CTX.schoolId = prof.school_id;
 
-    var tr = await sb.from("teachers").select("*").eq("auth_user_id", user.id).single();
+    // None of these three depend on each other's result (teacher lookup
+    // only needs user.id, the other two only need CTX.schoolId — both
+    // already known) — fire them together instead of one round trip at a time.
+    var results = await Promise.all([
+      sb.from("teachers").select("*").eq("auth_user_id", user.id).single(),
+      sb.from("schools").select("*").eq("id", CTX.schoolId).single(),
+      sb.rpc("resolve_flags", { p_school: CTX.schoolId })
+    ]);
+    var tr = results[0], sc = results[1], r = results[2];
     if (!tr.data) {
       showMsg("We couldn't find your teacher record. Ask your school admin to check Settings → Teachers.", false);
       $("submit").disabled = false; await sb.auth.signOut(); showLogin(); return;
@@ -183,13 +192,11 @@
     $("auth").style.display = "none"; $("app").style.display = "block";
     startIdleWatch();
 
-    var sc = await sb.from("schools").select("*").eq("id", CTX.schoolId).single();
     CTX.school = sc.data || { name: CTX.schoolId };
     $("school-name").textContent = CTX.school.name || CTX.schoolId;
     $("school-logo").textContent = (CTX.school.name || "S").charAt(0);
     $("teacher-name").textContent = CTX.teacher.name || "Teacher";
 
-    var r = await sb.rpc("resolve_flags", { p_school: CTX.schoolId });
     CTX.flags = r.data || {};
     $("nav-attendance").style.display = CTX.flags["module.attendance"] ? "flex" : "none";
     $("nav-grading").style.display = CTX.flags["module.academics"] ? "flex" : "none";
