@@ -224,9 +224,17 @@ async function handleInitiate(req: Request): Promise<Response> {
 
       return jsonResponse({ success: true, message: "Payment request sent to " + formattedPhone });
     } else {
-      const errMsg = inner.ResponseDescription || inner.errorMessage || data.header?.statusDescription || "Payment request rejected by KCB";
+      // KCB's response didn't match either documented success shape — log
+      // and return the raw body so the real reason is visible (Supabase
+      // function logs, and directly in the caller's error) instead of a
+      // generic message that could mean any of: WSO2-level rejection
+      // (invalid/expired subscription, fault{code,message,description}
+      // shape per the spec doc), a validation error on the payload, or an
+      // HTTP-level failure (res.ok false) with a differently-shaped body.
+      console.error("KCB /stkpush rejected — httpStatus=" + res.status + " body=" + JSON.stringify(data));
+      const errMsg = inner.ResponseDescription || inner.errorMessage || data.header?.statusDescription || data.fault?.description || data.fault?.message || "Payment request rejected by KCB";
       await sb.from("kcb_transactions").update({ status: "failed", result_desc: errMsg }).eq("id", transaction_id);
-      return jsonResponse({ success: false, error: errMsg }, 400);
+      return jsonResponse({ success: false, error: errMsg, debug: { httpStatus: res.status, raw: data } }, 400);
     }
   } catch (err) {
     await sb.from("kcb_transactions").update({ status: "failed", result_desc: String(err) }).eq("id", transaction_id);
