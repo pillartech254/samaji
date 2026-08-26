@@ -5,8 +5,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>(function(){try{var t=localStorage.getItem("samaji-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <title>Samaji — Teacher Portal</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/styles.css">
+<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
+<link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
+<link rel="preload" href="../assets/config.js?v=3" as="script">
+<link rel="stylesheet" href="../assets/styles.css?v=3">
+<!-- Fonts load async — see the note in school/index.html. This portal
+     had no preconnect at all and pulled supabase-js from the bare
+     @supabase/supabase-js@2 path, which makes jsdelivr issue a redirect
+     before it even starts sending the file. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"></noscript>
+
+<script defer src="../assets/vendor/supabase.min.js?v=3"></script>
+<script defer src="../assets/config.js?v=3"></script>
+<script defer src="../assets/icons.js?v=3"></script>
+<script defer src="../assets/app.js?v=3"></script>
+<script defer src="../assets/session.js?v=3"></script>
+<script defer src="../assets/boot-early.js?v=3"></script>
+<script defer src="../assets/payslip.js?v=3"></script>
+<script defer src="../assets/grading.js?v=3"></script>
+<script defer src="../assets/academics-core.js?v=3"></script>
+<script defer src="../assets/report-card.js?v=3"></script>
+<script defer src="../assets/teacher-modules.js?v=3"></script>
 <style>
   #app{display:none;min-height:100vh;}
   .layout{display:flex;min-height:100vh;}
@@ -121,16 +145,8 @@
 
   <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="../assets/config.js"></script>
-<script src="../assets/icons.js"></script>
-<script src="../assets/app.js"></script>
-<script src="../assets/payslip.js"></script>
-<script src="../assets/grading.js"></script>
-<script src="../assets/academics-core.js"></script>
-<script src="../assets/report-card.js"></script>
-<script src="../assets/teacher-modules.js"></script>
 <script>
+document.addEventListener("DOMContentLoaded", function(){
   var $ = function(id){ return document.getElementById(id); };
   if (window.SamajiIcons) window.SamajiIcons.fill();
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
@@ -149,48 +165,79 @@
     $("msg").className = "msg"; $("msg").textContent = "";
   };
 
+  // Button feedback — the label used to stay on "Sign in securely" for
+  // the whole round-trip, so a slow link looked like a dead button.
+  var SIGNIN_LABEL = $("submit").textContent;
+  function busy(on, label){
+    var b = $("submit");
+    b.disabled = on;
+    b.textContent = on ? (label || "Signing in…") : (mode === "signin" ? "Sign in securely" : "Create account");
+    b.classList.toggle("is-busy", !!on);
+  }
+
   $("submit").onclick = async function(){
     if (!sb) { showMsg("Supabase keys not set — edit assets/config.js.", false); return; }
     var email = $("email").value.trim(), password = $("password").value;
     if (!email || !password) { showMsg("Enter an email and password.", false); return; }
-    $("submit").disabled = true;
+    busy(true, mode === "signin" ? "Signing in…" : "Creating account…");
     var res = mode === "signin"
       ? await sb.auth.signInWithPassword({ email: email, password: password })
       : await sb.auth.signUp({ email: email, password: password });
-    if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
-    if (mode === "signup" && !res.data.session) { showMsg("Account created. Confirm email (if required), then sign in.", true); $("submit").disabled = false; return; }
-    enterApp();
+    if (res.error) { showMsg(res.error.message, false); busy(false); return; }
+    if (mode === "signup" && !res.data.session) { showMsg("Account created. Confirm email (if required), then sign in.", true); busy(false); return; }
+    busy(true, "Loading your classes…");
+    enterApp(res.data.user);
   };
 
-  async function enterApp(){
-    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
-    var pr = await sb.from("profiles").select("role, school_id").eq("id", user.id).single();
-    var prof = pr.data;
+  ["email","password"].forEach(function(id){
+    $(id).addEventListener("keydown", function(e){
+      if (e.key === "Enter") { e.preventDefault(); $("submit").click(); }
+    });
+  });
+
+  async function enterApp(user){
+    // Was five sequential round-trips: getUser → profiles → teachers →
+    // schools → resolve_flags. getUser is gone (we already hold the
+    // user), and the remaining four collapse into two parallel pairs.
+    if (!user) { showLogin(); return; }
+
+    var idResults = await Promise.all([
+      sb.from("profiles").select("role, school_id").eq("id", user.id).single(),
+      sb.from("teachers").select("*").eq("auth_user_id", user.id).single()
+    ]);
+
+    var prof = idResults[0].data;
     if (!prof || prof.role !== "teacher" || !prof.school_id) {
       showMsg("This account isn't registered as a teacher. Ask your school admin to add your email in Settings → Teachers, then sign up here with that exact email.", false);
-      $("submit").disabled = false; await sb.auth.signOut(); showLogin(); return;
+      busy(false);
+      try { var p = sb.auth.signOut(); if (p && p.catch) p.catch(function(){}); } catch(e){}
+      showLogin(); return;
     }
     CTX.schoolId = prof.school_id;
 
-    var tr = await sb.from("teachers").select("*").eq("auth_user_id", user.id).single();
-    if (!tr.data) {
+    if (!idResults[1].data) {
       showMsg("We couldn't find your teacher record. Ask your school admin to check Settings → Teachers.", false);
-      $("submit").disabled = false; await sb.auth.signOut(); showLogin(); return;
+      busy(false);
+      try { var p2 = sb.auth.signOut(); if (p2 && p2.catch) p2.catch(function(){}); } catch(e){}
+      showLogin(); return;
     }
-    CTX.teacher = tr.data;
+    CTX.teacher = idResults[1].data;
 
     $("boot").style.display = "none";
     $("auth").style.display = "none"; $("app").style.display = "block";
-    startIdleWatch();
+    session.start();
 
-    var sc = await sb.from("schools").select("*").eq("id", CTX.schoolId).single();
-    CTX.school = sc.data || { name: CTX.schoolId };
+    var rest = await Promise.all([
+      sb.from("schools").select("id, name").eq("id", CTX.schoolId).single(),
+      sb.rpc("resolve_flags", { p_school: CTX.schoolId })
+    ]);
+
+    CTX.school = rest[0].data || { name: CTX.schoolId };
     $("school-name").textContent = CTX.school.name || CTX.schoolId;
     $("school-logo").textContent = (CTX.school.name || "S").charAt(0);
     $("teacher-name").textContent = CTX.teacher.name || "Teacher";
 
-    var r = await sb.rpc("resolve_flags", { p_school: CTX.schoolId });
-    CTX.flags = r.data || {};
+    CTX.flags = rest[1].data || {};
     $("nav-attendance").style.display = CTX.flags["module.attendance"] ? "flex" : "none";
     $("nav-grading").style.display = CTX.flags["module.academics"] ? "flex" : "none";
     $("nav-reportbooks").style.display = CTX.flags["module.academics"] ? "flex" : "none";
@@ -242,57 +289,50 @@
   })();
 
   // ---- session / idle-timeout security (same policy as School Portal) ----
-  var IDLE_MINUTES = 5;
-  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
-  var ACT_KEY = "samaji_teacher_last_active";
-  var idleTimer = null;
+  // Shared idle/session handling — see assets/session.js. Clears the
+  // email and password inputs on every sign-out, and throttles the
+  // activity write that used to hit localStorage on every mousemove.
+  var session = window.SamajiSession({
+    sb: sb,
+    key: "samaji_teacher_last_active",
+    idleMinutes: 5,
+    fields: ["email", "password"],
+    onExpire: function(reason){ doSignOut(reason); }
+  });
 
-  function markActive(){ try{ localStorage.setItem(ACT_KEY, String(Date.now())); }catch(e){} }
-  function lastActive(){ var v = 0; try{ v = parseInt(localStorage.getItem(ACT_KEY)||"0",10); }catch(e){} return v || 0; }
-
-  async function doSignOut(reason){
-    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
-    try{ localStorage.removeItem(ACT_KEY); }catch(e){}
-    try{ await sb.auth.signOut(); }catch(e){}
+  function doSignOut(reason){
+    session.signOut();
     $("app").style.display = "none";
     $("auth").style.display = "flex";
-    $("submit").disabled = false;
+    busy(false);
     $("msg").className = "msg";
     if (reason) showMsg(reason, false);
+    var em = $("email"); if (em) em.focus();
   }
 
-  function startIdleWatch(){
-    markActive();
-    ["mousedown","keydown","scroll","touchstart","click","mousemove"].forEach(function(ev){
-      window.addEventListener(ev, markActive, { passive:true });
-    });
-    if (idleTimer) clearInterval(idleTimer);
-    idleTimer = setInterval(function(){
-      if (Date.now() - lastActive() > IDLE_MS) {
-        doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity.");
-      }
-    }, 15000);
+  function showLogin(){
+    $("boot").style.display = "none";
+    $("auth").style.display = "flex";
+    session.clearCredentials();
   }
-
-  function showLogin(){ $("boot").style.display = "none"; $("auth").style.display = "flex"; }
 
   $("signout").onclick = function(){ doSignOut(); };
 
   (async function(){
     if (!sb) { showLogin(); return; }
-    var s = await sb.auth.getSession();
-    if (!s.data.session) { showLogin(); return; }
-    var la = lastActive();
-    if (la && (Date.now() - la > IDLE_MS)) {
-      try{ localStorage.removeItem(ACT_KEY); }catch(e){}
-      try{ await sb.auth.signOut(); }catch(e){}
+    var sess = await (window.__samajiBoot || sb.auth.getSession().then(function(s){ return s.data.session; }));
+    if (!sess) { showLogin(); return; }
+    if (session.isExpired()) {
+      session.stop();
+      try { var p = sb.auth.signOut(); if (p && p.catch) p.catch(function(){}); } catch(e){}
       showLogin();
       showMsg("Your session expired. Please sign in again.", false);
       return;
     }
-    await enterApp();
+    await enterApp(sess.user);
   })();
 
+});
 </script>
 </body>
 </html>

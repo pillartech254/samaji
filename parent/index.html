@@ -5,11 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>(function(){try{var t=localStorage.getItem("samaji-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <title>Samaji — Parent Portal</title>
-<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/styles.css">
+<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
+<link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
+<link rel="preload" href="../assets/config.js?v=3" as="script">
+<link rel="stylesheet" href="../assets/styles.css?v=3">
+<!-- Fonts load async — see the note in school/index.html. Parents are the
+     most likely to be on a phone and a metered connection, so this portal
+     benefits most from not blocking paint on a third-party stylesheet. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"></noscript>
+
+<script defer src="../assets/vendor/supabase.min.js?v=3"></script>
+<script defer src="../assets/config.js?v=3"></script>
+<script defer src="../assets/app.js?v=3"></script>
+<script defer src="../assets/session.js?v=3"></script>
+<script defer src="../assets/boot-early.js?v=3"></script>
 <style>
   *{box-sizing:border-box;}
   body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:#F4F6F8;color:#1A1D26;}
@@ -322,11 +336,8 @@
 
   <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="../assets/config.js"></script>
-<script src="../assets/app.js"></script>
 <script>
-(function(){
+document.addEventListener("DOMContentLoaded", function(){
   "use strict";
 
   var $ = function(id){ return document.getElementById(id); };
@@ -399,59 +410,57 @@
     return (first + last) || "S";
   }
 
-  // ---- idle timeout (15 min for parents) ----
-  var IDLE_MINUTES = 5;
-  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
-  var ACT_KEY = "samaji_parent_last_active";
-  var idleTimer = null;
-
-  function markActive() { try { localStorage.setItem(ACT_KEY, String(Date.now())); } catch(e){} }
-  function lastActive() { var v = 0; try { v = parseInt(localStorage.getItem(ACT_KEY) || "0", 10); } catch(e){} return v || 0; }
-
-  function startIdleWatch() {
-    markActive();
-    var events = ["mousedown","keydown","scroll","touchstart","click","mousemove"];
-    for (var i = 0; i < events.length; i++) {
-      window.addEventListener(events[i], markActive, { passive: true });
-    }
-    if (idleTimer) clearInterval(idleTimer);
-    idleTimer = setInterval(function(){
-      if (Date.now() - lastActive() > IDLE_MS) {
-        doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity.");
-      }
-    }, 15000);
-  }
+  // ---- idle timeout ----
+  // Shared implementation in assets/session.js. This portal already
+  // cleared its inputs on sign-out, but only on the explicit path —
+  // an expired session at boot left them filled. It also wrote to
+  // localStorage on every mousemove; that's now throttled.
+  var session = window.SamajiSession({
+    sb: sb,
+    key: "samaji_parent_last_active",
+    idleMinutes: 5,
+    fields: ["phone", "password", "pw-new", "pw-confirm"],
+    onExpire: function(reason){ doSignOut(reason); }
+  });
+  function startIdleWatch() { session.start(); }
 
   function doSignOut(reason) {
-    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
-    try { localStorage.removeItem(ACT_KEY); } catch(e){}
-    if (sb) {
-      sb.auth.signOut().then(function(){}).catch(function(){});
-    }
+    session.signOut();
     $("app").style.display = "none";
     $("pw-modal").style.display = "none";
     $("mpesa-modal").style.display = "none";
     showLogin();
     if (reason) showMsg(reason, false);
-    $("phone").value = "";
-    $("password").value = "";
-    $("submit").disabled = false;
+    busy(false);
   }
 
   function showLogin() {
     $("boot").style.display = "none";
     $("auth").style.display = "flex";
     $("app").style.display = "none";
+    session.clearCredentials();
   }
 
   // ---- LOGIN ----
+  // Button feedback — the label used to stay on its idle text for the
+  // whole round-trip (and this portal can make TWO attempts), so a slow
+  // link looked like a dead button and parents tapped it repeatedly.
+  var SIGNIN_LABEL = $("submit").textContent;
+  function busy(on, label){
+    var b = $("submit");
+    if (!b) return;
+    b.disabled = on;
+    b.textContent = on ? (label || "Signing in…") : SIGNIN_LABEL;
+    b.classList.toggle("is-busy", !!on);
+  }
+
   $("submit").onclick = function(){
     if (!sb) { showMsg("Supabase keys not set.", false); return; }
     var phone = sanitizePhone($("phone").value);
     var rawPw = $("password").value;
     if (!phone || !rawPw) { showMsg("Enter your phone number and password.", false); return; }
     var email = phone + "@parent.samaji.app";
-    $("submit").disabled = true;
+    busy(true);
     $("msg").className = "msg";
     $("msg").textContent = "";
 
@@ -466,23 +475,24 @@
     function attempt(i) {
       if (i >= attempts.length) {
         showMsg("Invalid phone number or password.", false);
-        $("submit").disabled = false;
+        busy(false);
         return;
       }
       tryLogin(attempts[i]).then(function(res){
         if (res.error) {
           if (i === attempts.length - 1) {
             showMsg("Invalid phone number or password.", false);
-            $("submit").disabled = false;
+            busy(false);
           } else {
             attempt(i + 1);
           }
         } else {
-          enterApp();
+          busy(true, "Loading…");
+          enterApp(res.data && res.data.user);
         }
       }).catch(function(e){
         showMsg("Network error. Please try again.", false);
-        $("submit").disabled = false;
+        busy(false);
       });
     }
     attempt(0);
@@ -496,34 +506,33 @@
   });
 
   // ---- ENTER APP ----
-  function enterApp() {
-    sb.auth.getUser().then(function(u){
-      USER = u.data.user;
-      if (!USER) { showLogin(); return; }
-      sb.from("parent_accounts").select("*").eq("id", USER.id).single().then(function(pr){
-        PARENT = pr.data;
-        if (!PARENT) {
-          showMsg("No parent account found for this login.", false);
-          $("submit").disabled = false;
-          showLogin();
-          return;
-        }
-        SCHOOL = PARENT.school_id;
-
-        if (PARENT.must_change_password) {
-          $("boot").style.display = "none";
-          $("auth").style.display = "none";
-          $("pw-modal").style.display = "flex";
-          return;
-        }
-
-        finishEnterApp();
-      }).catch(function(){
-        showMsg("Could not load parent account.", false);
-        $("submit").disabled = false;
+  function enterApp(user) {
+    // `user` comes from the sign-in response or the cached session.
+    // This used to open with sb.auth.getUser() — a network round-trip
+    // to /auth/v1/user for a user object we were already holding.
+    USER = user;
+    if (!USER) { showLogin(); return; }
+    sb.from("parent_accounts").select("*").eq("id", USER.id).single().then(function(pr){
+      PARENT = pr.data;
+      if (!PARENT) {
+        showMsg("No parent account found for this login.", false);
+        busy(false);
         showLogin();
-      });
+        return;
+      }
+      SCHOOL = PARENT.school_id;
+
+      if (PARENT.must_change_password) {
+        $("boot").style.display = "none";
+        $("auth").style.display = "none";
+        $("pw-modal").style.display = "flex";
+        return;
+      }
+
+      finishEnterApp();
     }).catch(function(){
+      showMsg("Could not load parent account.", false);
+      busy(false);
       showLogin();
     });
   }
@@ -1338,25 +1347,27 @@
   $("signout").onclick = function(){ doSignOut(); };
 
   // ---- BOOT ----
+  // getSession() was already fired by boot-early.js while the rest of
+  // the page was still downloading, so this normally resolves at once.
   (function(){
     if (!sb) { showLogin(); return; }
-    sb.auth.getSession().then(function(s){
-      if (!s.data.session) { showLogin(); return; }
-      var la = lastActive();
-      if (la && (Date.now() - la > IDLE_MS)) {
-        try { localStorage.removeItem(ACT_KEY); } catch(e){}
-        sb.auth.signOut().then(function(){}).catch(function(){});
+    var boot = window.__samajiBoot || sb.auth.getSession().then(function(s){ return s.data.session; });
+    boot.then(function(sess){
+      if (!sess) { showLogin(); return; }
+      if (session.isExpired()) {
+        session.stop();
+        try { var p = sb.auth.signOut(); if (p && p.catch) p.catch(function(){}); } catch(e){}
         showLogin();
         showMsg("Your session expired. Please sign in again.", false);
         return;
       }
-      enterApp();
+      enterApp(sess.user);
     }).catch(function(){
       showLogin();
     });
   })();
 
-})();
+});
 </script>
 </body>
 </html>
