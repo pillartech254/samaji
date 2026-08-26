@@ -422,33 +422,72 @@ document.addEventListener("DOMContentLoaded", function(){
           '<td class="mono" style="font-size:12px;">' + esc(s.subdomain || "—") + '</td>' +
           '<td>' + esc(s.region || "—") + '</td>' +
           '<td><span class="tag" style="' + stColor + '">' + esc(st) + '</span></td>' +
-          '<td><button class="ghost" data-edit="' + s.id + '" style="font-size:12px;">Edit</button></td>' +
+          '<td style="white-space:nowrap;">' +
+            '<button class="ghost" data-edit="' + s.id + '" style="font-size:12px;">Edit</button> ' +
+            '<button class="ghost" data-del="' + s.id + '" style="font-size:12px;color:#B42318;border-color:#F3D2CD;">Delete</button>' +
+          '</td>' +
           '</tr>';
       });
       tbody.innerHTML = rows || '<tr><td colspan="5" class="muted" style="text-align:center;">No schools.</td></tr>';
       tbody.querySelectorAll("[data-edit]").forEach(function(b){
         b.onclick = function(){ editSchool(b.getAttribute("data-edit")); };
       });
+      tbody.querySelectorAll("[data-del]").forEach(function(b){
+        b.onclick = function(){ deleteSchool(b.getAttribute("data-del")); };
+      });
     }
 
     renderRows();
+
+    // Case-insensitive, whitespace-trimmed — mirrors the check the
+    // database itself enforces (setup-modules-34.sql), so a collision
+    // shows up as the person types instead of only after they click
+    // Save. Not a replacement for that server-side check: this can be
+    // raced or skipped client-side, the trigger is the real guard.
+    function findNameClash(name, excludeId){
+      var norm = name.trim().toLowerCase();
+      if (!norm) return null;
+      var hit = null;
+      SCHOOLS.forEach(function(s){
+        if (hit) return;
+        if (s.id === excludeId) return;
+        if ((s.status || "active") === "archived") return; // name is free to reuse
+        if (s.name.trim().toLowerCase() === norm) hit = s;
+      });
+      return hit;
+    }
 
     document.getElementById("add-school-btn").onclick = function(){
       var m = modal(
         '<h3>Add School</h3>' +
         '<label>School ID (UUID)</label><input id="ns-id" placeholder="Leave blank for auto-generate">' +
         '<label>Name</label><input id="ns-name" placeholder="School name">' +
+        '<div id="ns-name-warn" style="display:none;font-size:12.5px;color:#B42318;margin-top:-10px;margin-bottom:14px;"></div>' +
         '<label>Subdomain</label><input id="ns-sub" placeholder="e.g. greenhill">' +
         '<label>Region</label><input id="ns-region" placeholder="e.g. Nairobi">' +
         '<div class="btn-row"><button class="ghost" id="ns-cancel">Cancel</button><button class="btn-primary btn-sm" id="ns-save">Add School</button></div>'
       );
+      var nameInput = m.q("#ns-name"), warn = m.q("#ns-name-warn"), saveBtn = m.q("#ns-save");
+      function checkName(){
+        var clash = findNameClash(nameInput.value, null);
+        if (clash) {
+          warn.textContent = 'A school named "' + clash.name + '" already exists (' + (clash.subdomain || clash.id) + '). Choose a different name.';
+          warn.style.display = "block";
+          saveBtn.disabled = true;
+        } else {
+          warn.style.display = "none";
+          saveBtn.disabled = false;
+        }
+      }
+      nameInput.addEventListener("input", checkName);
       m.q("#ns-cancel").onclick = function(){ m.close(); };
-      m.q("#ns-save").onclick = async function(){
-        var name = m.q("#ns-name").value.trim();
+      saveBtn.onclick = async function(){
+        var name = nameInput.value.trim();
         var subdomain = m.q("#ns-sub").value.trim();
         var region = m.q("#ns-region").value.trim();
         var sid = m.q("#ns-id").value.trim() || crypto.randomUUID();
         if (!name) { toast("Name is required."); return; }
+        if (findNameClash(name, null)) { toast("A school with that name already exists."); return; }
         var r = await sb.rpc("admin_add_school", { p_id: sid, p_name: name, p_subdomain: subdomain || null, p_region: region || null });
         if (r.error) { toast("Error: " + r.error.message); return; }
         toast("School added.");
@@ -467,16 +506,32 @@ document.addEventListener("DOMContentLoaded", function(){
       var m = modal(
         '<h3>Edit School</h3>' +
         '<label>Name</label><input id="es-name" value="' + esc(school.name) + '">' +
+        '<div id="es-name-warn" style="display:none;font-size:12.5px;color:#B42318;margin-top:-10px;margin-bottom:14px;"></div>' +
         '<label>Region</label><input id="es-region" value="' + esc(school.region || "") + '">' +
         '<label>Status</label><select id="es-status"><option value="active"' + (school.status === "active" ? " selected" : "") + '>Active</option><option value="suspended"' + (school.status === "suspended" ? " selected" : "") + '>Suspended</option><option value="archived"' + (school.status === "archived" ? " selected" : "") + '>Archived</option></select>' +
+        '<p class="muted" style="font-size:12px;margin:6px 0 0;">Suspended or archived signs every admin/teacher/parent login for this school straight back out — data stays intact and it can be switched back to Active any time.</p>' +
         '<div class="btn-row"><button class="ghost" id="es-cancel">Cancel</button><button class="btn-primary btn-sm" id="es-save">Save</button></div>'
       );
+      var nameInput = m.q("#es-name"), warn = m.q("#es-name-warn"), saveBtn = m.q("#es-save");
+      function checkName(){
+        var clash = findNameClash(nameInput.value, school.id);
+        if (clash) {
+          warn.textContent = 'A school named "' + clash.name + '" already exists (' + (clash.subdomain || clash.id) + '). Choose a different name.';
+          warn.style.display = "block";
+          saveBtn.disabled = true;
+        } else {
+          warn.style.display = "none";
+          saveBtn.disabled = false;
+        }
+      }
+      nameInput.addEventListener("input", checkName);
       m.q("#es-cancel").onclick = function(){ m.close(); };
-      m.q("#es-save").onclick = async function(){
-        var name = m.q("#es-name").value.trim();
+      saveBtn.onclick = async function(){
+        var name = nameInput.value.trim();
         var region = m.q("#es-region").value.trim();
         var status = m.q("#es-status").value;
         if (!name) { toast("Name required."); return; }
+        if (findNameClash(name, school.id)) { toast("A school with that name already exists."); return; }
         var r = await sb.from("schools").update({ name: name, region: region, status: status }).eq("id", id);
         if (r.error) { toast("Error: " + r.error.message); return; }
         toast("School updated.");
@@ -485,6 +540,92 @@ document.addEventListener("DOMContentLoaded", function(){
         SCHOOLS = sres.data || [];
         renderRows();
       };
+    }
+
+    // Deleting a school is permanent and cascades through every table
+    // that belongs to it — see setup-modules-34.sql's admin_delete_school
+    // for the exact ordering and what it snapshots first. This modal's
+    // job is making the blast radius visible and requiring the school's
+    // exact name typed back before the button even becomes clickable —
+    // the same pattern GitHub uses for deleting a repo.
+    async function deleteSchool(id){
+      var school = null;
+      SCHOOLS.forEach(function(s){ if (s.id === id) school = s; });
+      if (!school) return;
+
+      var m = modal(
+        '<h3 style="color:#B42318;">Delete ' + esc(school.name) + '</h3>' +
+        '<div style="background:#FEF3F2;border:1px solid #FDA29B;border-radius:10px;padding:12px 14px;font-size:13px;color:#7A271A;margin-bottom:16px;">' +
+          'This permanently deletes <strong>all data</strong> for this school — students, fee and M-Pesa records, exam results, payroll, and every admin/teacher/parent login for it. This cannot be undone.' +
+        '</div>' +
+        '<div id="del-preview" class="muted" style="font-size:13px;margin-bottom:16px;">Checking what will be deleted…</div>' +
+        '<div style="background:#F6F7F9;border-radius:10px;padding:12px 14px;font-size:13px;color:#475467;margin-bottom:18px;">' +
+          'Not sure? <strong>Archiving</strong> instead hides the school and signs everyone out without deleting anything, and can be undone from Edit School any time.' +
+          ' <button class="ghost" id="del-archive-instead" style="font-size:12px;margin-left:6px;">Archive instead</button>' +
+        '</div>' +
+        '<label>Type the school\'s exact name to confirm: <strong>' + esc(school.name) + '</strong></label>' +
+        '<input id="del-confirm-name" placeholder="' + esc(school.name) + '" autocomplete="off">' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-weight:500;">' +
+          '<input type="checkbox" id="del-ack" style="margin-top:3px;width:auto;">' +
+          '<span>I understand this cannot be undone and I have informed the school.</span>' +
+        '</label>' +
+        '<div class="btn-row"><button class="ghost" id="del-cancel">Cancel</button><button class="btn-primary btn-sm" style="background:#B42318;" id="del-confirm" disabled>Permanently Delete</button></div>'
+      );
+
+      var nameInput = m.q("#del-confirm-name"), ack = m.q("#del-ack"), confirmBtn = m.q("#del-confirm");
+      function refreshEnabled(){
+        confirmBtn.disabled = !(ack.checked && nameInput.value.trim() === school.name.trim());
+      }
+      nameInput.addEventListener("input", refreshEnabled);
+      ack.addEventListener("change", refreshEnabled);
+
+      m.q("#del-cancel").onclick = function(){ m.close(); };
+      m.q("#del-archive-instead").onclick = async function(){
+        var r = await sb.from("schools").update({ status: "archived" }).eq("id", id);
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast(school.name + " archived.");
+        m.close();
+        var sres = await sb.from("schools").select("*").order("name");
+        SCHOOLS = sres.data || [];
+        renderRows();
+      };
+
+      confirmBtn.onclick = async function(){
+        confirmBtn.disabled = true; confirmBtn.textContent = "Deleting…";
+        var r = await sb.rpc("admin_delete_school", { p_id: id, p_confirm_name: nameInput.value.trim() });
+        if (r.error) {
+          toast("Error: " + r.error.message);
+          confirmBtn.disabled = false; confirmBtn.textContent = "Permanently Delete";
+          return;
+        }
+        toast(school.name + " permanently deleted.");
+        m.close();
+        var sres = await sb.from("schools").select("*").order("name");
+        SCHOOLS = sres.data || [];
+        renderRows();
+      };
+
+      // Blast-radius preview, fetched after the modal is already
+      // showing so the confirm/cancel buttons aren't blocked on it.
+      var pr = await sb.rpc("admin_school_deletion_preview", { p_id: id });
+      var box = m.q("#del-preview");
+      if (box) {
+        if (pr.error) {
+          box.textContent = "Couldn't load a preview — you can still proceed.";
+        } else {
+          var counts = pr.data || {};
+          var parts = Object.keys(counts).map(function(k){
+            var label = { students:"students", teachers:"teacher records", staff:"staff records",
+              fee_payments:"fee payments", fee_invoices:"fee invoices", mpesa_transactions:"M-Pesa transactions",
+              exams:"exams", sms_messages:"SMS messages", library_books:"library books",
+              transport_vehicles:"transport vehicles", payroll_runs:"payroll runs", logins:"admin/teacher/parent logins" }[k] || k;
+            return counts[k] + " " + label;
+          });
+          box.innerHTML = parts.length
+            ? "This will delete: <strong>" + esc(parts.join(", ")) + "</strong>."
+            : "No student, financial, or staff records found for this school — safe to delete.";
+        }
+      }
     }
   }
 

@@ -228,11 +228,20 @@ document.addEventListener("DOMContentLoaded", function(){
     session.start();
 
     var rest = await Promise.all([
-      sb.from("schools").select("id, name").eq("id", CTX.schoolId).single(),
+      sb.from("schools").select("id, name, status").eq("id", CTX.schoolId).single(),
       sb.rpc("resolve_flags", { p_school: CTX.schoolId })
     ]);
 
     CTX.school = rest[0].data || { name: CTX.schoolId };
+
+    // See the matching note in school/index.html: this portal never
+    // looked at the school's own status, so archiving/suspending a
+    // school in the admin console didn't actually lock teachers out.
+    if (rest[0].data && rest[0].data.status && rest[0].data.status !== "active") {
+      doSignOut("This school's account is currently " + rest[0].data.status + ". Contact your school administrator or Samaji support.");
+      return;
+    }
+
     $("school-name").textContent = CTX.school.name || CTX.schoolId;
     $("school-logo").textContent = (CTX.school.name || "S").charAt(0);
     $("teacher-name").textContent = CTX.teacher.name || "Teacher";

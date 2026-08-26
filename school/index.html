@@ -224,12 +224,25 @@ document.addEventListener("DOMContentLoaded", function(){
     // subscriptions, then resolve_flags — even though none depends on
     // another. Three round-trips became one.
     var results = await Promise.all([
-      sb.from("schools").select("id, name").eq("id", SCHOOL).single(),
+      sb.from("schools").select("id, name, status").eq("id", SCHOOL).single(),
       sb.from("subscriptions").select("*, packages(name)").eq("school_id", SCHOOL).limit(1),
       sb.rpc("resolve_flags", { p_school: SCHOOL })
     ]);
 
     var school = results[0].data;
+
+    // Setting a school to "archived"/"suspended" in the admin console
+    // used to change nothing here — this portal never looked at the
+    // school's own status, only the caller's profile. The app shell
+    // is already painted above (so an active-school login doesn't
+    // wait on this round-trip), so a blocked login means immediately
+    // undoing that instead of never showing it — a brief flash for
+    // the rare suspended case, at no cost to the common one.
+    if (!school || (school.status && school.status !== "active")) {
+      doSignOut("This school's account is currently " + ((school && school.status) || "unavailable") + ". Contact your school administrator or Samaji support.");
+      return;
+    }
+
     $("school-name").textContent = (school && school.name) || SCHOOL;
     $("school-logo").textContent = ((school && school.name) || "S").charAt(0);
 

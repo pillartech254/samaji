@@ -522,14 +522,34 @@ document.addEventListener("DOMContentLoaded", function(){
       }
       SCHOOL = PARENT.school_id;
 
-      if (PARENT.must_change_password) {
-        $("boot").style.display = "none";
-        $("auth").style.display = "none";
-        $("pw-modal").style.display = "flex";
-        return;
-      }
+      // Checked here, before EITHER the force-password-change modal or
+      // the dashboard — setting a school to "archived"/"suspended" in
+      // the admin console used to do nothing for this portal, since it
+      // never looked at the school's own status. Worth the one extra
+      // round-trip on the login path to keep both branches behind the
+      // same gate (letting a suspended school's parent through to set
+      // a new password first, then blocking them, would be a strange
+      // half-blocked state).
+      sb.from("schools").select("id, name, status").eq("id", SCHOOL).single().then(function(sc){
+        var school = sc.data;
+        if (!school || (school.status && school.status !== "active")) {
+          doSignOut("This school's account is currently " + ((school && school.status) || "unavailable") + ". Contact your school administrator or Samaji support.");
+          return;
+        }
 
-      finishEnterApp();
+        if (PARENT.must_change_password) {
+          $("boot").style.display = "none";
+          $("auth").style.display = "none";
+          $("pw-modal").style.display = "flex";
+          return;
+        }
+
+        finishEnterApp(school);
+      }).catch(function(){
+        showMsg("Could not verify school status. Please try again.", false);
+        busy(false);
+        showLogin();
+      });
     }).catch(function(){
       showMsg("Could not load parent account.", false);
       busy(false);
@@ -537,7 +557,7 @@ document.addEventListener("DOMContentLoaded", function(){
     });
   }
 
-  function finishEnterApp() {
+  function finishEnterApp(school) {
     $("boot").style.display = "none";
     $("auth").style.display = "none";
     $("pw-modal").style.display = "none";
@@ -546,13 +566,20 @@ document.addEventListener("DOMContentLoaded", function(){
 
     $("parent-name").textContent = PARENT.full_name || "";
 
-    sb.from("schools").select("id, name, subdomain").eq("id", SCHOOL).single().then(function(sc){
-      var school = sc.data;
-      if (school) {
-        $("school-name").textContent = school.name || SCHOOL;
-        $("school-logo").textContent = (school.name || "S").charAt(0).toUpperCase();
-      }
-    });
+    if (school) {
+      $("school-name").textContent = school.name || SCHOOL;
+      $("school-logo").textContent = (school.name || "S").charAt(0).toUpperCase();
+    } else {
+      // Reached directly from the password-change modal's own submit
+      // handler (see below), which doesn't already have the school row.
+      sb.from("schools").select("id, name, subdomain").eq("id", SCHOOL).single().then(function(sc){
+        var s = sc.data;
+        if (s) {
+          $("school-name").textContent = s.name || SCHOOL;
+          $("school-logo").textContent = (s.name || "S").charAt(0).toUpperCase();
+        }
+      });
+    }
 
     loadChildren();
   }
