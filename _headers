@@ -1,11 +1,35 @@
-# Assets have no cache-busting (no build step, no content-hashed
-# filenames) — every deploy overwrites the same URL in place. A long
-# max-age here means browsers keep serving pre-fix JS/CSS for up to a
-# day after a bug is fixed and deployed, with no way to tell except a
-# hard refresh. must-revalidate makes the browser check on every load
-# instead: cheap (a 304) when nothing changed, instant when it did.
+# ---------------------------------------------------------------
+#  Asset caching
+#
+#  This used to be `max-age=0, must-revalidate` because the asset
+#  filenames had no cache-busting — a long max-age would have left
+#  browsers serving stale JS after a deploy. The cost was that
+#  EVERY page load made a conditional request for every asset:
+#  ~10 files x one round-trip each, before any of them could run.
+#  On a Kenyan mobile connection that alone was most of a second,
+#  paid again on every single navigation.
+#
+#  The portals now load their assets with a `?v=N` query string
+#  (see the <script defer> block in each index.html), so a deploy
+#  changes the URL and the browser fetches fresh automatically.
+#  That makes it safe to cache aggressively.
+#
+#  >>> WHEN YOU CHANGE ANYTHING IN /assets/, BUMP THE ?v= NUMBER
+#  >>> IN ALL FOUR index.html FILES. Otherwise returning users keep
+#  >>> the old file for a year.
+# ---------------------------------------------------------------
 /assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# HTML must always be revalidated — it carries the ?v= numbers that
+# invalidate everything else, so a stale document would pin stale
+# assets. A 304 here is cheap; being wrong is not.
+/
   Cache-Control: public, max-age=0, must-revalidate
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+
 /*
   X-Frame-Options: SAMEORIGIN
   Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff

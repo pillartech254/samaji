@@ -403,3 +403,30 @@ table.data tbody tr:hover td{background:var(--surface-2);}
 .p9-table th,.p9-table td{border:1px solid var(--line-2);padding:5px 7px;text-align:right;white-space:nowrap;}
 .p9-table th:first-child,.p9-table td:first-child{text-align:left;}
 .p9-table tfoot td{font-weight:700;background:#F9FAFB;}
+
+/* ============================================================
+   Sign-in button busy state.
+   The login button used to only go `disabled` during the auth
+   round-trip — same label, no motion — so on a slow connection
+   it read as a dead button and people clicked it again. The
+   portals now swap the label ("Signing in…", "Loading your
+   school…") and add .is-busy for a spinner.
+   ============================================================ */
+.signin.is-busy,.btn.is-busy,.btn-primary.is-busy{position:relative;padding-left:34px;cursor:progress;opacity:.9;}
+.signin.is-busy::before,.btn.is-busy::before,.btn-primary.is-busy::before{
+  content:"";position:absolute;left:14px;top:50%;width:14px;height:14px;margin-top:-7px;
+  border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;
+  animation:samaji-spin .6s linear infinite;
+}
+@keyframes samaji-spin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion:reduce){
+  .signin.is-busy::before,.btn.is-busy::before,.btn-primary.is-busy::before{animation-duration:1.6s;}
+}
+
+/* The boot splash sits over everything until the session resolves.
+   Give it a gentle pulse so a slow cold start reads as "working"
+   rather than "frozen". */
+#boot{transition:opacity .18s ease;}
+#boot > div{animation:samaji-pulse 1.4s ease-in-out infinite;}
+@keyframes samaji-pulse{0%,100%{opacity:.55;}50%{opacity:.9;}}
+@media (prefers-reduced-motion:reduce){#boot > div{animation:none;}}

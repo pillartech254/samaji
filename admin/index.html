@@ -5,11 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>(function(){try{var t=localStorage.getItem("samaji-theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <title>Samaji — Admin Console</title>
-<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/styles.css">
+<link rel="preconnect" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co" crossorigin>
+<link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
+<link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
+<link rel="preload" href="../assets/config.js?v=3" as="script">
+<link rel="stylesheet" href="../assets/styles.css?v=3">
+<!-- Fonts load async — see the note in school/index.html. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"></noscript>
+
+<script defer src="../assets/vendor/supabase.min.js?v=3"></script>
+<script defer src="../assets/config.js?v=3"></script>
+<script defer src="../assets/icons.js?v=3"></script>
+<script defer src="../assets/app.js?v=3"></script>
+<script defer src="../assets/session.js?v=3"></script>
+<script defer src="../assets/boot-early.js?v=3"></script>
 <style>
   #app{display:none;min-height:100vh;}
   .layout{display:flex;min-height:100vh;}
@@ -144,12 +157,8 @@
 
   <div id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="../assets/config.js"></script>
-<script src="../assets/icons.js"></script>
-<script src="../assets/app.js"></script>
 <script>
-(function(){
+document.addEventListener("DOMContentLoaded", function(){
   "use strict";
   var $ = function(id){ return document.getElementById(id); };
   if (window.SamajiIcons) window.SamajiIcons.fill();
@@ -226,32 +235,52 @@
   $("nav-settings").onclick = function(){ showSettings(); };
 
   // ---- Auth ----
+  // Button feedback — the label used to stay on its idle text for the
+  // whole round-trip, so a slow link looked like a dead button.
+  var SIGNIN_LABEL = $("submit").textContent;
+  function busy(on, label){
+    var b = $("submit");
+    if (!b) return;
+    b.disabled = on;
+    b.textContent = on ? (label || "Signing in…") : SIGNIN_LABEL;
+    b.classList.toggle("is-busy", !!on);
+  }
+
   $("submit").onclick = async function(){
     if (!sb) { showMsg("Supabase keys not set.", false); return; }
     var email = $("email").value.trim(), password = $("password").value;
     if (!email || !password) { showMsg("Enter an email and password.", false); return; }
-    $("submit").disabled = true;
+    busy(true);
     try {
       var res = await sb.auth.signInWithPassword({ email: email, password: password });
-      if (res.error) { showMsg(res.error.message, false); $("submit").disabled = false; return; }
+      if (res.error) { showMsg(res.error.message, false); busy(false); return; }
       // If this account has two-factor enabled, the session starts at
       // aal1 even with a correct password — nextLevel tells us aal2 is
       // required before treating this as a real sign-in.
       var levels = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
       if (!levels.error && levels.data && levels.data.nextLevel === "aal2" && levels.data.currentLevel !== "aal2") {
+        busy(false);
         await showMfaChallenge();
         return;
       }
-      enterApp();
-    } catch (err) { showMsg(String(err), false); $("submit").disabled = false; }
+      busy(true, "Loading console…");
+      enterApp(res.data.user);
+    } catch (err) { showMsg(String(err), false); busy(false); }
   };
+
+  ["email","password"].forEach(function(id){
+    var el = $(id);
+    if (el) el.addEventListener("keydown", function(e){
+      if (e.key === "Enter") { e.preventDefault(); $("submit").click(); }
+    });
+  });
 
   async function showMfaChallenge(){
     var f = await sb.auth.mfa.listFactors();
     var factor = f.data && f.data.totp && f.data.totp.filter(function(x){ return x.status === "verified"; })[0];
-    if (!factor) { enterApp(); return; }
+    if (!factor) { enterApp(null); return; }
     var ch = await sb.auth.mfa.challenge({ factorId: factor.id });
-    if (ch.error) { showMsg(ch.error.message, false); $("submit").disabled = false; return; }
+    if (ch.error) { showMsg(ch.error.message, false); busy(false); return; }
     var challengeId = ch.data.id;
     document.querySelector(".login-inner").innerHTML =
       '<div class="eyebrow">Admin Console</div><h1>Verification code</h1>' +
@@ -267,28 +296,34 @@
       if (!/^\d{6}$/.test(code)) { showCodeMsg("Enter the 6-digit code."); return; }
       var vr = await sb.auth.mfa.verify({ factorId: factor.id, challengeId: challengeId, code: code });
       if (vr.error) { showCodeMsg(vr.error.message); return; }
-      enterApp();
+      enterApp(vr.data && vr.data.user);
     }
     document.getElementById("mfa-login-submit").onclick = submitCode;
     codeInput.onkeydown = function(e){ if (e.key === "Enter") submitCode(); };
   }
 
-  async function enterApp(){
-    var u = await sb.auth.getUser(); var user = u.data.user; if (!user) { showLogin(); return; }
+  async function enterApp(user){
+    // Was: `await sb.auth.getUser()` — a network round-trip for a user
+    // object the caller already has. Then the profile lookup ran on its
+    // own before the reference data, even though nothing in that batch
+    // depends on the role. All four queries now go out together.
+    if (!user) {
+      var u = await sb.auth.getUser();
+      user = u.data && u.data.user;
+      if (!user) { showLogin(); return; }
+    }
     $("boot").style.display = "none";
     $("auth").style.display = "none"; $("app").style.display = "block";
-    startIdleWatch();
+    session.start();
 
-    // verify role
-    var prof = await sb.from("profiles").select("role").eq("id", user.id).maybeSingle();
-    var role = prof.data ? prof.data.role : "unknown";
-
-    // load reference data in parallel
     var refResults = await Promise.all([
       sb.from("schools").select("*").order("name"),
       sb.from("modules").select("*").eq("active", true),
-      sb.from("packages").select("*").eq("active", true)
+      sb.from("packages").select("*").eq("active", true),
+      sb.from("profiles").select("role").eq("id", user.id).maybeSingle()
     ]);
+    var prof = refResults[3];
+    var role = prof.data ? prof.data.role : "unknown";
     SCHOOLS = refResults[0].data || [];
     MODULES = (refResults[1].data || []).sort(function(a, b){ var o = {core:0,standard:1,advanced:2}; return (o[a.tier] - o[b.tier]) || a.name.localeCompare(b.name); });
     PACKAGES = refResults[2].data || [];
@@ -387,33 +422,72 @@
           '<td class="mono" style="font-size:12px;">' + esc(s.subdomain || "—") + '</td>' +
           '<td>' + esc(s.region || "—") + '</td>' +
           '<td><span class="tag" style="' + stColor + '">' + esc(st) + '</span></td>' +
-          '<td><button class="ghost" data-edit="' + s.id + '" style="font-size:12px;">Edit</button></td>' +
+          '<td style="white-space:nowrap;">' +
+            '<button class="ghost" data-edit="' + s.id + '" style="font-size:12px;">Edit</button> ' +
+            '<button class="ghost" data-del="' + s.id + '" style="font-size:12px;color:#B42318;border-color:#F3D2CD;">Delete</button>' +
+          '</td>' +
           '</tr>';
       });
       tbody.innerHTML = rows || '<tr><td colspan="5" class="muted" style="text-align:center;">No schools.</td></tr>';
       tbody.querySelectorAll("[data-edit]").forEach(function(b){
         b.onclick = function(){ editSchool(b.getAttribute("data-edit")); };
       });
+      tbody.querySelectorAll("[data-del]").forEach(function(b){
+        b.onclick = function(){ deleteSchool(b.getAttribute("data-del")); };
+      });
     }
 
     renderRows();
+
+    // Case-insensitive, whitespace-trimmed — mirrors the check the
+    // database itself enforces (setup-modules-34.sql), so a collision
+    // shows up as the person types instead of only after they click
+    // Save. Not a replacement for that server-side check: this can be
+    // raced or skipped client-side, the trigger is the real guard.
+    function findNameClash(name, excludeId){
+      var norm = name.trim().toLowerCase();
+      if (!norm) return null;
+      var hit = null;
+      SCHOOLS.forEach(function(s){
+        if (hit) return;
+        if (s.id === excludeId) return;
+        if ((s.status || "active") === "archived") return; // name is free to reuse
+        if (s.name.trim().toLowerCase() === norm) hit = s;
+      });
+      return hit;
+    }
 
     document.getElementById("add-school-btn").onclick = function(){
       var m = modal(
         '<h3>Add School</h3>' +
         '<label>School ID (UUID)</label><input id="ns-id" placeholder="Leave blank for auto-generate">' +
         '<label>Name</label><input id="ns-name" placeholder="School name">' +
+        '<div id="ns-name-warn" style="display:none;font-size:12.5px;color:#B42318;margin-top:-10px;margin-bottom:14px;"></div>' +
         '<label>Subdomain</label><input id="ns-sub" placeholder="e.g. greenhill">' +
         '<label>Region</label><input id="ns-region" placeholder="e.g. Nairobi">' +
         '<div class="btn-row"><button class="ghost" id="ns-cancel">Cancel</button><button class="btn-primary btn-sm" id="ns-save">Add School</button></div>'
       );
+      var nameInput = m.q("#ns-name"), warn = m.q("#ns-name-warn"), saveBtn = m.q("#ns-save");
+      function checkName(){
+        var clash = findNameClash(nameInput.value, null);
+        if (clash) {
+          warn.textContent = 'A school named "' + clash.name + '" already exists (' + (clash.subdomain || clash.id) + '). Choose a different name.';
+          warn.style.display = "block";
+          saveBtn.disabled = true;
+        } else {
+          warn.style.display = "none";
+          saveBtn.disabled = false;
+        }
+      }
+      nameInput.addEventListener("input", checkName);
       m.q("#ns-cancel").onclick = function(){ m.close(); };
-      m.q("#ns-save").onclick = async function(){
-        var name = m.q("#ns-name").value.trim();
+      saveBtn.onclick = async function(){
+        var name = nameInput.value.trim();
         var subdomain = m.q("#ns-sub").value.trim();
         var region = m.q("#ns-region").value.trim();
         var sid = m.q("#ns-id").value.trim() || crypto.randomUUID();
         if (!name) { toast("Name is required."); return; }
+        if (findNameClash(name, null)) { toast("A school with that name already exists."); return; }
         var r = await sb.rpc("admin_add_school", { p_id: sid, p_name: name, p_subdomain: subdomain || null, p_region: region || null });
         if (r.error) { toast("Error: " + r.error.message); return; }
         toast("School added.");
@@ -432,16 +506,32 @@
       var m = modal(
         '<h3>Edit School</h3>' +
         '<label>Name</label><input id="es-name" value="' + esc(school.name) + '">' +
+        '<div id="es-name-warn" style="display:none;font-size:12.5px;color:#B42318;margin-top:-10px;margin-bottom:14px;"></div>' +
         '<label>Region</label><input id="es-region" value="' + esc(school.region || "") + '">' +
         '<label>Status</label><select id="es-status"><option value="active"' + (school.status === "active" ? " selected" : "") + '>Active</option><option value="suspended"' + (school.status === "suspended" ? " selected" : "") + '>Suspended</option><option value="archived"' + (school.status === "archived" ? " selected" : "") + '>Archived</option></select>' +
+        '<p class="muted" style="font-size:12px;margin:6px 0 0;">Suspended or archived signs every admin/teacher/parent login for this school straight back out — data stays intact and it can be switched back to Active any time.</p>' +
         '<div class="btn-row"><button class="ghost" id="es-cancel">Cancel</button><button class="btn-primary btn-sm" id="es-save">Save</button></div>'
       );
+      var nameInput = m.q("#es-name"), warn = m.q("#es-name-warn"), saveBtn = m.q("#es-save");
+      function checkName(){
+        var clash = findNameClash(nameInput.value, school.id);
+        if (clash) {
+          warn.textContent = 'A school named "' + clash.name + '" already exists (' + (clash.subdomain || clash.id) + '). Choose a different name.';
+          warn.style.display = "block";
+          saveBtn.disabled = true;
+        } else {
+          warn.style.display = "none";
+          saveBtn.disabled = false;
+        }
+      }
+      nameInput.addEventListener("input", checkName);
       m.q("#es-cancel").onclick = function(){ m.close(); };
-      m.q("#es-save").onclick = async function(){
-        var name = m.q("#es-name").value.trim();
+      saveBtn.onclick = async function(){
+        var name = nameInput.value.trim();
         var region = m.q("#es-region").value.trim();
         var status = m.q("#es-status").value;
         if (!name) { toast("Name required."); return; }
+        if (findNameClash(name, school.id)) { toast("A school with that name already exists."); return; }
         var r = await sb.from("schools").update({ name: name, region: region, status: status }).eq("id", id);
         if (r.error) { toast("Error: " + r.error.message); return; }
         toast("School updated.");
@@ -450,6 +540,92 @@
         SCHOOLS = sres.data || [];
         renderRows();
       };
+    }
+
+    // Deleting a school is permanent and cascades through every table
+    // that belongs to it — see setup-modules-34.sql's admin_delete_school
+    // for the exact ordering and what it snapshots first. This modal's
+    // job is making the blast radius visible and requiring the school's
+    // exact name typed back before the button even becomes clickable —
+    // the same pattern GitHub uses for deleting a repo.
+    async function deleteSchool(id){
+      var school = null;
+      SCHOOLS.forEach(function(s){ if (s.id === id) school = s; });
+      if (!school) return;
+
+      var m = modal(
+        '<h3 style="color:#B42318;">Delete ' + esc(school.name) + '</h3>' +
+        '<div style="background:#FEF3F2;border:1px solid #FDA29B;border-radius:10px;padding:12px 14px;font-size:13px;color:#7A271A;margin-bottom:16px;">' +
+          'This permanently deletes <strong>all data</strong> for this school — students, fee and M-Pesa records, exam results, payroll, and every admin/teacher/parent login for it. This cannot be undone.' +
+        '</div>' +
+        '<div id="del-preview" class="muted" style="font-size:13px;margin-bottom:16px;">Checking what will be deleted…</div>' +
+        '<div style="background:#F6F7F9;border-radius:10px;padding:12px 14px;font-size:13px;color:#475467;margin-bottom:18px;">' +
+          'Not sure? <strong>Archiving</strong> instead hides the school and signs everyone out without deleting anything, and can be undone from Edit School any time.' +
+          ' <button class="ghost" id="del-archive-instead" style="font-size:12px;margin-left:6px;">Archive instead</button>' +
+        '</div>' +
+        '<label>Type the school\'s exact name to confirm: <strong>' + esc(school.name) + '</strong></label>' +
+        '<input id="del-confirm-name" placeholder="' + esc(school.name) + '" autocomplete="off">' +
+        '<label style="display:flex;align-items:flex-start;gap:8px;margin-top:14px;font-weight:500;">' +
+          '<input type="checkbox" id="del-ack" style="margin-top:3px;width:auto;">' +
+          '<span>I understand this cannot be undone and I have informed the school.</span>' +
+        '</label>' +
+        '<div class="btn-row"><button class="ghost" id="del-cancel">Cancel</button><button class="btn-primary btn-sm" style="background:#B42318;" id="del-confirm" disabled>Permanently Delete</button></div>'
+      );
+
+      var nameInput = m.q("#del-confirm-name"), ack = m.q("#del-ack"), confirmBtn = m.q("#del-confirm");
+      function refreshEnabled(){
+        confirmBtn.disabled = !(ack.checked && nameInput.value.trim() === school.name.trim());
+      }
+      nameInput.addEventListener("input", refreshEnabled);
+      ack.addEventListener("change", refreshEnabled);
+
+      m.q("#del-cancel").onclick = function(){ m.close(); };
+      m.q("#del-archive-instead").onclick = async function(){
+        var r = await sb.from("schools").update({ status: "archived" }).eq("id", id);
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast(school.name + " archived.");
+        m.close();
+        var sres = await sb.from("schools").select("*").order("name");
+        SCHOOLS = sres.data || [];
+        renderRows();
+      };
+
+      confirmBtn.onclick = async function(){
+        confirmBtn.disabled = true; confirmBtn.textContent = "Deleting…";
+        var r = await sb.rpc("admin_delete_school", { p_id: id, p_confirm_name: nameInput.value.trim() });
+        if (r.error) {
+          toast("Error: " + r.error.message);
+          confirmBtn.disabled = false; confirmBtn.textContent = "Permanently Delete";
+          return;
+        }
+        toast(school.name + " permanently deleted.");
+        m.close();
+        var sres = await sb.from("schools").select("*").order("name");
+        SCHOOLS = sres.data || [];
+        renderRows();
+      };
+
+      // Blast-radius preview, fetched after the modal is already
+      // showing so the confirm/cancel buttons aren't blocked on it.
+      var pr = await sb.rpc("admin_school_deletion_preview", { p_id: id });
+      var box = m.q("#del-preview");
+      if (box) {
+        if (pr.error) {
+          box.textContent = "Couldn't load a preview — you can still proceed.";
+        } else {
+          var counts = pr.data || {};
+          var parts = Object.keys(counts).map(function(k){
+            var label = { students:"students", teachers:"teacher records", staff:"staff records",
+              fee_payments:"fee payments", fee_invoices:"fee invoices", mpesa_transactions:"M-Pesa transactions",
+              exams:"exams", sms_messages:"SMS messages", library_books:"library books",
+              transport_vehicles:"transport vehicles", payroll_runs:"payroll runs", logins:"admin/teacher/parent logins" }[k] || k;
+            return counts[k] + " " + label;
+          });
+          box.innerHTML = parts.length
+            ? "This will delete: <strong>" + esc(parts.join(", ")) + "</strong>."
+            : "No student, financial, or staff records found for this school — safe to delete.";
+        }
+      }
     }
   }
 
@@ -1174,49 +1350,45 @@
   })();
 
   // ---- Session / idle-timeout security ----
-  var IDLE_MINUTES = 5;
-  var IDLE_MS = IDLE_MINUTES * 60 * 1000;
-  var ACT_KEY = "samaji_admin_last_active";
-  var idleTimer = null;
-  function markActive(){ try { localStorage.setItem(ACT_KEY, String(Date.now())); } catch(e){} }
-  function lastActive(){ var v = 0; try { v = parseInt(localStorage.getItem(ACT_KEY) || "0", 10); } catch(e){} return v || 0; }
+  // Shared implementation in assets/session.js. Clears the credential
+  // inputs on sign-out (they used to survive an idle timeout) and
+  // throttles the activity write that previously hit localStorage on
+  // every mousemove.
+  var session = window.SamajiSession({
+    sb: sb,
+    key: "samaji_admin_last_active",
+    idleMinutes: 5,
+    fields: ["email", "password"],
+    onExpire: function(reason){ doSignOut(reason); }
+  });
 
-  async function doSignOut(reason){
-    if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
-    try { localStorage.removeItem(ACT_KEY); } catch(e){}
-    try { await sb.auth.signOut(); } catch(e){}
+  function doSignOut(reason){
+    session.signOut();
     $("app").style.display = "none"; $("auth").style.display = "flex";
-    $("submit").disabled = false; $("msg").className = "msg";
+    busy(false); $("msg").className = "msg";
     if (reason) showMsg(reason, false);
+    var em = $("email"); if (em) em.focus();
   }
 
-  function startIdleWatch(){
-    markActive();
-    ["mousedown","keydown","scroll","touchstart","click","mousemove"].forEach(function(ev){
-      window.addEventListener(ev, markActive, { passive: true });
-    });
-    if (idleTimer) clearInterval(idleTimer);
-    idleTimer = setInterval(function(){
-      if (Date.now() - lastActive() > IDLE_MS) { doSignOut("You were signed out after " + IDLE_MINUTES + " minutes of inactivity."); }
-    }, 15000);
+  function showLogin(){
+    $("boot").style.display = "none";
+    $("auth").style.display = "flex";
+    session.clearCredentials();
   }
-
-  function showLogin(){ $("boot").style.display = "none"; $("auth").style.display = "flex"; }
 
   // ---- Boot ----
   (async function(){
     if (!sb) { showLogin(); return; }
-    var s = await sb.auth.getSession();
-    if (!s.data.session) { showLogin(); return; }
-    var la = lastActive();
-    if (la && (Date.now() - la > IDLE_MS)) {
-      try { localStorage.removeItem(ACT_KEY); } catch(e){}
-      try { await sb.auth.signOut(); } catch(e){}
+    var sess = await (window.__samajiBoot || sb.auth.getSession().then(function(s){ return s.data.session; }));
+    if (!sess) { showLogin(); return; }
+    if (session.isExpired()) {
+      session.stop();
+      try { var p = sb.auth.signOut(); if (p && p.catch) p.catch(function(){}); } catch(e){}
       showLogin(); showMsg("Your session expired. Please sign in again.", false); return;
     }
-    await enterApp();
+    await enterApp(sess.user);
   })();
-})();
+});
 </script>
 </body>
 </html>

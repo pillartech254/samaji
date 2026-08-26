@@ -87,14 +87,26 @@
   //  Cache layer — instant page switches + login preload
   // ====================================================
   var SamajiCache=(function(){
-    var store={}, TTL=90000;
+    var store={}, inflight={}, TTL=90000;
     function k(table,sel){ return table+"|"+(sel||"*"); }
     async function get(sb, schoolId, table, sel){
       var key=k(table,sel), hit=store[key];
       if(hit && Date.now()-hit.t<TTL) return hit.data;
-      var r=await sb.from(table).select(sel||"*").eq("school_id",schoolId);
-      store[key]={t:Date.now(), data:r.data||[]};
-      return store[key].data;
+      // Dashboard load calls preload() (background warm-up, not awaited)
+      // and then immediately asks for the same tables itself for the
+      // first render. Both used to race past the check above before
+      // either had written to `store`, so each fired its own query for
+      // the same rows. Sharing the in-flight promise for a key fixes
+      // that without forcing the dashboard to wait on tables it doesn't
+      // need yet (e.g. dormitories, fee_structures).
+      if (inflight[key]) return inflight[key];
+      var p = sb.from(table).select(sel||"*").eq("school_id",schoolId).then(function(r){
+        store[key]={t:Date.now(), data:r.data||[]};
+        delete inflight[key];
+        return store[key].data;
+      }).catch(function(e){ delete inflight[key]; throw e; });
+      inflight[key]=p;
+      return p;
     }
     return {
       get:get,
