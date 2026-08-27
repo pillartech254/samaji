@@ -1071,7 +1071,15 @@
         var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
         for(var i=1;i<lines.length;i++){
 
-          var cells=lines[i].split(",").map(function(c){return c.trim();});
+          // A CSV field that starts with a bare apostrophe ('+254...,
+          // '0712345678) is Excel's own "force text" convention — it
+          // shows that way when the file was prepared in Excel and a
+          // long digit string (a phone number, an admission number)
+          // got auto-detected as a number and needed protecting from
+          // being mangled into scientific notation. Strip it here so
+          // it never ends up stored as a literal leading character in
+          // the actual data.
+          var cells=lines[i].split(",").map(function(c){ c=c.trim(); if(c.charAt(0)==="'") c=c.slice(1); return c; });
           var row={}; header.forEach(function(h,idx){ row[h]=cells[idx]||""; });
           if(!row.first_name||!row.last_name){ errors.push("Row "+(i+1)+": missing first_name/last_name — skipped."); continue; }
 
@@ -1197,7 +1205,15 @@
         var rows=[], errors=[];
         var byAdm={}; all.forEach(function(s){ if(s.admission_no) byAdm[s.admission_no.trim().toLowerCase()]=s; });
         for(var i=1;i<lines.length;i++){
-          var cells=lines[i].split(",").map(function(c){return c.trim();});
+          // A CSV field that starts with a bare apostrophe ('+254...,
+          // '0712345678) is Excel's own "force text" convention — it
+          // shows that way when the file was prepared in Excel and a
+          // long digit string (a phone number, an admission number)
+          // got auto-detected as a number and needed protecting from
+          // being mangled into scientific notation. Strip it here so
+          // it never ends up stored as a literal leading character in
+          // the actual data.
+          var cells=lines[i].split(",").map(function(c){ c=c.trim(); if(c.charAt(0)==="'") c=c.slice(1); return c; });
           var row={}; header.forEach(function(h,idx){ row[h]=cells[idx]||""; });
           if(!row.admission_no){ errors.push("Row "+(i+1)+": missing admission_no — skipped."); continue; }
           var stu=byAdm[row.admission_no.trim().toLowerCase()];
