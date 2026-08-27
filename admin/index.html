@@ -172,6 +172,7 @@ document.addEventListener("DOMContentLoaded", function(){
   var MODULES = [];
   var PACKAGES = [];
   var CUR_SCHOOL = null; // for licensing
+  var CUR_ROLE = null; // the logged-in admin's own role — 'super_admin' | 'billing_admin' | 'support' | ... — used to gate role-restricted UI (e.g. Activity Log's Clear button)
   var CUR_LICENSE = null; // { schoolId, sub, pkgSet, addonSet }
 
   // ---- User creation via RPC ----
@@ -326,6 +327,7 @@ document.addEventListener("DOMContentLoaded", function(){
     ]);
     var prof = refResults[3];
     var role = prof.data ? prof.data.role : "unknown";
+    CUR_ROLE = role;
     SCHOOLS = refResults[0].data || [];
     MODULES = (refResults[1].data || []).sort(function(a, b){ var o = {core:0,standard:1,advanced:2}; return (o[a.tier] - o[b.tier]) || a.name.localeCompare(b.name); });
     PACKAGES = refResults[2].data || [];
@@ -1396,8 +1398,11 @@ document.addEventListener("DOMContentLoaded", function(){
     setActive("audit");
     var el = $("view");
     el.innerHTML =
-      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Activity Log</h2>' +
+      '<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;">' +
+      '<div><h2 style="margin:0;font-size:21px;">Activity Log</h2>' +
       '<p class="muted" style="margin-top:4px;font-size:13.5px;">Every change to payments, fee structures, student records, account roles and M-Pesa configuration, across every school.</p></div>' +
+      (CUR_ROLE === "super_admin" ? '<button class="ghost" id="audit-clear" style="font-size:12px;color:#B42318;border-color:#F3D2CD;white-space:nowrap;">Clear</button>' : '') +
+      '</div>' +
       '<div class="row" style="gap:10px;margin-bottom:20px;"><span class="muted">School</span><select id="audit-school"><option value="">All schools</option></select></div>' +
       '<div id="audit-content"></div>';
     SCHOOLS.forEach(function(s){
@@ -1405,6 +1410,47 @@ document.addEventListener("DOMContentLoaded", function(){
       $("audit-school").appendChild(o);
     });
     $("audit-school").onchange = function(){ auditPage = 1; renderAuditLog($("audit-school").value); };
+
+    // Clearing is always scoped to one school (matches admin_reset_table's
+    // own design — see setup-modules-37.sql) — wiping every school's
+    // activity log in one click isn't offered. "All schools" just
+    // disables the button with a hint, rather than hiding it, so a
+    // super_admin can see the feature exists without it being a trap.
+    var clearBtn = $("audit-clear");
+    if (clearBtn) {
+      function refreshClearBtn(){
+        var sid = $("audit-school").value;
+        clearBtn.disabled = !sid;
+        clearBtn.title = sid ? "" : "Select a school first — clearing every school's log at once isn't allowed.";
+      }
+      $("audit-school").addEventListener("change", refreshClearBtn);
+      refreshClearBtn();
+
+      clearBtn.onclick = async function(){
+        var sid = $("audit-school").value;
+        if (!sid) return;
+        var school = null;
+        SCHOOLS.forEach(function(s){ if (s.id === sid) school = s; });
+        var schoolName = (school && school.name) || sid;
+
+        var cnt = await sb.from("audit_log").select("id", { count: "exact", head: true }).eq("school_id", sid);
+        var n = cnt.count || 0;
+        if (n === 0) { toast("Nothing to clear — " + schoolName + "'s activity log is already empty."); return; }
+
+        if (!await confirmDialog(
+          "Permanently delete all " + n + " activity log entries for " + schoolName + "? " +
+          "This cannot be undone, and includes the record of every past action for this school — not just what's on screen right now."
+        )) return;
+
+        clearBtn.disabled = true; clearBtn.textContent = "Clearing…";
+        var r = await sb.rpc("admin_clear_audit_log", { p_school_id: sid });
+        clearBtn.textContent = "Clear";
+        if (r.error) { toast("Error: " + r.error.message); refreshClearBtn(); return; }
+        toast("Cleared " + (r.data || 0) + " entries for " + schoolName + ".");
+        renderAuditLog(sid);
+      };
+    }
+
     renderAuditLog("");
   }
 
