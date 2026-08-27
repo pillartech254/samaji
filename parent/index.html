@@ -31,6 +31,7 @@
      specifically anticipated this) so a parent sees an identical,
      pixel-for-pixel copy of what the school actually published, not a
      separately-maintained re-derivation of the same data. -->
+<script defer src="../assets/idb-cache.js?v=2"></script>
 <script defer src="../assets/academics-core.js?v=1"></script>
 <script defer src="../assets/report-card.js?v=1"></script>
 <style>
@@ -654,15 +655,27 @@ document.addEventListener("DOMContentLoaded", function(){
   };
 
   // ---- TABS ----
+  // _tabGen increments on every tab switch. Each async render function
+  // captures its own generation at the start and checks it's still
+  // current right before writing to the DOM — a network response that
+  // arrives after the user has already moved to a different tab is
+  // silently discarded instead of overwriting whatever's now showing.
+  // Without this, clicking Payments right after Dashboard (before
+  // Dashboard's slower request finishes) could let that stale response
+  // land LATER and overwrite the Payments tab with Dashboard content —
+  // "hangs with info from the previous tab", reported directly.
+  var _tabGen = 0;
   function setTab(name) {
+    _tabGen++;
     CURRENT_TAB = name;
     var btns = document.querySelectorAll(".tab-btn");
     for (var i = 0; i < btns.length; i++) {
       btns[i].className = btns[i].id === "tab-" + name ? "tab-btn active" : "tab-btn";
     }
+    return _tabGen;
   }
 
-  $("tab-children").onclick = function(){ setTab("children"); renderChildren(); };
+  $("tab-children").onclick = function(){ setTab("children"); loadChildren(); };
   $("tab-payments").onclick = function(){ setTab("payments"); renderPayments(); };
   $("tab-announcements").onclick = function(){ setTab("announcements"); renderAnnouncements(); };
   $("tab-reportcards").onclick = function(){ setTab("reportcards"); renderReportCards(); };
@@ -670,15 +683,38 @@ document.addEventListener("DOMContentLoaded", function(){
   // ---- DATA LOADING ----
   var childFeeData = {};
 
-  function loadChildren() {
-    var view = $("view");
-    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+  // ---- CHILDREN: loaded once, shared by every tab that needs it ----
+  // Previously, CHILDREN started as an empty array and stayed that way
+  // until loadChildren()'s async fetch resolved — but the tab nav was
+  // clickable immediately once the app shell rendered. A parent who
+  // clicked Payments (or any other tab) before that fetch finished got
+  // studentIds.length === 0 and the wrong "No payment history found"
+  // message — not because there was no data, but pure timing. Every
+  // tab now awaits this SAME shared promise before touching CHILDREN,
+  // so none of them can ever run against an incomplete list, no matter
+  // how fast someone clicks. Cache-backed via SamajiCache.get(), so a
+  // repeat visit (or a second tab click) resolves near-instantly from
+  // cache while a background refresh keeps it current.
+  var childrenReadyPromise = null;
+  function ensureChildrenLoaded(forceRefresh) {
+    if (forceRefresh) childrenReadyPromise = null;
+    if (childrenReadyPromise) return childrenReadyPromise;
     var phoneClean = sanitizePhone(PARENT.phone);
-    sb.from("students").select("*").eq("school_id", SCHOOL).then(function(res){
-      var all = res.data || [];
-      CHILDREN = all.filter(function(s){
+    childrenReadyPromise = window.SamajiCache.get(sb, SCHOOL, "students", "*").then(function(all){
+      CHILDREN = (all || []).filter(function(s){
         return sanitizePhone(s.guardian_phone || "") === phoneClean;
       });
+      return CHILDREN;
+    }).catch(function(){ CHILDREN = []; return CHILDREN; });
+    return childrenReadyPromise;
+  }
+
+  function loadChildren() {
+    var myGen = _tabGen;
+    var view = $("view");
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+    ensureChildrenLoaded().then(function(){
+      if (myGen !== _tabGen) return; // a different tab was opened while this was in flight
       if (CHILDREN.length === 0) {
         view.innerHTML = '<div class="empty">No students linked to your phone number.</div>';
         return;
@@ -686,11 +722,13 @@ document.addEventListener("DOMContentLoaded", function(){
       loadSupportingData(function(){
         loadFeeDataForChildren(function(){
           loadAttendanceData(function(){
+            if (myGen !== _tabGen) return;
             renderChildren();
           });
         });
       });
     }).catch(function(){
+      if (myGen !== _tabGen) return;
       view.innerHTML = '<div class="empty">Could not load student data.</div>';
     });
   }
@@ -701,27 +739,26 @@ document.addEventListener("DOMContentLoaded", function(){
 
     function check() { done++; if (done >= total) cb(); }
 
-    // Load classes
-    sb.from("school_classes").select("id, level, stream, curriculum").eq("school_id", SCHOOL).then(function(res){
-      var rows = res.data || [];
+    // Classes and dormitories are plain "everything for this school"
+    // queries — the exact shape SamajiCache.get() already handles.
+    window.SamajiCache.get(sb, SCHOOL, "school_classes", "id, level, stream, curriculum").then(function(rows){
+      rows = rows || [];
       classMap = {};
-      for (var i = 0; i < rows.length; i++) {
-        classMap[rows[i].id] = rows[i];
-      }
+      for (var i = 0; i < rows.length; i++) { classMap[rows[i].id] = rows[i]; }
       check();
     }).catch(function(){ check(); });
 
-    // Load dormitories
-    sb.from("dormitories").select("id, name, gender").eq("school_id", SCHOOL).then(function(res){
-      var rows = res.data || [];
+    window.SamajiCache.get(sb, SCHOOL, "dormitories", "id, name, gender").then(function(rows){
+      rows = rows || [];
       dormMap = {};
-      for (var i = 0; i < rows.length; i++) {
-        dormMap[rows[i].id] = rows[i];
-      }
+      for (var i = 0; i < rows.length; i++) { dormMap[rows[i].id] = rows[i]; }
       check();
     }).catch(function(){ check(); });
 
-    // Load class-subject-teachers for the student classes
+    // class_subject_teachers is filtered by specific class ids, not a
+    // plain school-wide query — getCustom() with an explicit key
+    // instead (see assets/idb-cache.js's own comment on why get()
+    // can't express this shape).
     var classIds = [];
     for (var i = 0; i < CHILDREN.length; i++) {
       if (CHILDREN[i].class_id && classIds.indexOf(CHILDREN[i].class_id) === -1) {
@@ -729,9 +766,11 @@ document.addEventListener("DOMContentLoaded", function(){
       }
     }
     if (classIds.length === 0) { check(); return; }
+    classIds.sort();
 
-    sb.from("class_subject_teachers").select("class_id, teacher_id, teachers(name), subjects(name)").in("class_id", classIds).then(function(res){
-      var rows = res.data || [];
+    window.SamajiCache.getCustom("class_subject_teachers|" + SCHOOL + "|" + classIds.join(","), function(){
+      return sb.from("class_subject_teachers").select("class_id, teacher_id, teachers(name), subjects(name)").in("class_id", classIds).then(function(r){ return r.data || []; });
+    }).then(function(rows){
       teacherMap = {};
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
@@ -749,18 +788,18 @@ document.addEventListener("DOMContentLoaded", function(){
     var studentIds = [];
     for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
     if (studentIds.length === 0) { cb(); return; }
+    studentIds.sort();
 
     var currentYear = new Date().getFullYear();
     var yearStart = currentYear + "-01-01";
 
-    sb.from("attendance").select("student_id, status").in("student_id", studentIds).gte("on_date", yearStart).then(function(res){
-      var rows = res.data || [];
+    window.SamajiCache.getCustom("attendance|" + SCHOOL + "|" + studentIds.join(",") + "|" + currentYear, function(){
+      return sb.from("attendance").select("student_id, status").in("student_id", studentIds).gte("on_date", yearStart).then(function(r){ return r.data || []; });
+    }).then(function(rows){
       attendanceMap = {};
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
-        if (!attendanceMap[r.student_id]) {
-          attendanceMap[r.student_id] = { present: 0, absent: 0, late: 0, total: 0 };
-        }
+        if (!attendanceMap[r.student_id]) attendanceMap[r.student_id] = { present: 0, absent: 0, late: 0, total: 0 };
         attendanceMap[r.student_id].total++;
         if (r.status === "present") attendanceMap[r.student_id].present++;
         else if (r.status === "absent") attendanceMap[r.student_id].absent++;
@@ -774,6 +813,7 @@ document.addEventListener("DOMContentLoaded", function(){
     var pending = CHILDREN.length;
     var currentYear = new Date().getFullYear();
     childFeeData = {};
+    if (pending === 0) { cb(); return; }
 
     for (var i = 0; i < CHILDREN.length; i++) {
       (function(child){
@@ -782,20 +822,21 @@ document.addEventListener("DOMContentLoaded", function(){
         var openingBalance = Number(child.opening_balance) || 0;
         childFeeData[sid] = { billed: openingBalance, paid: 0, balance: 0, items: [], transportPaid: 0, openingBalance: openingBalance };
 
-        sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(fsRes){
-          var structures = fsRes.data || [];
+        window.SamajiCache.getCustom("fee_structures|" + SCHOOL + "|" + grade + "|" + currentYear, function(){
+          return sb.from("fee_structures").select("id").eq("school_id", SCHOOL).eq("level", grade).eq("year", currentYear).then(function(r){ return r.data || []; });
+        }).then(function(structures){
           if (structures.length === 0) {
             loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
             return;
           }
           var structIds = [];
           for (var j = 0; j < structures.length; j++) { structIds.push(structures[j].id); }
-          sb.from("fee_items").select("name, amount").in("structure_id", structIds).then(function(fiRes){
-            var items = fiRes.data || [];
+          structIds.sort();
+          window.SamajiCache.getCustom("fee_items|" + structIds.join(","), function(){
+            return sb.from("fee_items").select("name, amount").in("structure_id", structIds).then(function(r){ return r.data || []; });
+          }).then(function(items){
             var total = 0;
-            for (var k = 0; k < items.length; k++) {
-              total += Number(items[k].amount) || 0;
-            }
+            for (var k = 0; k < items.length; k++) { total += Number(items[k].amount) || 0; }
             childFeeData[sid].billed = total + openingBalance;
             childFeeData[sid].items = items;
             loadPaidForChild(sid, function(){ pending--; if (pending === 0) cb(); });
@@ -806,10 +847,14 @@ document.addEventListener("DOMContentLoaded", function(){
   }
 
   function loadPaidForChild(studentId, cb) {
-    sb.from("fee_payments").select("amount, transport_amount").eq("school_id", SCHOOL).eq("student_id", studentId).then(function(fpRes){
-      var payments = fpRes.data || [];
-      var tuitionPaid = 0;
-      var transportPaid = 0;
+    // This is the exact query behind "payment history loads nothing
+    // even after collecting payment" — school_id + this one student,
+    // cached per-student so it doesn't get invalidated by anything
+    // unrelated to that child specifically.
+    window.SamajiCache.getCustom("fee_payments|" + SCHOOL + "|" + studentId, function(){
+      return sb.from("fee_payments").select("amount, transport_amount").eq("school_id", SCHOOL).eq("student_id", studentId).then(function(r){ return r.data || []; });
+    }).then(function(payments){
+      var tuitionPaid = 0, transportPaid = 0;
       for (var i = 0; i < payments.length; i++) {
         var amt = Number(payments[i].amount) || 0;
         var transport = Number(payments[i].transport_amount) || 0;
@@ -1198,38 +1243,60 @@ document.addEventListener("DOMContentLoaded", function(){
 
   // ---- RENDER: PAYMENTS TAB ----
   function renderPayments() {
+    var myGen = _tabGen;
     var view = $("view");
     view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
 
-    var studentIds = [];
-    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+    // Was reading CHILDREN directly here — if this tab got clicked
+    // before the initial students fetch resolved (entirely possible:
+    // the nav is clickable the instant the app shell renders, well
+    // before loadChildren()'s fetch necessarily finishes), CHILDREN
+    // was still its startup empty array and this showed "No payment
+    // history found" even when real payments existed. Every read of
+    // CHILDREN now goes through the same shared, cached promise every
+    // other tab uses, so it's always the real list, however fast this
+    // got clicked.
+    ensureChildrenLoaded().then(function(){
+      if (myGen !== _tabGen) return;
 
-    if (studentIds.length === 0) {
+      var studentIds = [];
+      for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+
+      if (studentIds.length === 0) {
+        view.innerHTML = '<div class="empty">No payment history found.</div>';
+        return;
+      }
+      studentIds.sort();
+
+      var studentNameMap = {};
+      for (var i = 0; i < CHILDREN.length; i++) {
+        studentNameMap[CHILDREN[i].id] = studentName(CHILDREN[i]);
+      }
+
+      var allPayments = [];
+      var allMpesa = [];
+      var done = 0;
+      var total = 2;
+
+      window.SamajiCache.getCustom("fee_payments|" + SCHOOL + "|list|" + studentIds.join(","), function(){
+        return sb.from("fee_payments").select("*").eq("school_id", SCHOOL).in("student_id", studentIds).order("created_at", { ascending: false }).then(function(r){ return r.data || []; });
+      }).then(function(rows){
+        allPayments = rows;
+        done++;
+        if (done === total && myGen === _tabGen) showPaymentsView(allPayments, allMpesa, studentNameMap);
+      }).catch(function(){ done++; if (done === total && myGen === _tabGen) showPaymentsView(allPayments, allMpesa, studentNameMap); });
+
+      window.SamajiCache.getCustom("mpesa_transactions|" + USER.id, function(){
+        return sb.from("mpesa_transactions").select("*").eq("parent_id", USER.id).order("created_at", { ascending: false }).then(function(r){ return r.data || []; });
+      }).then(function(rows){
+        allMpesa = rows;
+        done++;
+        if (done === total && myGen === _tabGen) showPaymentsView(allPayments, allMpesa, studentNameMap);
+      }).catch(function(){ done++; if (done === total && myGen === _tabGen) showPaymentsView(allPayments, allMpesa, studentNameMap); });
+    }).catch(function(){
+      if (myGen !== _tabGen) return;
       view.innerHTML = '<div class="empty">No payment history found.</div>';
-      return;
-    }
-
-    var studentNameMap = {};
-    for (var i = 0; i < CHILDREN.length; i++) {
-      studentNameMap[CHILDREN[i].id] = studentName(CHILDREN[i]);
-    }
-
-    var allPayments = [];
-    var allMpesa = [];
-    var done = 0;
-    var total = 2;
-
-    sb.from("fee_payments").select("*").eq("school_id", SCHOOL).in("student_id", studentIds).order("created_at", { ascending: false }).then(function(res){
-      allPayments = res.data || [];
-      done++;
-      if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap);
-    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap); });
-
-    sb.from("mpesa_transactions").select("*").eq("parent_id", USER.id).order("created_at", { ascending: false }).then(function(res){
-      allMpesa = res.data || [];
-      done++;
-      if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap);
-    }).catch(function(){ done++; if (done === total) showPaymentsView(allPayments, allMpesa, studentNameMap); });
+    });
   }
 
   var payPage = 1;
@@ -1368,52 +1435,60 @@ document.addEventListener("DOMContentLoaded", function(){
   // per-child grouping for display).
   var _rcCache = {};
   function renderReportCards() {
+    var myGen = _tabGen;
     var view = $("view");
     view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
 
-    var studentIds = [];
-    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
-    if (studentIds.length === 0) {
-      view.innerHTML = '<div class="empty">No report cards found.</div>';
-      return;
-    }
+    ensureChildrenLoaded().then(function(){
+      if (myGen !== _tabGen) return;
 
-    var studentNameMap = {};
-    for (var i = 0; i < CHILDREN.length; i++) { studentNameMap[CHILDREN[i].id] = studentName(CHILDREN[i]); }
-
-    var cardsByStudent = {};
-    var termNames = {};
-    var yearNumbers = {};
-
-    sb.from("report_cards").select("*").in("student_id", studentIds).order("published_at", { ascending: false }).then(function(rcRes){
-      var cards = rcRes.data || [];
-      if (cards.length === 0) {
-        view.innerHTML = '<div class="empty">No report cards have been published for your children yet.</div>';
+      var studentIds = [];
+      for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+      if (studentIds.length === 0) {
+        view.innerHTML = '<div class="empty">No report cards found.</div>';
         return;
       }
-      cardsByStudent = {};
-      for (var i = 0; i < cards.length; i++) {
-        var sid = cards[i].student_id;
-        cardsByStudent[sid] = cardsByStudent[sid] || [];
-        cardsByStudent[sid].push(cards[i]);
-      }
-      var termIds = [], yearIds = [];
-      for (var i = 0; i < cards.length; i++) {
-        if (termIds.indexOf(cards[i].term_id) === -1) termIds.push(cards[i].term_id);
-        if (yearIds.indexOf(cards[i].academic_year_id) === -1) yearIds.push(cards[i].academic_year_id);
-      }
-      var pending = 2;
-      function done(){ pending--; if (pending === 0) showReportCardsList(cardsByStudent, studentNameMap, termNames, yearNumbers); }
-      sb.from("terms").select("id, name").in("id", termIds).then(function(r){
-        (r.data || []).forEach(function(t){ termNames[t.id] = t.name; });
-        done();
-      }).catch(done);
-      sb.from("academic_years").select("id, year").in("id", yearIds).then(function(r){
-        (r.data || []).forEach(function(y){ yearNumbers[y.id] = y.year; });
-        done();
-      }).catch(done);
+      studentIds.sort();
+
+      var studentNameMap = {};
+      for (var i = 0; i < CHILDREN.length; i++) { studentNameMap[CHILDREN[i].id] = studentName(CHILDREN[i]); }
+
+      window.SamajiCache.getCustom("report_cards|" + SCHOOL + "|" + studentIds.join(","), function(){
+        return sb.from("report_cards").select("*").in("student_id", studentIds).order("published_at", { ascending: false }).then(function(r){ return r.data || []; });
+      }).then(function(cards){
+        if (myGen !== _tabGen) return;
+        if (cards.length === 0) {
+          view.innerHTML = '<div class="empty">No report cards have been published for your children yet.</div>';
+          return;
+        }
+        var cardsByStudent = {};
+        for (var i = 0; i < cards.length; i++) {
+          var sid = cards[i].student_id;
+          cardsByStudent[sid] = cardsByStudent[sid] || [];
+          cardsByStudent[sid].push(cards[i]);
+        }
+        var termNames = {}, yearNumbers = {};
+        // terms/academic_years are plain school-wide lookup data — the
+        // shape window.SamajiCache.get() already handles.
+        Promise.all([
+          window.SamajiCache.get(sb, SCHOOL, "terms", "id, name"),
+          window.SamajiCache.get(sb, SCHOOL, "academic_years", "id, year")
+        ]).then(function(res){
+          if (myGen !== _tabGen) return;
+          (res[0] || []).forEach(function(t){ termNames[t.id] = t.name; });
+          (res[1] || []).forEach(function(y){ yearNumbers[y.id] = y.year; });
+          showReportCardsList(cardsByStudent, studentNameMap, termNames, yearNumbers);
+        }).catch(function(){
+          if (myGen !== _tabGen) return;
+          showReportCardsList(cardsByStudent, studentNameMap, termNames, yearNumbers);
+        });
+      }).catch(function(){
+        if (myGen !== _tabGen) return;
+        view.innerHTML = '<div class="empty">Could not load report cards.</div>';
+      });
     }).catch(function(){
-      view.innerHTML = '<div class="empty">Could not load report cards.</div>';
+      if (myGen !== _tabGen) return;
+      view.innerHTML = '<div class="empty">No report cards found.</div>';
     });
   }
 
@@ -1486,19 +1561,23 @@ document.addEventListener("DOMContentLoaded", function(){
   }
 
   function renderAnnouncements(pg) {
+    var myGen = _tabGen;
     var view = $("view");
     if (pg) { annPage = pg; renderAnnPage(); return; }
     annPage = 1;
     view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
 
-    sb.from("announcements").select("*").eq("school_id", SCHOOL).in("audience", ["all", "parents"]).order("created_at", { ascending: false }).then(function(res){
-      _annCache = res.data || [];
+    window.SamajiCache.get(sb, SCHOOL, "announcements", "*").then(function(all){
+      if (myGen !== _tabGen) return;
+      _annCache = (all || []).filter(function(a){ return a.audience === "all" || a.audience === "parents"; })
+        .sort(function(a, b){ return new Date(b.created_at) - new Date(a.created_at); });
       if (_annCache.length === 0) {
         view.innerHTML = '<div class="empty">No announcements yet.</div>';
         return;
       }
       renderAnnPage();
     }).catch(function(){
+      if (myGen !== _tabGen) return;
       view.innerHTML = '<div class="empty">Could not load announcements.</div>';
     });
   }

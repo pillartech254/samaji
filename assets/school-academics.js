@@ -33,8 +33,13 @@
   //  EXAM ANNOUNCEMENTS  (admin-only exam creation)
   // ====================================================
   async function renderExamAnnouncements(sb, schoolId, el){
-    var classes = await loadClasses(sb, schoolId);
-    var academic = await window.SamajiAcademics.loadAcademicContext(sb, schoolId);
+    // classes and academic (years/terms/assessment types) don't depend
+    // on each other — was two sequential round-trips, now one.
+    var loaded = await Promise.all([
+      loadClasses(sb, schoolId),
+      window.SamajiAcademics.loadAcademicContext(sb, schoolId)
+    ]);
+    var classes = loaded[0], academic = loaded[1];
     var years = academic.years, allTypes = academic.allTypes, teacherNameById = academic.teacherNameById;
     if (!classes.length){ el.innerHTML='<div class="mod-head"><div><h2>Exam Announcements</h2></div></div><div class="empty">No classes yet — add one in Settings → Classes.</div>'; return; }
     if (!years.length){ el.innerHTML='<div class="mod-head"><div><h2>Exam Announcements</h2></div></div><div class="empty">No academic year set up yet — add one in Settings → CBC Assessment.</div>'; return; }

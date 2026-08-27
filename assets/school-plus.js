@@ -1337,10 +1337,17 @@
     var school=null;
     async function init(){
       var sc=await sb.from("schools").select("*").eq("id",schoolId).single(); school=sc.data||{name:schoolId};
-      var students=await cget(sb, schoolId, "students", "*");
-      var feeClasses=await loadClasses(sb, schoolId);
-      var structures=await cget(sb, schoolId, "fee_structures", "*, fee_items(amount)");
-      var payments=await cget(sb, schoolId, "fee_payments", "*");
+      // Was four sequential awaits — students, classes, structures,
+      // payments — none of which depends on any of the others, so
+      // Fee Collection's initial load waited for the sum of all four
+      // round-trips instead of just the slowest one.
+      var results=await Promise.all([
+        cget(sb, schoolId, "students", "*"),
+        loadClasses(sb, schoolId),
+        cget(sb, schoolId, "fee_structures", "*, fee_items(amount)"),
+        cget(sb, schoolId, "fee_payments", "*")
+      ]);
+      var students=results[0], feeClasses=results[1], structures=results[2], payments=results[3];
       // transport assignments — what each student owes for bus
       var busFareByStudent={}, busPaidByStudent={};
       try{ var taRes=await sb.from("transport_assignments").select("student_id, transport_routes(fare)").eq("school_id",schoolId); (taRes.data||[]).forEach(function(a){ if(a.transport_routes) busFareByStudent[a.student_id]=Number(a.transport_routes.fare)||0; }); }catch(e){}
