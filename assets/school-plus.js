@@ -1081,11 +1081,13 @@
     document.getElementById("import-students").onclick=function(){
       if(!classes.length){ toast("Set up classes first (Settings → Classes & Streams)."); return; }
       var m=modal('<h3>Import students from CSV</h3>'
-        +'<p class="muted" style="font-size:12.5px;margin:0;">Header row required: <code>first_name,last_name,admission_no,gender,class,guardian_name,guardian_phone</code>. "class" must match an existing class level (e.g. "Grade 6") and may include a stream ("Grade 6 East").</p>'
+        +'<p class="muted" style="font-size:12.5px;margin:0;">Required columns: <code>first_name,last_name</code>. Everything else is optional and matches the fields on the manual "New student" form — a blank cell just leaves that field empty. <code>class</code> must match an existing class level (e.g. "Grade 6") and may include a stream ("Grade 6 East"). <code>residence</code> is "Day" or "Boarder" (defaults to Day if blank); <code>dormitory</code> only applies when residence is Boarder and must match an existing dormitory name. <code>county</code>, <code>blood_group</code> and <code>guardian_relation</code> must match one of the same options offered on the manual form — an unrecognized value is left blank rather than stored as-is, so bad data does not silently creep in. Dates use YYYY-MM-DD; a malformed date is dropped rather than risking the whole import. Opening balances (arrears from a previous system) are a separate step — use "Import opening balances" below after this one.</p>'
         +'<div class="field full" style="margin-top:12px;"><input type="file" id="im-file" accept=".csv,text/csv"></div>'
         +'<div id="im-preview" style="margin-top:12px;max-height:300px;overflow:auto;"></div>'
         +'<div class="modal-actions"><a id="im-template" download="students-template.csv" style="margin-right:auto;align-self:center;font-size:12.5px;">Download template</a><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s" disabled>Import</button></div>', true);
-      var tplCsv="first_name,last_name,admission_no,gender,class,guardian_name,guardian_phone\nJane,Doe,ADM-0101,F,Grade 6,Mary Doe,+254700000000\n";
+      var tplCsv="first_name,last_name,admission_no,gender,date_of_birth,admission_date,class,residence,dormitory,county,nationality,religion,blood_group,medical_notes,guardian_name,guardian_relation,guardian_phone,guardian_email,status\n"
+        +"Jane,Doe,ADM-0101,F,2014-03-12,2026-01-15,Grade 6,Day,,Nairobi,Kenyan,Christian,O+,None,Mary Doe,Mother,+254700000000,mary@example.com,active\n"
+        +"John,Smith,ADM-0102,M,2013-07-22,2026-01-15,Grade 6,Boarder,Kilimanjaro House,Kiambu,Kenyan,Christian,A+,Asthma - carries inhaler,James Smith,Father,+254711111111,james@example.com,active\n";
       m.q("#im-template").href="data:text/csv;charset=utf-8,"+encodeURIComponent(tplCsv);
       m.q("#c").onclick=m.close;
       var parsed=[];
@@ -1094,19 +1096,84 @@
         if(!lines.length) return {rows:[],errors:["Empty file."]};
         var header=lines[0].split(",").map(function(h){return h.trim().toLowerCase();});
         var rows=[], errors=[];
+        var VALID_BLOOD=["a+","a-","b+","b-","o+","o-","ab+","ab-"];
+        var VALID_RELATION=["mother","father","guardian","grandparent","uncle","aunt","sibling","other"];
+        var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
         for(var i=1;i<lines.length;i++){
+
           var cells=lines[i].split(",").map(function(c){return c.trim();});
           var row={}; header.forEach(function(h,idx){ row[h]=cells[idx]||""; });
           if(!row.first_name||!row.last_name){ errors.push("Row "+(i+1)+": missing first_name/last_name — skipped."); continue; }
+
           var cls=null;
           if(row["class"]){
             cls=classes.find(function(c){ return classLabel(c).toLowerCase()===row["class"].toLowerCase() || c.level.toLowerCase()===row["class"].toLowerCase(); });
             if(!cls) errors.push("Row "+(i+1)+": class \""+row["class"]+"\" not found — student left unassigned.");
           }
+
+          // Was hardcoded to "Day" for every imported row regardless of
+          // what the CSV said — a boarding school bulk-importing its
+          // roster had every single student silently mislabeled, which
+          // then throws off dormitory assignment and boarding-vs-day fee
+          // structures. Now actually read from the CSV.
+          var residenceRaw=(row.residence||"").toLowerCase();
+          var residence = residenceRaw==="boarder" ? "Boarder" : "Day";
+          if(row.residence && residenceRaw!=="day" && residenceRaw!=="boarder"){
+            errors.push("Row "+(i+1)+": residence \""+row.residence+"\" not recognized (use \"Day\" or \"Boarder\") — defaulted to Day.");
+          }
+
+          var dorm=null;
+          if(residence==="Boarder" && row.dormitory){
+            dorm=dorms.find(function(d){ return d.name.toLowerCase()===row.dormitory.toLowerCase(); });
+            if(!dorm) errors.push("Row "+(i+1)+": dormitory \""+row.dormitory+"\" not found — student left unassigned to a dormitory.");
+          }
+
+          var county=null;
+          if(row.county){
+            county=COUNTIES.find(function(c){ return c.toLowerCase()===row.county.toLowerCase(); }) || null;
+            if(!county) errors.push("Row "+(i+1)+": county \""+row.county+"\" not recognized — left blank.");
+          }
+
+          var blood=null;
+          if(row.blood_group){
+            var bIdx=VALID_BLOOD.indexOf(row.blood_group.toLowerCase());
+            if(bIdx>=0) blood=VALID_BLOOD[bIdx].toUpperCase();
+            else errors.push("Row "+(i+1)+": blood group \""+row.blood_group+"\" not recognized — left blank.");
+          }
+
+          var relation=null;
+          if(row.guardian_relation){
+            var relLower=row.guardian_relation.toLowerCase();
+            if(VALID_RELATION.indexOf(relLower)>=0) relation=relLower.charAt(0).toUpperCase()+relLower.slice(1);
+            else errors.push("Row "+(i+1)+": guardian relation \""+row.guardian_relation+"\" not recognized — left blank.");
+          }
+
+          // A malformed date would fail at insert time for the WHOLE
+          // batch (one bulk insert statement, not one per row) — dropped
+          // here instead so one typo doesn't block everyone else's import.
+          var dob=null;
+          if(row.date_of_birth){
+            if(DATE_RE.test(row.date_of_birth)) dob=row.date_of_birth;
+            else errors.push("Row "+(i+1)+": date_of_birth \""+row.date_of_birth+"\" isn't YYYY-MM-DD — left blank.");
+          }
+          var admDate=new Date().toISOString().slice(0,10);
+          if(row.admission_date){
+            if(DATE_RE.test(row.admission_date)) admDate=row.admission_date;
+            else errors.push("Row "+(i+1)+": admission_date \""+row.admission_date+"\" isn't YYYY-MM-DD — defaulted to today.");
+          }
+
+          var statusRaw=(row.status||"").toLowerCase();
+          var status = statusRaw==="inactive" ? "inactive" : "active";
+
           rows.push({ school_id:schoolId, first_name:row.first_name, last_name:row.last_name, admission_no:row.admission_no||null,
             gender:(row.gender||"").toUpperCase()==="F"?"F":(row.gender||"").toUpperCase()==="M"?"M":null,
+            date_of_birth:dob, admission_date:admDate,
             class_id:cls?cls.id:null, grade:cls?cls.level:(row["class"]||null),
-            guardian_name:row.guardian_name||null, guardian_phone:row.guardian_phone||null, status:"active", residence:"Day" });
+            residence:residence, dormitory_id:dorm?dorm.id:null, status:status,
+            county:county, nationality:row.nationality||"Kenyan", religion:row.religion||null,
+            blood_group:blood, medical_notes:row.medical_notes||null,
+            guardian_name:row.guardian_name||null, guardian_relation:relation,
+            guardian_phone:row.guardian_phone||null, guardian_email:row.guardian_email||null });
         }
         return {rows:rows, errors:errors};
       }
@@ -1119,8 +1186,8 @@
           var html='';
           if(res.errors.length) html+='<div class="empty" style="border-color:#FDE68A;background:#FFFBEB;color:#92400E;margin-bottom:10px;">'+res.errors.map(esc).join("<br>")+'</div>';
           if(parsed.length){
-            html+='<table class="data"><thead><tr><th>Name</th><th>Adm No</th><th>Class</th><th>Guardian</th></tr></thead><tbody>'
-              +parsed.slice(0,50).map(function(p){ return '<tr><td>'+esc(p.first_name+" "+p.last_name)+'</td><td class="mono" style="font-size:11px;">'+esc(p.admission_no||"—")+'</td><td>'+esc(p.grade||"—")+'</td><td>'+esc(p.guardian_name||"—")+'</td></tr>'; }).join("")
+            html+='<table class="data"><thead><tr><th>Name</th><th>Adm No</th><th>Class</th><th>Residence</th><th>Guardian</th></tr></thead><tbody>'
+              +parsed.slice(0,50).map(function(p){ return '<tr><td>'+esc(p.first_name+" "+p.last_name)+'</td><td class="mono" style="font-size:11px;">'+esc(p.admission_no||"—")+'</td><td>'+esc(p.grade||"—")+'</td><td>'+esc(p.residence)+'</td><td>'+esc(p.guardian_name||"—")+'</td></tr>'; }).join("")
               +'</tbody></table>'+(parsed.length>50?'<p class="muted" style="font-size:11.5px;">+'+(parsed.length-50)+' more rows…</p>':'');
           } else html+='<div class="empty">No valid rows found.</div>';
           m.q("#im-preview").innerHTML=html;
