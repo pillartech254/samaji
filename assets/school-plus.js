@@ -1164,9 +1164,43 @@
           var html='';
           if(res.errors.length) html+='<div class="empty" style="border-color:#FDE68A;background:#FFFBEB;color:#92400E;margin-bottom:10px;">'+res.errors.map(esc).join("<br>")+'</div>';
           if(parsed.length){
-            html+='<table class="data"><thead><tr><th>Name</th><th>Adm No</th><th>Class</th><th>Residence</th><th>Guardian</th></tr></thead><tbody>'
-              +parsed.slice(0,50).map(function(p){ return '<tr><td>'+esc(p.first_name+" "+p.last_name)+'</td><td class="mono" style="font-size:11px;">'+esc(p.admission_no||"—")+'</td><td>'+esc(p.grade||"—")+'</td><td>'+esc(p.residence)+'</td><td>'+esc(p.guardian_name||"—")+'</td></tr>'; }).join("")
-              +'</tbody></table>'+(parsed.length>50?'<p class="muted" style="font-size:11.5px;">+'+(parsed.length-50)+' more rows…</p>':'');
+            // The shared table.data CSS sets width:100% — fine for normal
+            // tables, but with 18 columns it just squishes everything down
+            // to fit instead of actually overflowing, so the wrapper's
+            // overflow:auto never gets anything to scroll. min-width forces
+            // the table to stay at a real, readable size and genuinely
+            // overflow horizontally when it doesn't fit — style is inline,
+            // scoped to just this table, not a change to table.data itself
+            // (used all over the rest of the app).
+            var cols=[
+              {h:"Name",v:function(p){return p.first_name+" "+p.last_name;}},
+              {h:"Adm No",v:function(p){return p.admission_no||"—";},cls:"mono",fs:"11px"},
+              {h:"Gender",v:function(p){return p.gender||"—";}},
+              {h:"DOB",v:function(p){return p.date_of_birth||"—";}},
+              {h:"Admitted",v:function(p){return p.admission_date||"—";}},
+              {h:"Class",v:function(p){return p.grade||"—";}},
+              {h:"Residence",v:function(p){return p.residence;}},
+              {h:"Dormitory",v:function(p){ if(!p.dormitory_id) return "—"; var d=dorms.find(function(x){return x.id===p.dormitory_id;}); return d?d.name:"—"; }},
+              {h:"County",v:function(p){return p.county||"—";}},
+              {h:"Nationality",v:function(p){return p.nationality||"—";}},
+              {h:"Religion",v:function(p){return p.religion||"—";}},
+              {h:"Blood",v:function(p){return p.blood_group||"—";}},
+              {h:"Medical notes",v:function(p){return p.medical_notes||"—";}},
+              {h:"Guardian",v:function(p){return p.guardian_name||"—";}},
+              {h:"Relation",v:function(p){return p.guardian_relation||"—";}},
+              {h:"Guardian phone",v:function(p){return p.guardian_phone||"—";}},
+              {h:"Guardian email",v:function(p){return p.guardian_email||"—";}},
+              {h:"Status",v:function(p){return p.status;}}
+            ];
+            html+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">'
+              +'<table class="data" style="width:max-content;min-width:100%;">'
+              +'<thead><tr>'+cols.map(function(c){return '<th style="white-space:nowrap;">'+c.h+'</th>';}).join("")+'</tr></thead><tbody>'
+              +parsed.slice(0,50).map(function(p){
+                return '<tr>'+cols.map(function(c){
+                  return '<td style="white-space:nowrap;'+(c.fs?'font-size:'+c.fs+';':'')+'"'+(c.cls?' class="'+c.cls+'"':'')+'>'+esc(c.v(p))+'</td>';
+                }).join("")+'</tr>';
+              }).join("")
+              +'</tbody></table></div>'+(parsed.length>50?'<p class="muted" style="font-size:11.5px;">+'+(parsed.length-50)+' more rows…</p>':'');
           } else html+='<div class="empty">No valid rows found.</div>';
           m.q("#im-preview").innerHTML=html;
           m.q("#s").disabled=!parsed.length;
