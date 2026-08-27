@@ -147,6 +147,7 @@
         <div class="nav-h">Operations</div>
         <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
         <button class="navitem" id="nav-kcb"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>KCB Config</button>
+        <button class="navitem" id="nav-terms"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="timetable"></span>Academic Terms</button>
         <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="database"></span>Database</button>
         <button class="navitem" id="nav-audit"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reports"></span>Activity Log</button>
         <div style="flex:1;"></div>
@@ -219,7 +220,7 @@ document.addEventListener("DOMContentLoaded", function(){
   }
 
   // ---- Nav ----
-  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","kcb","database","audit","settings"];
+  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","kcb","terms","database","audit","settings"];
   function setActive(key){
     NAV_KEYS.forEach(function(k){
       var el = $("nav-" + k);
@@ -233,6 +234,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("nav-users").onclick = function(){ showUsers(); };
   $("nav-mpesa").onclick = function(){ showMpesa(); };
   $("nav-kcb").onclick = function(){ showKcb(); };
+  $("nav-terms").onclick = function(){ showAcademicTerms(); };
   $("nav-database").onclick = function(){ showDatabase(); };
   $("nav-audit").onclick = function(){ showAuditLog(); };
   $("nav-settings").onclick = function(){ showSettings(); };
@@ -1263,6 +1265,74 @@ document.addEventListener("DOMContentLoaded", function(){
           btn.disabled = false; btn.textContent = "Send Test STK Push";
         };
       }
+    }
+  }
+
+  // ====================================================
+  //  5c. ACADEMIC TERMS — set which term is current, per school.
+  //
+  //  Every "current term" display in the app (School Portal
+  //  Dashboard, Report Cards, Marks & Grading, Teacher Portal — all
+  //  sharing assets/academics-core.js's loadAcademicContext()) is
+  //  driven by whichever term has status='active'. That used to be a
+  //  plain field a school's own term editor could set with no
+  //  guardrail against ALSO leaving a previous term active — this
+  //  screen (and the fixed editor in the School Portal) both route
+  //  through set_current_term() (setup-modules-40.sql), which
+  //  atomically closes whatever was active before, so there is never
+  //  more than one current term for a school at a time.
+  // ====================================================
+  async function showAcademicTerms(){
+    setActive("terms");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Academic Terms</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">Set which term is current for a school — every dashboard, report card, and gradebook screen reads from this. A school\'s own admin can also do this from Settings \u2192 CBC \u2192 Years &amp; Terms.</p></div>' +
+      '<div class="row" style="gap:10px;margin-bottom:20px;"><span class="muted">School</span><select id="terms-school"></select></div>' +
+      '<div id="terms-body"></div>';
+
+    schoolSelector("terms-school", function(val){ if (val) loadTerms(val); else document.getElementById("terms-body").innerHTML = '<p class="muted">Select a school.</p>'; });
+
+    async function loadTerms(schoolId){
+      var body = document.getElementById("terms-body");
+      body.innerHTML = '<p class="muted">Loading…</p>';
+      var r = await sb.from("academic_years").select("*, terms(*)").eq("school_id", schoolId).order("year", { ascending: false });
+      if (r.error) { body.innerHTML = '<p class="muted" style="color:#B42318;">Could not load: ' + esc(r.error.message) + '</p>'; return; }
+      var years = r.data || [];
+      if (!years.length) { body.innerHTML = '<p class="muted">No academic years set up for this school yet — add one from the School Portal (Settings \u2192 CBC \u2192 Years &amp; Terms).</p>'; return; }
+
+      body.innerHTML = years.map(function(ay){
+        var terms = (ay.terms || []).slice().sort(function(a, b){ return a.sort - b.sort; });
+        return '<div class="panel" style="margin-bottom:14px;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+          '<strong style="font-size:14px;">' + esc(String(ay.year)) + '</strong>' +
+          '<span class="tag" style="' + (ay.status === "active" ? "color:#067647;background:#ECFDF3" : "color:#667085;background:#F2F4F7") + '">' + esc(ay.status) + '</span>' +
+          '</div>' +
+          (terms.length
+            ? '<table class="data" style="margin-top:10px;"><thead><tr><th>Term</th><th>Dates</th><th>Status</th><th></th></tr></thead><tbody>' +
+              terms.map(function(t){
+                var stColor = t.status === "active" ? "color:#067647;background:#ECFDF3" : t.status === "closed" ? "color:#667085;background:#F2F4F7" : "color:#B54708;background:#FFFAEB";
+                return '<tr>' +
+                  '<td style="font-weight:600;">' + esc(t.name) + '</td>' +
+                  '<td>' + (t.start_date && t.end_date ? esc(t.start_date + " – " + t.end_date) : '<span class="muted">—</span>') + '</td>' +
+                  '<td><span class="tag" style="' + stColor + '">' + esc(t.status) + '</span></td>' +
+                  '<td style="text-align:right;"><button class="ghost" data-set-current="' + t.id + '" style="font-size:12px;">' + (t.status === "active" ? "Confirm as current" : "Set as current") + '</button></td>' +
+                  '</tr>';
+              }).join("") +
+              '</tbody></table>'
+            : '<p class="muted" style="font-size:12.5px;margin-top:10px;">No terms yet for this year.</p>') +
+          '</div>';
+      }).join("");
+
+      body.querySelectorAll("[data-set-current]").forEach(function(b){
+        b.onclick = async function(){
+          b.disabled = true; b.textContent = "Setting…";
+          var r = await sb.rpc("set_current_term", { p_school_id: schoolId, p_term_id: b.getAttribute("data-set-current") });
+          if (r.error) { toast("Error: " + r.error.message); b.disabled = false; b.textContent = "Set as current"; return; }
+          toast("Current term updated.");
+          loadTerms(schoolId);
+        };
+      });
     }
   }
 

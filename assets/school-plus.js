@@ -469,7 +469,7 @@
       // ----- years & terms -----
       async function yearsTermsTab(){
         var cb=document.getElementById("cbc-body");
-        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Academic years and their terms. Only one year and one term should typically be marked active at a time.</span><button class="btn-primary" id="add-year">+ Add academic year</button></div><div id="years-list"></div>';
+        cb.innerHTML='<div class="toolbar" style="margin-top:0;"><span class="muted" style="font-size:12.5px;flex:1;">Academic years and their terms. Only one year and one term is ever current — use \u201cSet as current\u201d to switch; the previous one closes automatically.</span><button class="btn-primary" id="add-year">+ Add academic year</button></div><div id="years-list"></div>';
         var r=await sb.from("academic_years").select("*, terms(*)").eq("school_id",schoolId).order("year",{ascending:false});
         var list=r.data||[]; var wrap=document.getElementById("years-list");
         if(!list.length){ wrap.innerHTML='<div class="empty">No academic years yet. Click <strong>+ Add academic year</strong>.</div>'; }
@@ -483,12 +483,18 @@
               +(terms.length?'<table class="data" style="margin-top:10px;"><thead><tr><th>Term</th><th>Dates</th><th>Status</th><th></th></tr></thead><tbody>'
                 + terms.map(function(t){ return '<tr><td style="font-weight:600;">'+esc(t.name)+'</td><td>'+(t.start_date&&t.end_date?(t.start_date+" – "+t.end_date):'<span class="muted">—</span>')+'</td>'
                   +'<td><span class="pill '+(t.status==="active"?"green":t.status==="closed"?"gray":"amber")+'">'+t.status+'</span></td>'
-                  +'<td style="text-align:right;"><button class="btn-sm" data-edit-term="'+t.id+'">Edit</button> <button class="btn-sm danger" data-del-term="'+t.id+'">Delete</button></td></tr>'; }).join("")
+                  +'<td style="text-align:right;"><button class="btn-sm" data-set-current="'+t.id+'">'+(t.status==="active"?"Confirm as current":"Set as current")+'</button> <button class="btn-sm" data-edit-term="'+t.id+'">Edit</button> <button class="btn-sm danger" data-del-term="'+t.id+'">Delete</button></td></tr>'; }).join("")
                 +'</tbody></table>' : '<div class="empty" style="margin-top:10px;">No terms yet for this year.</div>')
               +'</div>';
           }).join("");
           wrap.querySelectorAll("[data-add-term]").forEach(function(b){ b.onclick=function(){ termForm(b.getAttribute("data-add-term"), null); }; });
           wrap.querySelectorAll("[data-edit-term]").forEach(function(b){ b.onclick=function(){ var term=null; list.some(function(ay){ term=(ay.terms||[]).find(function(t){return t.id===b.getAttribute("data-edit-term");}); return term; }); if(term) termForm(term.academic_year_id, term); }; });
+          wrap.querySelectorAll("[data-set-current]").forEach(function(b){ b.onclick=async function(){
+            b.disabled=true; b.textContent="Setting…";
+            var r=await sb.rpc("set_current_term",{ p_school_id:schoolId, p_term_id:b.getAttribute("data-set-current") });
+            if(r.error){ toast("Error: "+r.error.message); b.disabled=false; b.textContent="Set as current"; return; }
+            toast("Current term updated."); yearsTermsTab();
+          }; });
           wrap.querySelectorAll("[data-del-term]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this term?"))return; var r=await sb.from("terms").delete().eq("id",b.getAttribute("data-del-term")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); yearsTermsTab(); }; });
           wrap.querySelectorAll("[data-del-year]").forEach(function(b){ b.onclick=async function(){ if(!await window.SM_confirm("Delete this academic year and all its terms?"))return; var r=await sb.from("academic_years").delete().eq("id",b.getAttribute("data-del-year")); if(r.error){toast("Error: "+r.error.message);return;} toast("Deleted"); yearsTermsTab(); }; });
         }
@@ -522,8 +528,35 @@
           var rec={ school_id:schoolId, academic_year_id:academicYearId, name:m.q("#tm-name").value.trim(), sort:Number(m.q("#tm-sort").value)||0,
             start_date:m.q("#tm-start").value||null, end_date:m.q("#tm-end").value||null, status:m.q("#tm-status").value };
           if(!rec.name){ toast("Name is required."); return; }
-          var r=t.id? await sb.from("terms").update(rec).eq("id",t.id) : await sb.from("terms").insert(rec);
-          if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That term already exists for this year.":("Error: "+r.error.message)); return; }
+          var settingActive = rec.status==="active";
+          // Setting a term to "active" here used to just UPDATE that one
+          // row — nothing ever un-marked whatever term was active before
+          // it, so two terms could end up simultaneously active and
+          // every "current term" display in the app (Dashboard, Report
+          // Cards, Marks & Grading — all sharing loadAcademicContext())
+          // would deterministically pick whichever one sorts first,
+          // regardless of which one a person actually meant to be
+          // current. If the status being saved is "active", route
+          // through set_current_term() instead — it atomically closes
+          // whatever was previously active for this school, so this
+          // form can no longer reintroduce that bug. Any other status
+          // (upcoming/closed) is still a plain field edit, unchanged.
+          if(settingActive && t.id){
+            var r=await sb.from("terms").update({ name:rec.name, sort:rec.sort, start_date:rec.start_date, end_date:rec.end_date }).eq("id",t.id);
+            if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That term already exists for this year.":("Error: "+r.error.message)); return; }
+            var r2=await sb.rpc("set_current_term",{ p_school_id:schoolId, p_term_id:t.id });
+            if(r2.error){ toast("Error: "+r2.error.message); return; }
+          } else if(t.id){
+            var r=await sb.from("terms").update(rec).eq("id",t.id);
+            if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That term already exists for this year.":("Error: "+r.error.message)); return; }
+          } else {
+            var r=await sb.from("terms").insert(rec).select().single();
+            if(r.error){ toast(r.error.message.indexOf("duplicate")>=0?"That term already exists for this year.":("Error: "+r.error.message)); return; }
+            if(settingActive){
+              var r2=await sb.rpc("set_current_term",{ p_school_id:schoolId, p_term_id:r.data.id });
+              if(r2.error){ toast("Error: "+r2.error.message); return; }
+            }
+          }
           m.close(); toast("Saved"); yearsTermsTab();
         };
       }
