@@ -40,7 +40,16 @@
 <script defer src="../assets/report-card.js?v=3"></script>
 <script defer src="../assets/school-modules.js?v=3"></script>
 <script defer src="../assets/school-academics.js?v=3"></script>
-<script defer src="../assets/school-plus.js?v=3"></script>
+<!-- idb-cache.js must load BEFORE school-plus.js: school-plus.js now
+     just points at window.SamajiCache rather than defining its own
+     (see the comment in school-plus.js for why). `defer` scripts run
+     in document order regardless of individual download speed, so
+     this ordering is reliable. -->
+<script defer src="../assets/idb-cache.js?v=1"></script>
+<script defer src="../assets/school-plus.js?v=4"></script>
+<!-- Dashboard (command-center rewrite) needs window.SamajiCharts,
+     defined inside school-plus.js — must load after it. -->
+<script defer src="../assets/school-dashboard.js?v=1"></script>
 <style>
   #app{display:none;min-height:100vh;}
   .layout{display:flex;min-height:100vh;}
@@ -298,86 +307,19 @@ document.addEventListener("DOMContentLoaded", function(){
     else el.innerHTML = '<div class="empty">No UI registered for '+flag+'.</div>';
   }
 
-  async function showDashboard(){
+function showDashboard(){
     setActive("dashboard");
-    var el = $("view");
-    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
-    el.innerHTML = '<div class="mod-head"><div><h2>Dashboard</h2><p>Live overview of '+($("school-name").textContent)+'.</p></div>'
-      + (FLAGS["module.students"]?'<div class="field"><label>Class</label><select id="dash-class"><option value="">All classes</option></select></div>':'')
-      + '</div>'
-      + '<div class="statgrid" id="dash-stats"></div>'
-      + '<div class="cardrow c2" id="dash-charts" style="margin-top:18px;"></div>'
-      + '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:24px;"><h2 style="margin:0;font-size:15px;">Your modules</h2><span class="muted" style="font-size:12.5px;">'+granted.length+' enabled</span></div>'
-      + '<div class="tiles" id="dash-tiles" style="margin-top:13px;"></div>';
-
-    function statCard(lbl,val,bg,ink,ic,drill){ return '<div class="stat"'+(drill?' data-godrill="'+drill+'" style="cursor:pointer;"':'')+'><div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div><div class="lbl">'+lbl+'</div><div class="val">'+val+'</div>'+(drill?'<div class="drill-hint"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>':'')+'</div>'; }
-    var icP='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" stroke="currentColor" stroke-width="1.6"/></svg>';
-    var icCk='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M8 12l2.5 2.5L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    var icM='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>';
-    var icB='<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 9.5V14c0 1.5 1.8 2.5 4 2.5s4-1 4-2.5V9.5" stroke="currentColor" stroke-width="1.8"/></svg>';
-
-    // gather data (cached → instant on repeat visits)
-    var allStudents=[], allPays=[], C=window.SamajiCharts;
-    var cache=window.SamajiCache;
-    if (FLAGS["module.students"]) {
-      allStudents = cache ? await cache.get(sb, SCHOOL, "students", "*") : ((await sb.from("students").select("*").eq("school_id", SCHOOL)).data||[]);
-      var classLevels=Array.from(new Set(allStudents.map(function(s){return s.grade;}).filter(Boolean))).sort();
-      $("dash-class").innerHTML='<option value="">All classes</option>'+classLevels.map(function(g){return '<option value="'+g.replace(/"/g,"&quot;")+'">'+g+'</option>';}).join("");
-      $("dash-class").onchange=function(e){ draw(e.target.value); };
-    }
-    if (FLAGS["module.finance"]) {
-      allPays = cache ? await cache.get(sb, SCHOOL, "fee_payments", "*") : ((await sb.from("fee_payments").select("*").eq("school_id", SCHOOL)).data||[]);
-    }
-
-    // Recomputes the stat cards + charts for the chosen class (or all
-    // classes when none picked) — kept dynamic so the filter is live.
-    function draw(classFilter){
-      var students = classFilter ? allStudents.filter(function(s){return s.grade===classFilter;}) : allStudents;
-      var studentIds=null; if(classFilter){ studentIds={}; students.forEach(function(s){studentIds[s.id]=true;}); }
-      var pays = studentIds ? allPays.filter(function(p){return studentIds[p.student_id];}) : allPays;
-      var stats=[];
-      if (FLAGS["module.students"]) {
-        var active=students.filter(function(s){return s.status!=="inactive";}).length;
-        var boarders=students.filter(function(s){return s.residence==="Boarder";}).length;
-        stats.push(statCard("Total students",students.length,"#EEF0FF","#4F46E5",icP,"students"));
-        stats.push(statCard("Active",active,"#ECFDF3","#067647",icCk));
-        stats.push(statCard("Boarders",boarders,"#F1ECFE","#6D28D9",icB));
-      }
-      if (FLAGS["module.finance"]) {
-        var collected=(pays||[]).reduce(function(a,p){return a+Number(p.amount);},0);
-        stats.push(statCard("Fees collected",("KES "+collected.toLocaleString()),"#FFF6ED","#C2410C",icM,"finance"));
-      }
-      if (!stats.length) stats.push('<div class="empty" style="grid-column:1/-1;">Enable Students or Fees to see live figures.</div>');
-      $("dash-stats").innerHTML=stats.join("");
-      document.querySelectorAll('#dash-stats [data-godrill]').forEach(function(card){
-        card.onclick=function(){ showReports(); };
-      });
-
-      // charts
-      var charts="";
-      if (students.length && C) {
-        var male=students.filter(function(s){return s.gender==="M";}).length;
-        var female=students.filter(function(s){return s.gender==="F";}).length;
-        var other=students.length-male-female;
-        var gd=[{label:"Male",value:male,color:"#4F46E5"},{label:"Female",value:female,color:"#EC4899"}]; if(other>0) gd.push({label:"Other",value:other,color:"#94A3B8"});
-        var byLevel={}; students.forEach(function(s){ var lv=s.grade||"Unassigned"; byLevel[lv]=(byLevel[lv]||0)+1; });
-        var order=["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9"];
-        var ld=Object.keys(byLevel).sort(function(a,b){var ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);}).map(function(k){return {label:k.replace("Grade ","G"),value:byLevel[k]};});
-        charts+='<div class="chartcard" data-goreports="1" style="cursor:pointer;"><div class="ch-head"><h3>Enrollment by class</h3><span class="muted" style="font-size:11.5px;">View report →</span></div>'+(ld.length?C.bar(ld,{height:190}):'')+'</div>';
-        charts+='<div class="chartcard" data-goreports="1" style="cursor:pointer;"><div class="ch-head"><h3>Gender split</h3><span class="muted" style="font-size:11.5px;">View report →</span></div><div style="display:flex;align-items:center;gap:20px;"><div>'+C.donut(gd,{center:"Students"})+'</div><div style="flex:1;">'+C.legend(gd)+'</div></div></div>';
-      }
-      $("dash-charts").innerHTML=charts;
-      $("dash-charts").style.display=charts?"":"none";
-      document.querySelectorAll('#dash-charts [data-goreports]').forEach(function(c){ c.onclick=function(){ showReports(); }; });
-    }
-    draw("");
-
-    var tiles = $("dash-tiles"); tiles.innerHTML = "";
-    granted.forEach(function(k){
-      var m = window.metaFor(k), b = document.createElement("button"); b.className = "modtile";
-      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.icon+'</span><div><div style="font-size:13.5px;font-weight:600;">'+m.name+'</div><div class="mono" style="font-size:10.5px;color:#A6ABB8;margin-top:2px;">'+k+'</div></div>';
-      b.onclick = function(){ openModule(k); };
-      tiles.appendChild(b);
+    // The stat-cards/charts/"Your modules" tile grid that used to be
+    // built inline here now lives in assets/school-dashboard.js as a
+    // proper command-center rewrite (ported from a separate branch —
+    // see the file's own header for what it reuses and why). This is
+    // now just the wiring: hand it the pieces it needs and get out of
+    // the way.
+    window.SchoolDashboard.render(sb, SCHOOL, $("view"), {
+      flags: FLAGS,
+      schoolName: $("school-name").textContent,
+      openModule: openModule,
+      showReports: showReports
     });
   }
 

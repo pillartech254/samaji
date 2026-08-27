@@ -84,46 +84,16 @@
   window.SamajiCharts={ bar:barChart, line:lineChart, donut:donut, legend:legend, targetBars:targetBars, PAL:PAL };
 
   // ====================================================
-  //  Cache layer — instant page switches + login preload
-  // ====================================================
-  var SamajiCache=(function(){
-    var store={}, inflight={}, TTL=90000;
-    function k(table,sel){ return table+"|"+(sel||"*"); }
-    async function get(sb, schoolId, table, sel){
-      var key=k(table,sel), hit=store[key];
-      if(hit && Date.now()-hit.t<TTL) return hit.data;
-      // Dashboard load calls preload() (background warm-up, not awaited)
-      // and then immediately asks for the same tables itself for the
-      // first render. Both used to race past the check above before
-      // either had written to `store`, so each fired its own query for
-      // the same rows. Sharing the in-flight promise for a key fixes
-      // that without forcing the dashboard to wait on tables it doesn't
-      // need yet (e.g. dormitories, fee_structures).
-      if (inflight[key]) return inflight[key];
-      var p = sb.from(table).select(sel||"*").eq("school_id",schoolId).then(function(r){
-        store[key]={t:Date.now(), data:r.data||[]};
-        delete inflight[key];
-        return store[key].data;
-      }).catch(function(e){ delete inflight[key]; throw e; });
-      inflight[key]=p;
-      return p;
-    }
-    return {
-      get:get,
-      invalidate:function(table){ Object.keys(store).forEach(function(key){ if(!table||key.indexOf(table+"|")===0) delete store[key]; }); },
-      clear:function(){ store={}; },
-      preload:function(sb, schoolId){
-        return Promise.all([
-          get(sb,schoolId,"students","*"),
-          get(sb,schoolId,"school_classes","*"),
-          get(sb,schoolId,"dormitories","*"),
-          get(sb,schoolId,"fee_structures","*, fee_items(amount)"),
-          get(sb,schoolId,"fee_payments","*")
-        ]).catch(function(){});
-      }
-    };
-  })();
-  window.SamajiCache=SamajiCache;
+  //  Cache layer — now lives in assets/idb-cache.js, loaded before
+  //  this file. That version is a strict upgrade over what used to
+  //  be defined inline here: it persists to IndexedDB (survives a
+  //  reload, not just a single session), adds stale-while-revalidate,
+  //  and already has the same in-flight-request de-dup fix this file
+  //  used to carry inline (the "preload() and the dashboard's own
+  //  first render both ask for the same tables" race). Same public
+  //  shape (get/invalidate/clear/preload), so every call site below
+  //  keeps working unmodified.
+  var SamajiCache = window.SamajiCache;
   function cget(sb, schoolId, table, sel){ return SamajiCache.get(sb, schoolId, table, sel); }
 
   // ====================================================
