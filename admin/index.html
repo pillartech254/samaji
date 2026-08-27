@@ -898,6 +898,7 @@ document.addEventListener("DOMContentLoaded", function(){
             '<td style="font-size:12.5px;">' + contact + '</td>' +
             '<td><span class="tag" style="' + rStyle + '">' + esc(rLbl) + '</span></td>' +
             '<td style="white-space:nowrap;">' +
+            '<button class="ghost" data-edit="' + uid + '" data-name="' + esc(u.full_name || "") + '" data-role="' + esc(role) + '" style="font-size:12px;">Edit</button> ' +
             '<button class="ghost" data-reset="' + uid + '" style="font-size:12px;">Reset pw</button> ' +
             '<button class="ghost" data-del="' + uid + '" style="font-size:12px;color:#B42318;">Delete</button>' +
             '</td></tr>';
@@ -954,6 +955,9 @@ document.addEventListener("DOMContentLoaded", function(){
         };
       });
 
+      list.querySelectorAll("[data-edit]").forEach(function(b){
+        b.onclick = function(){ editUserName(b.getAttribute("data-edit"), b.getAttribute("data-name"), b.getAttribute("data-role")); };
+      });
       list.querySelectorAll("[data-reset]").forEach(function(b){
         b.onclick = function(){ resetPassword(b.getAttribute("data-reset")); };
       });
@@ -965,6 +969,39 @@ document.addEventListener("DOMContentLoaded", function(){
           toast("User deleted."); loadUsers(curSchool);
         };
       });
+    }
+
+    // Updates whichever table is actually authoritative for this
+    // role's name — see setup-modules-35.sql for the full reasoning.
+    // A teacher's name lives in teachers.name (read live everywhere:
+    // gradebook, class-teacher assignment, report cards, the teacher
+    // portal header) AND separately in staff.full_name for payroll,
+    // which the RPC keeps in sync too. A parent's name lives in
+    // parent_accounts.full_name. School/super admins only have
+    // raw_user_meta_data, which is all the RPC touches for them.
+    function editUserName(userId, currentName, role){
+      var roleNote = {
+        teacher: "Updates this teacher's name everywhere it's used live — the Teacher Portal, gradebook, class-teacher assignment, timetable, and payslips. Report cards already published keep the name they were published with; only future ones use the correction.",
+        parent: "Updates this parent's name in the Parent Portal. Doesn't touch the guardian name on any student's record — that's a separate field a school admin enters per student, and may belong to a different guardian than this login.",
+        school_admin: "Updates this admin's own account name.",
+        super_admin: "Updates this admin's own account name."
+      }[role] || "";
+      var m = modal(
+        '<h3>Edit Name</h3>' +
+        '<label>Full Name</label><input id="eu-name" value="' + esc(currentName || "") + '" placeholder="Full name">' +
+        (roleNote ? '<p class="muted" style="font-size:12px;margin:6px 0 0;">' + esc(roleNote) + '</p>' : '') +
+        '<div class="btn-row"><button class="ghost" id="eu-cancel">Cancel</button><button class="btn-primary btn-sm" id="eu-save">Save</button></div>'
+      );
+      m.q("#eu-cancel").onclick = function(){ m.close(); };
+      m.q("#eu-save").onclick = async function(){
+        var name = m.q("#eu-name").value.trim();
+        if (!name) { toast("Name cannot be empty."); return; }
+        var r = await sb.rpc("admin_update_user_name", { p_user_id: userId, p_full_name: name });
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast("Name updated.");
+        m.close();
+        loadUsers(curSchool);
+      };
     }
 
     function resetPassword(userId){
