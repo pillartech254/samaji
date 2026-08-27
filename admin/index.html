@@ -1272,18 +1272,28 @@ document.addEventListener("DOMContentLoaded", function(){
     if (typeof pg === "number") auditPage = pg;
     var content = $("audit-content");
     content.innerHTML = '<div class="skel" style="height:200px;"></div>';
-    var q = sb.from("audit_log").select("*, schools(name)").order("created_at", { ascending: false }).limit(500);
+    // Was `.select("*, schools(name)")` — a PostgREST embedded-resource
+    // join, which needs a real foreign key to resolve. audit_log.school_id
+    // deliberately has NO foreign key to schools (setup-modules-34.sql
+    // Part D: audit rows for a deleted school need to survive the
+    // deletion, which an FK-based join can't do anyway once the school
+    // is gone). Joining client-side against the already-loaded SCHOOLS
+    // array works for both cases: an existing school's name shows
+    // normally, and a deleted school falls through to its raw id.
+    var q = sb.from("audit_log").select("*").order("created_at", { ascending: false }).limit(500);
     if (schoolId) q = q.eq("school_id", schoolId);
     var r = await q;
     if (r.error) { content.innerHTML = '<p class="muted" style="color:#B42318;">Could not load: ' + r.error.message + '</p>'; return; }
     var rows = r.data || [];
+    var schoolNameById = {};
+    SCHOOLS.forEach(function(s){ schoolNameById[s.id] = s.name; });
     if (!rows.length) { content.innerHTML = '<p class="muted">No activity recorded yet.</p>'; return; }
     var pg2 = window.paginate(rows, auditPage, 25);
     var actionColor = { INSERT: "#067647", UPDATE: "#B54708", DELETE: "#C2410C" };
     var html = '<table class="data"><thead><tr><th>When</th><th>School</th><th>Who</th><th>Action</th><th>Table</th><th>Record</th></tr></thead><tbody>';
     pg2.rows.forEach(function(row){
       html += '<tr><td style="white-space:nowrap;font-size:12px;">' + esc(new Date(row.created_at).toLocaleString()) + '</td>' +
-        '<td>' + esc((row.schools && row.schools.name) || row.school_id || "—") + '</td>' +
+        '<td>' + esc(schoolNameById[row.school_id] || (row.school_id ? row.school_id + ' (deleted)' : "—")) + '</td>' +
         '<td>' + esc(row.actor_email || "—") + (row.actor_id ? "" : ' <span class="muted" style="font-size:11px;">(automated)</span>') + '</td>' +
         '<td><span class="pill" style="color:' + (actionColor[row.action] || "#475467") + ';background:' + (actionColor[row.action] || "#475467") + '1a;">' + esc(row.action) + '</span></td>' +
         '<td class="mono" style="font-size:12px;">' + esc(row.table_name) + '</td>' +
