@@ -24,6 +24,15 @@
 <script defer src="../assets/app.js?v=3"></script>
 <script defer src="../assets/session.js?v=3"></script>
 <script defer src="../assets/boot-early.js?v=3"></script>
+<!-- Report Cards feature: academics-core.js's buildSnapshotReportOpts()
+     turns a frozen report_cards row into the exact shape report-card.js
+     expects — the same two files the School/Teacher Portals already use,
+     reused here (per report-card.js's own header comment, which
+     specifically anticipated this) so a parent sees an identical,
+     pixel-for-pixel copy of what the school actually published, not a
+     separately-maintained re-derivation of the same data. -->
+<script defer src="../assets/academics-core.js?v=1"></script>
+<script defer src="../assets/report-card.js?v=1"></script>
 <style>
   *{box-sizing:border-box;}
   body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:#F4F6F8;color:#1A1D26;}
@@ -305,6 +314,7 @@
       <button class="tab-btn active" id="tab-children"><span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 11L12 4l8 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-9" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Dashboard</span></button>
       <button class="tab-btn" id="tab-payments"><span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>Payments</span></button>
       <button class="tab-btn" id="tab-announcements"><span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 10v4a1 1 0 0 0 1 1h2l8 4V5L7 9H5a1 1 0 0 0-1 1z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Announcements</span></button>
+      <button class="tab-btn" id="tab-reportcards"><span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12h6M9 16h6M9 8h2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>Report Cards</span></button>
     </div>
     <div class="content" id="view"></div>
   </div>
@@ -655,6 +665,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("tab-children").onclick = function(){ setTab("children"); renderChildren(); };
   $("tab-payments").onclick = function(){ setTab("payments"); renderPayments(); };
   $("tab-announcements").onclick = function(){ setTab("announcements"); renderAnnouncements(); };
+  $("tab-reportcards").onclick = function(){ setTab("reportcards"); renderReportCards(); };
 
   // ---- DATA LOADING ----
   var childFeeData = {};
@@ -1332,6 +1343,134 @@ document.addEventListener("DOMContentLoaded", function(){
   // ---- RENDER: ANNOUNCEMENTS TAB ----
   var annPage = 1;
   var _annCache = [];
+  // ---- REPORT CARDS ----
+  // report_cards is the frozen, publish-gated snapshot (setup-modules-
+  // 18.sql: "Only a Principal/Deputy Principal may generate/publish") —
+  // a row existing here IS the "this has been published" signal, so
+  // there's no separate draft/final flag to check. RLS (setup-modules-
+  // 39.sql) already restricts this to the signed-in parent's own
+  // children — this function doesn't need to filter by CHILDREN itself,
+  // but does anyway (defense in depth, and it's what builds the
+  // per-child grouping for display).
+  var _rcCache = {};
+  function renderReportCards() {
+    var view = $("view");
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
+
+    var studentIds = [];
+    for (var i = 0; i < CHILDREN.length; i++) { studentIds.push(CHILDREN[i].id); }
+    if (studentIds.length === 0) {
+      view.innerHTML = '<div class="empty">No report cards found.</div>';
+      return;
+    }
+
+    var studentNameMap = {};
+    for (var i = 0; i < CHILDREN.length; i++) { studentNameMap[CHILDREN[i].id] = studentName(CHILDREN[i]); }
+
+    var cardsByStudent = {};
+    var termNames = {};
+    var yearNumbers = {};
+
+    sb.from("report_cards").select("*").in("student_id", studentIds).order("published_at", { ascending: false }).then(function(rcRes){
+      var cards = rcRes.data || [];
+      if (cards.length === 0) {
+        view.innerHTML = '<div class="empty">No report cards have been published for your children yet.</div>';
+        return;
+      }
+      cardsByStudent = {};
+      for (var i = 0; i < cards.length; i++) {
+        var sid = cards[i].student_id;
+        cardsByStudent[sid] = cardsByStudent[sid] || [];
+        cardsByStudent[sid].push(cards[i]);
+      }
+      var termIds = [], yearIds = [];
+      for (var i = 0; i < cards.length; i++) {
+        if (termIds.indexOf(cards[i].term_id) === -1) termIds.push(cards[i].term_id);
+        if (yearIds.indexOf(cards[i].academic_year_id) === -1) yearIds.push(cards[i].academic_year_id);
+      }
+      var pending = 2;
+      function done(){ pending--; if (pending === 0) showReportCardsList(cardsByStudent, studentNameMap, termNames, yearNumbers); }
+      sb.from("terms").select("id, name").in("id", termIds).then(function(r){
+        (r.data || []).forEach(function(t){ termNames[t.id] = t.name; });
+        done();
+      }).catch(done);
+      sb.from("academic_years").select("id, year").in("id", yearIds).then(function(r){
+        (r.data || []).forEach(function(y){ yearNumbers[y.id] = y.year; });
+        done();
+      }).catch(done);
+    }).catch(function(){
+      view.innerHTML = '<div class="empty">Could not load report cards.</div>';
+    });
+  }
+
+  function showReportCardsList(cardsByStudent, studentNameMap, termNames, yearNumbers) {
+    _rcCache = { cardsByStudent: cardsByStudent, studentNameMap: studentNameMap, termNames: termNames, yearNumbers: yearNumbers };
+    var view = $("view");
+    var html = "";
+    for (var i = 0; i < CHILDREN.length; i++) {
+      var sid = CHILDREN[i].id;
+      var cards = cardsByStudent[sid];
+      if (!cards || !cards.length) continue;
+      html += '<h3 style="font-size:15px;font-weight:700;margin:0 0 12px;color:#15171E;">' + escHtml(studentNameMap[sid]) + '</h3>';
+      html += '<div class="mobile-cards" style="margin-bottom:24px;">';
+      for (var j = 0; j < cards.length; j++) {
+        var c = cards[j];
+        var label = escHtml((termNames[c.term_id] || "Term") + " · " + (yearNumbers[c.academic_year_id] || ""));
+        html += '<div class="card" data-view-rc="' + c.id + '" style="cursor:pointer;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html += '<div><strong style="font-size:14.5px;">' + label + '</strong><br>';
+        html += '<span style="font-size:12px;color:#98A2B3;">Published ' + fmtDate(c.published_at) + '</span></div>';
+        if (c.overall_average != null) {
+          html += '<span class="balance-badge" style="background:#E7F6F3;color:#0E9384;">' + Number(c.overall_average).toFixed(1) + '%</span>';
+        }
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+    if (!html) { view.innerHTML = '<div class="empty">No report cards have been published for your children yet.</div>'; return; }
+    view.innerHTML = html;
+    var els = view.querySelectorAll("[data-view-rc]");
+    for (var i = 0; i < els.length; i++) {
+      els[i].onclick = function(){ openReportCard(this.getAttribute("data-view-rc")); };
+    }
+  }
+
+  function openReportCard(reportCardId) {
+    var allCards = [];
+    for (var sid in _rcCache.cardsByStudent) { allCards = allCards.concat(_rcCache.cardsByStudent[sid]); }
+    var row = null;
+    for (var i = 0; i < allCards.length; i++) { if (allCards[i].id === reportCardId) { row = allCards[i]; break; } }
+    if (!row) return;
+
+    var student = null;
+    for (var i = 0; i < CHILDREN.length; i++) { if (CHILDREN[i].id === row.student_id) { student = CHILDREN[i]; break; } }
+    if (!student) return;
+
+    // School's own logo isn't fetched by this portal (only its name/
+    // initial badge) — studentReportHTML already falls back to a text
+    // initial when logo_url is null, the same as it does for a school
+    // that simply has no logo on the other two portals.
+    var schoolObj = { name: $("school-name").textContent, logo_url: null };
+    var termObj = { name: _rcCache.termNames[row.term_id] || "Term" };
+    var yearObj = { year: _rcCache.yearNumbers[row.academic_year_id] || "" };
+
+    var opts = window.SamajiAcademics.buildSnapshotReportOpts(schoolObj, student, row, null, termObj, yearObj, null);
+    var reportHtml = window.SamajiReportCard.studentReportHTML(opts);
+
+    var view = $("view");
+    view.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+      '<button class="ghost" id="rc-back" style="font-size:12.5px;">&larr; Back to Report Cards</button>' +
+      '<button class="btn-signout" style="background:#0E9384;color:#fff;border:none;" id="rc-print">Print</button>' +
+      '</div>' +
+      '<div style="background:#fff;border:1px solid #E4E7EC;border-radius:10px;padding:16px;overflow-x:auto;">' + reportHtml + '</div>';
+
+    $("rc-back").onclick = function(){ showReportCardsList(_rcCache.cardsByStudent, _rcCache.studentNameMap, _rcCache.termNames, _rcCache.yearNumbers); };
+    $("rc-print").onclick = function(){
+      window.SamajiReportCard.printHTML(reportHtml, "Report Card — " + studentName(student));
+    };
+  }
+
   function renderAnnouncements(pg) {
     var view = $("view");
     if (pg) { annPage = pg; renderAnnPage(); return; }
