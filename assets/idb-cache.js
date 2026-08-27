@@ -101,7 +101,16 @@
   var inflight = {};         // key -> Promise (de-dupes concurrent identical fetches)
   var watchers = {};         // table -> [fn(data)]
 
-  function k(table, sel){ return table + "|" + (sel || "*"); }
+  // Was `table + "|" + sel` — no school scoping at all. IndexedDB
+  // persists across page loads AND logins, so on a shared device (a
+  // school's front-desk computer, a support person switching between
+  // schools) the FIRST account to cache "students|*" would have that
+  // exact same cached value handed to a COMPLETELY DIFFERENT school's
+  // session the next time anyone loaded that same key — a real
+  // cross-account data leak, not a performance quirk. schoolId is
+  // already a parameter every get() call already passes; folding it
+  // into the key itself is what actually scopes the cache per school.
+  function k(table, sel, schoolId){ return table + "|" + (sel || "*") + "|" + (schoolId || ""); }
 
   function notify(table, data){
     (watchers[table] || []).forEach(function(fn){ try { fn(data); } catch (e) {} });
@@ -127,7 +136,7 @@
   // refetch so the NEXT call (or an active watch() subscriber) sees
   // current data. Only a true miss awaits the network.
   async function get(sb, schoolId, table, sel){
-    var key = k(table, sel);
+    var key = k(table, sel, schoolId);
     var hit = mem[key];
     if (!hit) {
       var persisted = await idbGet(key);
@@ -171,5 +180,56 @@
     ]).catch(function(){});
   }
 
-  window.SamajiCache = { get: get, invalidate: invalidate, clear: clear, preload: preload, watch: watch };
+  // ---------------------------------------------------------------
+  //  getCustom — same stale-while-revalidate machinery as get(), but
+  //  for a query shape get() can't express: get() always runs
+  //  `.from(table).select(sel).eq("school_id", schoolId)`, which
+  //  fits the School/Teacher Portals' data (everything scoped by one
+  //  school) but not the Parent Portal's (fee_payments filtered by a
+  //  specific set of student ids, mpesa_transactions filtered by
+  //  parent_id, neither a plain "all of this table for my school"
+  //  query). getCustom(key, fetcherFn) takes an arbitrary cache key
+  //  and an arbitrary async function instead of assuming the query
+  //  shape, reusing the same in-memory + IndexedDB layers, the same
+  //  in-flight de-dupe, and the same watch()/notify() mechanism (a
+  //  watcher just needs to use the same key it cached under, whether
+  //  that key is a table name from get() or an arbitrary string from
+  //  getCustom() — watchers/notify were always plain string-keyed).
+  // ---------------------------------------------------------------
+  function fetchAndStoreCustom(key, fetcherFn){
+    if (inflight[key]) return inflight[key];
+    var p = Promise.resolve().then(fetcherFn).then(function(data){
+      mem[key] = { t: Date.now(), data: data };
+      idbSet(key, mem[key]); // fire-and-forget persistence
+      delete inflight[key];
+      notify(key, data);
+      return data;
+    }).catch(function(){ delete inflight[key]; return mem[key] ? mem[key].data : null; });
+    inflight[key] = p;
+    return p;
+  }
+
+  async function getCustom(key, fetcherFn){
+    var hit = mem[key];
+    if (!hit) {
+      var persisted = await idbGet(key);
+      if (persisted && Date.now() - persisted.t < STALE_MS) {
+        mem[key] = persisted;
+        hit = persisted;
+      }
+    }
+    if (hit) {
+      var age = Date.now() - hit.t;
+      if (age > FRESH_MS) fetchAndStoreCustom(key, fetcherFn); // background revalidate, don't await
+      return hit.data;
+    }
+    return fetchAndStoreCustom(key, fetcherFn);
+  }
+
+  function invalidateCustom(key){
+    delete mem[key];
+    idbDeletePrefix(key);
+  }
+
+  window.SamajiCache = { get: get, invalidate: invalidate, clear: clear, preload: preload, watch: watch, getCustom: getCustom, invalidateCustom: invalidateCustom };
 })();
