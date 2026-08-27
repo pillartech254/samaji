@@ -879,6 +879,20 @@ document.addEventListener("DOMContentLoaded", function(){
     var admNo = c.admission_no || "-";
     var status = c.status || "active";
     var statusClass = status === "active" ? "stu-badge-active" : "stu-badge-inactive";
+    // "Fee Summary (2026)" / "Attendance (2026)" section labels below —
+    // undefined here entirely until now (a genuine ReferenceError on
+    // every reference to `yr`, thrown synchronously inside the
+    // CHILDREN loop in renderChildren(), which aborts before ever
+    // reaching `view.innerHTML = html` — the Dashboard's loading
+    // spinner was already in the DOM from before this function ran,
+    // so it just stays there forever with no visible error). Latent
+    // since day one: reaching this line at all requires at least one
+    // child to have actually matched the signed-in parent, which
+    // never happened in practice until the phone-normalization fix
+    // (setup-modules-38.sql) started correctly linking real
+    // guardian_phone/parent_accounts.phone pairs — so this bug was
+    // never exposed until that fix started working.
+    var yr = new Date().getFullYear();
 
     // Class info
     var classInfo = null;
