@@ -2,16 +2,29 @@
 //  Samaji — M-Pesa STK Push Edge Function (Daraja API v2)
 //
 //  Routes:
-//    POST /mpesa-stk           → Initiate STK Push to parent's phone
-//    POST /mpesa-stk/callback  → Safaricom callback after payment
-//    POST /mpesa-stk/query     → Query STK Push transaction status
+//    POST /mpesa-stk        → Initiate STK Push to parent's phone
+//    POST /mpesa-stk/query  → Query STK Push transaction status
 //
-//  Deploy:
-//    supabase functions deploy mpesa-stk --no-verify-jwt
-//    (--no-verify-jwt needed so Safaricom callback can reach /callback)
+//  The Safaricom callback used to live at /mpesa-stk/callback in
+//  this same function, which was deployed with --no-verify-jwt so
+//  Safaricom's server (which can't provide a Supabase login token)
+//  could reach it. That flag applies to the WHOLE function, not just
+//  one route — so the initiate/query routes were ALSO unauthenticated
+//  as a side effect. Anyone who found this URL could POST any
+//  {transaction_id, school_id, phone, amount} directly and trigger a
+//  real STK push to any Kenyan phone number, completely bypassing
+//  the Parent Portal — no login required. The callback has been
+//  split into its own function (mpesa-callback) specifically so this
+//  one can go back to being a normal, authenticated function.
+//
+//  Deploy (WITHOUT --no-verify-jwt — this function requires a valid
+//  Supabase session; only mpesa-callback should be deployed with that
+//  flag):
+//    supabase functions deploy mpesa-stk
 //
 //  Secrets (set via `supabase secrets set KEY=VALUE`):
 //    SUPABASE_URL              — auto-set by Supabase
+//    SUPABASE_ANON_KEY         — auto-set by Supabase
 //    SUPABASE_SERVICE_ROLE_KEY — auto-set by Supabase
 //
 //  Per-school M-Pesa credentials are stored in the `mpesa_config`
@@ -112,6 +125,30 @@ function serviceClient() {
   );
 }
 
+// --------------- Caller identity ---------------
+//
+// Verifies the request carries a genuine Supabase session (the same
+// pattern already used by supabase/functions/admin-users), then
+// returns the caller's user id. Deploying without --no-verify-jwt
+// already makes Supabase's own gateway reject a request with no
+// token or a garbage token before it ever reaches this code — this
+// check additionally gives us WHO the caller is, so the ownership
+// check below can confirm they're acting on their own transaction,
+// not anyone else's.
+async function requireCaller(req: Request): Promise<{ id: string } | Response> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return jsonResponse({ error: "No auth token" }, 401);
+
+  const callerClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } }
+  );
+  const { data: { user: caller } } = await callerClient.auth.getUser();
+  if (!caller) return jsonResponse({ error: "Invalid or expired session" }, 401);
+  return { id: caller.id };
+}
+
 // --------------- 1. INITIATE STK PUSH ---------------
 
 interface STKRequest {
@@ -123,6 +160,9 @@ interface STKRequest {
 }
 
 async function handleSTKPush(req: Request): Promise<Response> {
+  const caller = await requireCaller(req);
+  if (caller instanceof Response) return caller;
+
   let body: STKRequest;
   try {
     body = await req.json();
@@ -139,6 +179,29 @@ async function handleSTKPush(req: Request): Promise<Response> {
   }
 
   const sb = serviceClient();
+
+  // Ownership check: the transaction row must already exist (the
+  // Parent Portal creates it via its own insert, scoped by RLS to
+  // parent_id = auth.uid(), before ever calling this function) and
+  // must belong to the caller. This is what actually stops someone
+  // from POSTing an arbitrary phone/amount/school_id combination
+  // directly at this endpoint — a valid session alone isn't enough,
+  // it has to be a transaction that session's own account created.
+  const { data: tx, error: txErr } = await sb
+    .from("mpesa_transactions")
+    .select("id, school_id, parent_id, amount, phone")
+    .eq("id", transaction_id)
+    .single();
+
+  if (txErr || !tx) {
+    return jsonResponse({ error: "Transaction not found" }, 404);
+  }
+  if (tx.parent_id !== caller.id) {
+    return jsonResponse({ error: "Not authorized for this transaction" }, 403);
+  }
+  if (tx.school_id !== school_id) {
+    return jsonResponse({ error: "Transaction does not belong to this school" }, 400);
+  }
 
   // Load school's M-Pesa credentials
   const { data: config, error: cfgErr } = await sb
@@ -172,7 +235,7 @@ async function handleSTKPush(req: Request): Promise<Response> {
 
     const callbackUrl =
       config.callback_url ||
-      Deno.env.get("SUPABASE_URL") + "/functions/v1/mpesa-stk/callback";
+      Deno.env.get("SUPABASE_URL") + "/functions/v1/mpesa-callback";
 
     const stkPayload = {
       BusinessShortCode: config.shortcode,
@@ -234,99 +297,7 @@ async function handleSTKPush(req: Request): Promise<Response> {
   }
 }
 
-// --------------- 2. SAFARICOM CALLBACK ---------------
-
-async function handleCallback(req: Request): Promise<Response> {
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return new Response("OK", { status: 200 });
-  }
-
-  const result = body?.Body?.stkCallback;
-  if (!result || !result.CheckoutRequestID) {
-    return new Response("OK", { status: 200 });
-  }
-
-  const sb = serviceClient();
-  const checkoutId: string = result.CheckoutRequestID;
-  const resultCode: number = result.ResultCode;
-  const resultDesc: string = result.ResultDesc || "";
-
-  // Find the matching transaction
-  const { data: tx, error: txErr } = await sb
-    .from("mpesa_transactions")
-    .select("*")
-    .eq("checkout_request_id", checkoutId)
-    .single();
-
-  if (txErr || !tx) {
-    console.error("Callback: transaction not found for checkout", checkoutId);
-    return new Response("OK", { status: 200 });
-  }
-
-  // Already processed (idempotency guard)
-  if (tx.status === "completed" || tx.status === "failed") {
-    return new Response("OK", { status: 200 });
-  }
-
-  if (resultCode === 0) {
-    // -------- PAYMENT SUCCESSFUL --------
-    let receiptNo = "";
-    let paidAmount = Number(tx.amount);
-    let transactionDate = "";
-    const items: any[] = result.CallbackMetadata?.Item || [];
-    for (const item of items) {
-      if (item.Name === "MpesaReceiptNumber") receiptNo = String(item.Value);
-      if (item.Name === "Amount") paidAmount = Number(item.Value);
-      if (item.Name === "TransactionDate") transactionDate = String(item.Value);
-    }
-
-    // Update transaction record
-    await sb.from("mpesa_transactions").update({
-      status: "completed",
-      result_code: resultCode,
-      result_desc: resultDesc,
-      mpesa_receipt_no: receiptNo,
-      amount: paidAmount,
-    }).eq("id", tx.id);
-
-    // Create fee_payment records for each student
-    const studentIds: string[] = tx.student_ids || [];
-    if (studentIds.length > 0) {
-      const perStudent = paidAmount / studentIds.length;
-      const currentYear = new Date().getFullYear();
-
-      for (const studentId of studentIds) {
-        await createFeePayment(sb, {
-          schoolId: tx.school_id,
-          studentId,
-          amount: perStudent,
-          year: currentYear,
-          receiptNo,
-          mpesaRef: receiptNo,
-        });
-      }
-    }
-
-    // Send SMS confirmation to the parent
-    await sendPaymentSMS(sb, tx.school_id, tx.phone, paidAmount, receiptNo);
-
-  } else {
-    // -------- PAYMENT FAILED / CANCELLED --------
-    const status = resultCode === 1032 ? "cancelled" : "failed";
-    await sb.from("mpesa_transactions").update({
-      status,
-      result_code: resultCode,
-      result_desc: resultDesc,
-    }).eq("id", tx.id);
-  }
-
-  return new Response("OK", { status: 200 });
-}
-
-// --------------- 3. QUERY TRANSACTION STATUS ---------------
+// --------------- 2. QUERY TRANSACTION STATUS ---------------
 
 interface QueryRequest {
   school_id: string;
@@ -334,6 +305,9 @@ interface QueryRequest {
 }
 
 async function handleQuery(req: Request): Promise<Response> {
+  const caller = await requireCaller(req);
+  if (caller instanceof Response) return caller;
+
   let body: QueryRequest;
   try {
     body = await req.json();
@@ -348,14 +322,20 @@ async function handleQuery(req: Request): Promise<Response> {
 
   const sb = serviceClient();
 
-  // First check our own DB (callback may have already arrived)
+  // Ownership check, same reasoning as handleSTKPush — a valid
+  // session alone doesn't mean this caller should see the status of
+  // ANY checkout_request_id they happen to guess or enumerate.
   const { data: tx } = await sb
     .from("mpesa_transactions")
-    .select("status, result_code, result_desc, mpesa_receipt_no, amount")
+    .select("status, result_code, result_desc, mpesa_receipt_no, amount, parent_id, school_id")
     .eq("checkout_request_id", checkout_request_id)
     .single();
 
-  if (tx && (tx.status === "completed" || tx.status === "failed" || tx.status === "cancelled")) {
+  if (!tx || tx.parent_id !== caller.id || tx.school_id !== school_id) {
+    return jsonResponse({ error: "Not authorized for this transaction" }, 403);
+  }
+
+  if (tx.status === "completed" || tx.status === "failed" || tx.status === "cancelled") {
     return jsonResponse({
       status: tx.status,
       result_code: tx.result_code,
@@ -418,173 +398,6 @@ async function handleQuery(req: Request): Promise<Response> {
   }
 }
 
-// --------------- Fee Payment Creation ---------------
-
-interface PaymentInput {
-  schoolId: string;
-  studentId: string;
-  amount: number;
-  year: number;
-  receiptNo: string;
-  mpesaRef: string;
-}
-
-async function createFeePayment(
-  sb: ReturnType<typeof createClient>,
-  input: PaymentInput
-): Promise<void> {
-  const { schoolId, studentId, amount, year, receiptNo, mpesaRef } = input;
-
-  // Get the student's grade/class
-  const { data: student } = await sb
-    .from("students")
-    .select("grade")
-    .eq("id", studentId)
-    .single();
-
-  if (!student) return;
-
-  // Determine which term needs payment using the spillover approach:
-  // Check each term in order — if billed > paid, apply payment there.
-  // If payment exceeds the term balance, spill remainder to next term.
-  const terms = ["Term 1", "Term 2", "Term 3"];
-  let remaining = amount;
-
-  for (const term of terms) {
-    if (remaining <= 0) break;
-
-    // Get billed amount for this term
-    const { data: structures } = await sb
-      .from("fee_structures")
-      .select("id, fee_items(amount)")
-      .eq("school_id", schoolId)
-      .eq("level", student.grade)
-      .eq("term", term)
-      .eq("year", year);
-
-    let billed = 0;
-    for (const s of structures || []) {
-      for (const item of (s as any).fee_items || []) {
-        billed += Number(item.amount) || 0;
-      }
-    }
-
-    if (billed === 0) continue;
-
-    // Get already paid for this term
-    const { data: payments } = await sb
-      .from("fee_payments")
-      .select("amount, transport_amount")
-      .eq("student_id", studentId)
-      .eq("term", term)
-      .eq("year", year);
-
-    let paid = 0;
-    for (const p of payments || []) {
-      paid += Number(p.amount) - (Number((p as any).transport_amount) || 0);
-    }
-
-    const termBalance = billed - paid;
-    if (termBalance <= 0) continue;
-
-    // Apply payment to this term (capped at term balance)
-    const applyAmount = Math.min(remaining, termBalance);
-    const rcptSuffix = term.replace(/\s+/g, "").toUpperCase();
-    const uniqueReceipt = "MP-" + receiptNo + "-" + rcptSuffix;
-
-    await sb.from("fee_payments").insert({
-      school_id: schoolId,
-      student_id: studentId,
-      amount: applyAmount,
-      term: term,
-      year: year,
-      method: "M-Pesa",
-      receipt_no: uniqueReceipt,
-      reference: mpesaRef,
-      note: "M-Pesa STK Push payment",
-    });
-
-    remaining -= applyAmount;
-  }
-
-  // If there's still remaining amount (overpayment beyond all terms),
-  // record it against the last applicable term
-  if (remaining > 0) {
-    const lastTerm = terms[terms.length - 1];
-    const uniqueReceipt = "MP-" + receiptNo + "-EXTRA";
-
-    await sb.from("fee_payments").insert({
-      school_id: schoolId,
-      student_id: studentId,
-      amount: remaining,
-      term: lastTerm,
-      year: year,
-      method: "M-Pesa",
-      receipt_no: uniqueReceipt,
-      reference: mpesaRef,
-      note: "M-Pesa overpayment / advance",
-    });
-  }
-}
-
-// --------------- SMS Notification ---------------
-
-async function sendPaymentSMS(
-  sb: ReturnType<typeof createClient>,
-  schoolId: string,
-  phone: string,
-  amount: number,
-  receiptNo: string
-): Promise<void> {
-  // Get school name
-  const { data: school } = await sb
-    .from("schools")
-    .select("name")
-    .eq("id", schoolId)
-    .single();
-  const schoolName = school?.name || "School";
-
-  // Check if school has SMS credits
-  const { data: credits } = await sb
-    .from("sms_credit_ledger")
-    .select("delta")
-    .eq("school_id", schoolId);
-
-  const balance = (credits || []).reduce(
-    (sum: number, row: any) => sum + Number(row.delta),
-    0
-  );
-
-  if (balance < 1) return; // No SMS credits
-
-  const message =
-    "Payment of KES " +
-    Number(amount).toLocaleString() +
-    " received by " +
-    schoolName +
-    ". M-Pesa Ref: " +
-    receiptNo +
-    ". Thank you!";
-
-  // Log the SMS (actual sending depends on SMS gateway integration)
-  await sb.from("sms_messages").insert({
-    school_id: schoolId,
-    phone: phone,
-    message: message,
-    status: "queued",
-    channel: "transactional",
-  }).then(async () => {
-    // Debit 1 SMS credit
-    await sb.from("sms_credit_ledger").insert({
-      school_id: schoolId,
-      delta: -1,
-      reason: "mpesa_confirmation",
-    });
-  }).catch(() => {
-    // sms_messages table may not exist — fail silently
-  });
-}
-
 // --------------- Router ---------------
 
 Deno.serve(async (req: Request) => {
@@ -599,10 +412,6 @@ Deno.serve(async (req: Request) => {
 
   const url = new URL(req.url);
   const path = url.pathname;
-
-  if (path.endsWith("/callback")) {
-    return handleCallback(req);
-  }
 
   if (path.endsWith("/query")) {
     return handleQuery(req);
