@@ -231,5 +231,18 @@
     idbDeletePrefix(key);
   }
 
-  window.SamajiCache = { get: get, invalidate: invalidate, clear: clear, preload: preload, watch: watch, getCustom: getCustom, invalidateCustom: invalidateCustom };
+  // invalidateCustom only exact-matches the in-memory cache (though it
+  // already prefix-matches IndexedDB, inconsistently) — fine for a
+  // single known key, but fee_payments/report_cards/etc getCustom()
+  // keys are suffixed with a sorted student-id list that varies by
+  // which children happen to be involved in a given read, so there's
+  // no single exact key to invalidate after, say, a payment completes
+  // for one child. Mirrors invalidate()'s already-correct prefix
+  // behavior, for the getCustom() namespace.
+  function invalidateCustomPrefix(prefix){
+    Object.keys(mem).forEach(function(key){ if (key.indexOf(prefix) === 0) delete mem[key]; });
+    idbDeletePrefix(prefix);
+  }
+
+  window.SamajiCache = { get: get, invalidate: invalidate, clear: clear, preload: preload, watch: watch, getCustom: getCustom, invalidateCustom: invalidateCustom, invalidateCustomPrefix: invalidateCustomPrefix };
 })();

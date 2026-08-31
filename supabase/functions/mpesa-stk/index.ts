@@ -297,11 +297,176 @@ async function handleSTKPush(req: Request): Promise<Response> {
   }
 }
 
+// --------------- Fee Payment Creation (duplicated from mpesa-callback —
+// edge functions deploy independently, so this mirrors the pattern
+// already established for kcb-stk/kcb-callback rather than inventing
+// a new one) ---------------
+//
+// Needed here, not just in mpesa-callback, because Safaricom's sandbox
+// callback delivery is documented as unreliable — a real payment can
+// complete successfully on the customer's phone with the callback
+// simply never arriving. Without this, handleQuery() below could
+// confirm directly with Safaricom that a payment succeeded and still
+// leave no fee_payments record of it at all — the parent's M-Pesa
+// statement would show a real deduction while Samaji's own fee
+// balance never reflected it. This makes /query a genuine fallback,
+// not just a status readout.
+
+interface PaymentInput {
+  schoolId: string;
+  studentId: string;
+  amount: number;
+  year: number;
+  receiptNo: string;
+  mpesaRef: string;
+}
+
+async function createFeePayment(
+  sb: ReturnType<typeof createClient>,
+  input: PaymentInput
+): Promise<void> {
+  const { schoolId, studentId, amount, year, receiptNo, mpesaRef } = input;
+
+  const { data: student } = await sb
+    .from("students")
+    .select("grade")
+    .eq("id", studentId)
+    .single();
+
+  if (!student) return;
+
+  const terms = ["Term 1", "Term 2", "Term 3"];
+  let remaining = amount;
+
+  for (const term of terms) {
+    if (remaining <= 0) break;
+
+    const { data: structures } = await sb
+      .from("fee_structures")
+      .select("id, fee_items(amount)")
+      .eq("school_id", schoolId)
+      .eq("level", student.grade)
+      .eq("term", term)
+      .eq("year", year);
+
+    let billed = 0;
+    for (const s of structures || []) {
+      for (const item of (s as any).fee_items || []) {
+        billed += Number(item.amount) || 0;
+      }
+    }
+
+    if (billed === 0) continue;
+
+    const { data: payments } = await sb
+      .from("fee_payments")
+      .select("amount, transport_amount")
+      .eq("student_id", studentId)
+      .eq("term", term)
+      .eq("year", year);
+
+    let paid = 0;
+    for (const p of payments || []) {
+      paid += Number(p.amount) - (Number((p as any).transport_amount) || 0);
+    }
+
+    const termBalance = billed - paid;
+    if (termBalance <= 0) continue;
+
+    const applyAmount = Math.min(remaining, termBalance);
+    const rcptSuffix = term.replace(/\s+/g, "").toUpperCase();
+    const uniqueReceipt = "MPQ-" + receiptNo + "-" + rcptSuffix;
+
+    await sb.from("fee_payments").insert({
+      school_id: schoolId,
+      student_id: studentId,
+      amount: applyAmount,
+      term: term,
+      year: year,
+      method: "M-Pesa",
+      receipt_no: uniqueReceipt,
+      reference: mpesaRef,
+      note: "M-Pesa STK Push payment (confirmed via status query — Safaricom's async callback did not arrive)",
+    });
+
+    remaining -= applyAmount;
+  }
+
+  if (remaining > 0) {
+    const lastTerm = terms[terms.length - 1];
+    const uniqueReceipt = "MPQ-" + receiptNo + "-EXTRA";
+
+    await sb.from("fee_payments").insert({
+      school_id: schoolId,
+      student_id: studentId,
+      amount: remaining,
+      term: lastTerm,
+      year: year,
+      method: "M-Pesa",
+      receipt_no: uniqueReceipt,
+      reference: mpesaRef,
+      note: "M-Pesa overpayment / advance (confirmed via status query)",
+    });
+  }
+}
+
+async function sendPaymentSMS(
+  sb: ReturnType<typeof createClient>,
+  schoolId: string,
+  phone: string,
+  amount: number,
+  receiptNo: string
+): Promise<void> {
+  const { data: school } = await sb
+    .from("schools")
+    .select("name")
+    .eq("id", schoolId)
+    .single();
+  const schoolName = school?.name || "School";
+
+  const { data: credits } = await sb
+    .from("sms_credit_ledger")
+    .select("delta")
+    .eq("school_id", schoolId);
+
+  const balance = (credits || []).reduce(
+    (sum: number, row: any) => sum + Number(row.delta),
+    0
+  );
+
+  if (balance < 1) return;
+
+  const message =
+    "Payment of KES " +
+    Number(amount).toLocaleString() +
+    " received by " +
+    schoolName +
+    ". M-Pesa Ref: " +
+    receiptNo +
+    ". Thank you!";
+
+  await sb.from("sms_messages").insert({
+    school_id: schoolId,
+    phone: phone,
+    message: message,
+    status: "queued",
+    channel: "transactional",
+  }).then(async () => {
+    await sb.from("sms_credit_ledger").insert({
+      school_id: schoolId,
+      delta: -1,
+      reason: "mpesa_confirmation",
+    });
+  }).catch(() => {
+    // sms_messages table may not exist — fail silently
+  });
+}
+
 // --------------- 2. QUERY TRANSACTION STATUS ---------------
 
 interface QueryRequest {
   school_id: string;
-  checkout_request_id: string;
+  transaction_id: string;
 }
 
 async function handleQuery(req: Request): Promise<Response> {
@@ -315,20 +480,20 @@ async function handleQuery(req: Request): Promise<Response> {
     return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
-  const { school_id, checkout_request_id } = body;
-  if (!school_id || !checkout_request_id) {
-    return jsonResponse({ error: "Missing school_id or checkout_request_id" }, 400);
+  const { school_id, transaction_id } = body;
+  if (!school_id || !transaction_id) {
+    return jsonResponse({ error: "Missing school_id or transaction_id" }, 400);
   }
 
   const sb = serviceClient();
 
   // Ownership check, same reasoning as handleSTKPush — a valid
   // session alone doesn't mean this caller should see the status of
-  // ANY checkout_request_id they happen to guess or enumerate.
+  // ANY transaction_id they happen to guess or enumerate.
   const { data: tx } = await sb
     .from("mpesa_transactions")
-    .select("status, result_code, result_desc, mpesa_receipt_no, amount, parent_id, school_id")
-    .eq("checkout_request_id", checkout_request_id)
+    .select("id, status, result_code, result_desc, mpesa_receipt_no, amount, parent_id, school_id, student_ids, phone, checkout_request_id")
+    .eq("id", transaction_id)
     .single();
 
   if (!tx || tx.parent_id !== caller.id || tx.school_id !== school_id) {
@@ -355,6 +520,12 @@ async function handleQuery(req: Request): Promise<Response> {
   if (!config) {
     return jsonResponse({ status: "pending", message: "Waiting for payment..." });
   }
+  if (!tx.checkout_request_id) {
+    // The initiate call never actually reached the point of getting a
+    // CheckoutRequestID back from Safaricom (e.g. it failed before
+    // that) — nothing to query yet.
+    return jsonResponse({ status: "pending", message: "Waiting for payment..." });
+  }
 
   try {
     const token = await getOAuthToken(
@@ -376,7 +547,7 @@ async function handleQuery(req: Request): Promise<Response> {
         BusinessShortCode: config.shortcode,
         Password: password,
         Timestamp: ts,
-        CheckoutRequestID: checkout_request_id,
+        CheckoutRequestID: tx.checkout_request_id,
       }),
     });
 
@@ -384,7 +555,48 @@ async function handleQuery(req: Request): Promise<Response> {
     const rc = Number(queryData.ResultCode);
 
     if (rc === 0) {
-      return jsonResponse({ status: "completed", result_desc: queryData.ResultDesc });
+      // Safaricom confirms this succeeded, but our own row is still
+      // "pending" — the callback hasn't (yet, or ever will) arrive.
+      // Process it now so the payment is actually recorded, not just
+      // reported as successful to whoever happens to be polling.
+      // idempotency: re-check status right before writing, in case a
+      // concurrent poll or a very-late callback already completed it
+      // in the moment between the read above and here.
+      const { data: fresh } = await sb
+        .from("mpesa_transactions")
+        .select("status")
+        .eq("id", tx.id)
+        .single();
+
+      if (fresh && fresh.status === "pending") {
+        const receiptRef = "QRY" + tx.checkout_request_id.replace(/[^A-Za-z0-9]/g, "").slice(-10).toUpperCase();
+
+        await sb.from("mpesa_transactions").update({
+          status: "completed",
+          result_code: rc,
+          result_desc: queryData.ResultDesc || "Confirmed via status query",
+        }).eq("id", tx.id);
+
+        const studentIds: string[] = tx.student_ids || [];
+        if (studentIds.length > 0) {
+          const perStudent = Number(tx.amount) / studentIds.length;
+          const currentYear = new Date().getFullYear();
+          for (const studentId of studentIds) {
+            await createFeePayment(sb, {
+              schoolId: tx.school_id,
+              studentId,
+              amount: perStudent,
+              year: currentYear,
+              receiptNo: receiptRef,
+              mpesaRef: receiptRef,
+            });
+          }
+        }
+
+        await sendPaymentSMS(sb, tx.school_id, tx.phone, Number(tx.amount), receiptRef);
+      }
+
+      return jsonResponse({ status: "completed", result_desc: queryData.ResultDesc, amount: tx.amount });
     } else if (rc === 1032) {
       return jsonResponse({ status: "cancelled", result_desc: "Payment cancelled by user" });
     } else if (queryData.errorCode) {

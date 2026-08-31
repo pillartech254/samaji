@@ -31,7 +31,7 @@
      specifically anticipated this) so a parent sees an identical,
      pixel-for-pixel copy of what the school actually published, not a
      separately-maintained re-derivation of the same data. -->
-<script defer src="../assets/idb-cache.js?v=2"></script>
+<script defer src="../assets/idb-cache.js?v=3"></script>
 <script defer src="../assets/academics-core.js?v=1"></script>
 <script defer src="../assets/report-card.js?v=1"></script>
 <style>
@@ -1238,30 +1238,77 @@ document.addEventListener("DOMContentLoaded", function(){
 
     var pollCount = 0;
     var maxPolls = 24;
-    var pollTimer = setInterval(function(){
-      pollCount++;
-      if (pollCount > maxPolls) {
-        clearInterval(pollTimer);
-        $("mpesa-poll-msg").textContent = "Payment timed out. Please try again.";
-        $("mpesa-poll-msg").className = "modal-msg err";
-        return;
-      }
-      sb.from(provider.txTable).select("*").eq("id", txId).single().then(function(res){
-        if (res.error) return;
-        var tx = res.data;
-        if (tx.status === "completed") {
+    var pollTimer = null;
+
+    // Fetched once and reused for the whole ~2-minute polling window
+    // (well within a session token's normal lifetime) rather than
+    // re-fetched on every tick — polling itself doesn't need the
+    // absolute freshest possible token the way starting a brand new
+    // payment does.
+    sb.auth.getSession().then(function(s){ return s.data.session; }).then(function(session){
+      var token = (session && session.access_token) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+      var queryUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/" + provider.fnName + "/query";
+
+      pollTimer = setInterval(function(){
+        pollCount++;
+        if (pollCount > maxPolls) {
           clearInterval(pollTimer);
-          showReceiptScreen(provider, tx, students);
-        } else if (tx.status === "failed" || tx.status === "cancelled") {
-          clearInterval(pollTimer);
-          $("mpesa-poll-msg").textContent = "Payment " + tx.status + (tx.result_desc ? ": " + tx.result_desc : ". Please try again.");
+          $("mpesa-poll-msg").textContent = "Payment timed out. Please try again.";
           $("mpesa-poll-msg").className = "modal-msg err";
+          return;
         }
-      });
-    }, 5000);
+        // /query checks our own database first (cheap, and reflects
+        // the callback if it already arrived) and only falls back to
+        // asking the payment provider directly if still pending —
+        // exactly the fallback needed since a payment provider's own
+        // async callback (especially in sandbox) isn't always
+        // reliably delivered, and this now actually RECORDS a
+        // confirmed payment when that happens, not just reports it.
+        fetch(queryUrl, {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
+          body: JSON.stringify({ school_id: SCHOOL, transaction_id: txId })
+        }).then(function(r){ return r.json(); }).then(function(data){
+          if (data.status === "completed") {
+            clearInterval(pollTimer);
+            // The fee_payments cache (both the per-student key
+            // loadPaidForChild reads for the Dashboard's balance, and
+            // the list-style key renderPayments reads for the
+            // Payments tab's stat cards) was populated BEFORE this
+            // payment existed. Nothing invalidated it on completion,
+            // so both screens kept showing pre-payment numbers until
+            // a full page reload reset the in-memory cache entirely —
+            // reported directly: "0 Payments / KES 0" on the Payments
+            // tab despite a completed transaction right below it, and
+            // the Dashboard balance only updating after a manual
+            // reload. Invalidate by prefix (student-id combinations
+            // vary per read, so there's no single exact key to clear)
+            // and proactively re-fetch the Dashboard's own fee data
+            // right now, in the background, while the receipt is
+            // still showing — so by the time "Done" is clicked,
+            // childFeeData is already current and the Dashboard
+            // renders instantly with the right balance instead of
+            // needing its own network round-trip at that point.
+            window.SamajiCache.invalidateCustomPrefix("fee_payments|" + SCHOOL);
+            loadFeeDataForChildren(function(){});
+            sb.from(provider.txTable).select("*").eq("id", txId).single().then(function(res){
+              if (!res.error && res.data) showReceiptScreen(provider, res.data, students);
+            });
+          } else if (data.status === "failed" || data.status === "cancelled") {
+            clearInterval(pollTimer);
+            $("mpesa-poll-msg").textContent = "Payment " + data.status + (data.result_desc ? ": " + data.result_desc : ". Please try again.");
+            $("mpesa-poll-msg").className = "modal-msg err";
+          }
+          // status "pending" -> just keep polling, no UI change needed
+        }).catch(function(){
+          // A single failed poll attempt isn't fatal — try again on
+          // the next tick rather than giving up the whole flow.
+        });
+      }, 5000);
+    });
 
     $("mpesa-poll-cancel").onclick = function(){
-      clearInterval(pollTimer);
+      if (pollTimer) clearInterval(pollTimer);
       $("mpesa-modal").style.display = "none";
     };
   }
