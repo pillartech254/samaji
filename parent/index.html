@@ -1170,25 +1170,36 @@ document.addEventListener("DOMContentLoaded", function(){
         var txId = res.data.id;
         // Trigger the STK/payment push via the edge function
         var stkUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/" + provider.fnName;
-        var token = (sb.realtime && sb.realtime.accessToken) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
-        fetch(stkUrl, {
-          method: "POST",
-          headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
-          body: JSON.stringify({
-            transaction_id: txId,
-            school_id: SCHOOL,
-            phone: phone,
-            amount: amount,
-            account_ref: "Samaji"
-          })
-        }).then(function(r){ return r.json(); }).then(function(data){
-          if (data.error && !data.success) {
-            $("mpesa-msg").textContent = data.error;
-            $("mpesa-msg").className = "modal-msg err";
-            $("mpesa-pay").disabled = false;
-            return;
-          }
-          showPayPolling(provider, txId, students);
+        // Was: (sb.realtime && sb.realtime.accessToken) || ANON_KEY — an
+        // internal property meant for Realtime subscriptions, not general
+        // API auth, with a silent fallback to the bare anon key if unset.
+        // The anon key isn't tied to any specific user, so mpesa-stk/
+        // kcb-stk's own auth check (added specifically so only the actual
+        // owner of a transaction can trigger a push for it) would have
+        // rejected even a completely legitimate request sent this way.
+        // window.__samajiBoot is the same cached session promise every
+        // other portal page already uses for this.
+        (window.__samajiBoot || sb.auth.getSession().then(function(s){ return s.data.session; })).then(function(session){
+          var token = (session && session.access_token) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+          return fetch(stkUrl, {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
+            body: JSON.stringify({
+              transaction_id: txId,
+              school_id: SCHOOL,
+              phone: phone,
+              amount: amount,
+              account_ref: "Samaji"
+            })
+          }).then(function(r){ return r.json(); }).then(function(data){
+            if (data.error && !data.success) {
+              $("mpesa-msg").textContent = data.error;
+              $("mpesa-msg").className = "modal-msg err";
+              $("mpesa-pay").disabled = false;
+              return;
+            }
+            showPayPolling(provider, txId, students);
+          });
         }).catch(function(){
           $("mpesa-msg").textContent = "Failed to send payment request. Please try again.";
           $("mpesa-msg").className = "modal-msg err";
