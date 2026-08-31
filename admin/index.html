@@ -1118,8 +1118,8 @@ document.addEventListener("DOMContentLoaded", function(){
           environment: document.getElementById("mp-env").value
         };
         var res;
-        if (cfg.id) {
-          res = await sb.from("mpesa_config").update(data).eq("id", cfg.id);
+        if (cfg.school_id) {
+          res = await sb.from("mpesa_config").update(data).eq("school_id", cfg.school_id);
         } else {
           res = await sb.from("mpesa_config").insert(data);
         }

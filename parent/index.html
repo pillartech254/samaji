@@ -1177,9 +1177,21 @@ document.addEventListener("DOMContentLoaded", function(){
         // kcb-stk's own auth check (added specifically so only the actual
         // owner of a transaction can trigger a push for it) would have
         // rejected even a completely legitimate request sent this way.
-        // window.__samajiBoot is the same cached session promise every
-        // other portal page already uses for this.
-        (window.__samajiBoot || sb.auth.getSession().then(function(s){ return s.data.session; })).then(function(session){
+        //
+        // Deliberately NOT using window.__samajiBoot here, unlike every
+        // other read in this file — that promise is captured once, at
+        // page load, and cached for the rest of the session. Fine for
+        // routine reads, but a parent can sit on this page a long time
+        // before actually paying, and a JWT captured at boot can genuinely
+        // go stale by the time they click Pay. sb.auth.getSession() reads
+        // the persisted session and — per assets/boot-early.js's own
+        // comment on the exact same call — refreshes it over the network
+        // if the access token has expired, but only actually does that
+        // WHEN CALLED; a promise resolved once at boot doesn't keep
+        // itself fresh on its own. Payment is rare and high-stakes enough
+        // to be worth a fresh call right here rather than trusting
+        // whatever was cached possibly a long time ago.
+        sb.auth.getSession().then(function(s){ return s.data.session; }).then(function(session){
           var token = (session && session.access_token) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
           return fetch(stkUrl, {
             method: "POST",
