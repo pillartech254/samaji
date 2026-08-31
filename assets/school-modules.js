@@ -94,13 +94,18 @@
   //  ATTENDANCE
   // ====================================================
   async function renderAttendance(sb, schoolId, el){
+    // Admin has no write access to attendance at all now (setup-
+    // modules-42.sql) — marking is exclusively a teacher
+    // responsibility, at any date, not just past ones. This screen
+    // is a genuine viewer: no Save button, no clickable status
+    // toggles, because there's nothing here an admin can ever submit
+    // — attempting to would just be rejected by RLS regardless.
     var today = new Date().toISOString().slice(0,10);
-    el.innerHTML='<div class="mod-head"><div><h2>Attendance</h2><p>Mark daily attendance and save it to the register.</p></div></div>'
+    el.innerHTML='<div class="mod-head"><div><h2>Attendance</h2><p>View the register your teachers have marked. Attendance can only be marked by teachers, from the Teacher Portal — admins can view it here but not edit it.</p></div></div>'
       +'<div class="toolbar">'
-      +'<div class="field"><label>Date</label><input type="date" id="att-date" value="'+today+'"></div>'
+      +'<div class="field"><label>Date</label><input type="date" id="att-date" value="'+today+'" max="'+today+'"></div>'
       +'<div class="field"><label>Grade</label><select id="att-grade"><option value="">All grades</option></select></div>'
-      +'<div style="flex:1;"></div><span class="muted" id="att-summary" style="font-size:12.5px;"></span>'
-      +'<button class="btn-primary" id="att-save">Save register</button></div>'
+      +'<div style="flex:1;"></div><span class="muted" id="att-summary" style="font-size:12.5px;"></span></div>'
       +'<div id="att-table"></div>';
     var students=[], marks={};
     var sr = await sb.from("students").select("*").eq("school_id",schoolId).eq("status","active").order("first_name");
@@ -119,41 +124,23 @@
     function draw(){
       var g=document.getElementById("att-grade").value;
       var rows=students.filter(function(s){ return !g||s.grade===g; });
-      var present=0;
-      var html='<table class="data"><thead><tr><th>Name</th><th>Grade</th><th style="text-align:right;">Mark</th></tr></thead><tbody>';
+      var present=0, marked=0;
+      var html='<table class="data"><thead><tr><th>Name</th><th>Grade</th><th style="text-align:right;">Status</th></tr></thead><tbody>';
       rows.forEach(function(s){
-        var st=marks[s.id]||"present"; if(st==="present")present++;
+        var st=marks[s.id];
+        if(st){ marked++; if(st==="present") present++; }
+        var label = st ? (st.charAt(0).toUpperCase()+st.slice(1)) : "Not marked yet";
+        var color = st==="present" ? "#067647" : st==="late" ? "#B54708" : st==="absent" ? "#B42318" : "#98A2B3";
         html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td><td>'+esc(s.grade||"—")+'</td>'
-          +'<td style="text-align:right;"><span class="seg" data-stu="'+s.id+'">'
-          +'<button data-v="present" class="'+(st==="present"?"on-present":"")+'">Present</button>'
-          +'<button data-v="late" class="'+(st==="late"?"on-late":"")+'">Late</button>'
-          +'<button data-v="absent" class="'+(st==="absent"?"on-absent":"")+'">Absent</button>'
-          +'</span></td></tr>';
+          +'<td style="text-align:right;color:'+color+';font-weight:600;">'+esc(label)+'</td></tr>';
       });
       html+='</tbody></table>';
       if(!rows.length) html='<div class="empty">No active students'+(g?" in "+esc(g):"")+'.</div>';
       document.getElementById("att-table").innerHTML=html;
-      document.getElementById("att-summary").textContent=rows.length?(present+" / "+rows.length+" present"):"";
-      document.querySelectorAll(".seg[data-stu]").forEach(function(seg){
-        var id=seg.getAttribute("data-stu");
-        if(marks[id]===undefined) marks[id]="present";
-        seg.querySelectorAll("button").forEach(function(b){
-          b.onclick=function(){ marks[id]=b.getAttribute("data-v"); draw(); };
-        });
-      });
+      document.getElementById("att-summary").textContent=rows.length?(marked+" of "+rows.length+" marked · "+present+" present"):"";
     }
     document.getElementById("att-date").onchange=load;
     document.getElementById("att-grade").onchange=draw;
-    document.getElementById("att-save").onclick=async function(){
-      var d=document.getElementById("att-date").value;
-      var g=document.getElementById("att-grade").value;
-      var rows=students.filter(function(s){ return !g||s.grade===g; });
-      var payload=rows.map(function(s){ return { school_id:schoolId, student_id:s.id, on_date:d, status:marks[s.id]||"present" }; });
-      if(!payload.length){ toast("Nothing to save."); return; }
-      var r=await sb.from("attendance").upsert(payload,{ onConflict:"student_id,on_date" });
-      if(r.error){ toast("Error: "+r.error.message); return; }
-      toast("Register saved for "+d);
-    };
     load();
   }
 

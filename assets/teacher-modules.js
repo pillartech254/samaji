@@ -122,15 +122,17 @@
     var today = new Date().toISOString().slice(0,10);
     if (!classes.length){ el.innerHTML='<div class="mod-head"><div><h2>Attendance</h2></div></div><div class="empty">No classes assigned yet. Ask your school admin to assign you in Settings.</div>'; return; }
 
-    el.innerHTML = '<div class="mod-head"><div><h2>Attendance</h2><p>Mark daily attendance for your classes.</p></div></div>'
+    el.innerHTML = '<div class="mod-head"><div><h2>Attendance</h2><p>Mark daily attendance for your classes. Only today\'s register can be changed — once a day has passed, it\'s locked for everyone, including admins.</p></div></div>'
       + '<div class="toolbar">'
       + '<div class="field"><label>Class</label><select id="att-class">'+classes.map(function(c){ return '<option value="'+c.id+'">'+esc(classLabel(c))+'</option>'; }).join("")+'</select></div>'
-      + '<div class="field"><label>Date</label><input type="date" id="att-date" value="'+today+'"></div>'
+      + '<div class="field"><label>Date</label><input type="date" id="att-date" value="'+today+'" max="'+today+'"></div>'
       + '<div style="flex:1;"></div><span class="muted" id="att-summary" style="font-size:12.5px;"></span>'
       + '<button class="btn-primary" id="att-save">Save register</button></div>'
+      + '<div id="att-lock-notice" style="display:none;font-size:12.5px;color:#B54708;background:#FFFAEB;border:1px solid #FEDF89;border-radius:8px;padding:8px 12px;margin-bottom:12px;">This date has already passed and is locked — only today\'s register can be edited.</div>'
       + '<div id="att-table"></div>';
 
     var students=[], marks={};
+    function isTodaySelected(){ return document.getElementById("att-date").value === today; }
     async function load(){
       var classId = document.getElementById("att-class").value;
       var sr = await sb.from("students").select("*").eq("school_id",ctx.schoolId).eq("class_id",classId).eq("status","active").order("first_name");
@@ -144,24 +146,31 @@
       draw();
     }
     function draw(){
+      var locked = !isTodaySelected();
+      document.getElementById("att-lock-notice").style.display = locked ? "block" : "none";
+      document.getElementById("att-save").disabled = locked;
+      document.getElementById("att-save").style.opacity = locked ? "0.5" : "1";
+      document.getElementById("att-save").style.cursor = locked ? "not-allowed" : "pointer";
+
       var t=document.getElementById("att-table");
       if (!students.length){ t.innerHTML='<div class="empty">No active students in this class yet.</div>'; document.getElementById("att-summary").textContent=""; return; }
       var present=0;
       var html='<table class="data"><thead><tr><th>Name</th><th style="text-align:right;">Status</th></tr></thead><tbody>';
       students.forEach(function(s){
         var st = marks[s.id]||"present"; if(st==="present") present++;
-        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
-          +'<td style="text-align:right;"><select class="att-status" data-stu="'+s.id+'">'
+        html+='<tr'+(locked?' style="opacity:.55;"':'')+'><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td>'
+          +'<td style="text-align:right;"><select class="att-status" data-stu="'+s.id+'"'+(locked?' disabled':'')+'>'
           +['present','absent','late'].map(function(o){ return '<option value="'+o+'"'+(st===o?" selected":"")+'>'+o+'</option>'; }).join("")
           +'</select></td></tr>';
       });
       html+='</tbody></table>';
       t.innerHTML=html;
-      document.getElementById("att-summary").textContent = students.length+" students · "+present+" present so far";
+      document.getElementById("att-summary").textContent = students.length+" students · "+present+" present so far"+(locked?" (view only — this date is locked)":"");
     }
     document.getElementById("att-class").onchange=load;
     document.getElementById("att-date").onchange=load;
     document.getElementById("att-save").onclick=async function(){
+      if (!isTodaySelected()){ toast("Only today's register can be saved."); return; }
       var d = document.getElementById("att-date").value;
       var payload=[];
       document.querySelectorAll(".att-status").forEach(function(sel){ payload.push({ school_id:ctx.schoolId, student_id:sel.getAttribute("data-stu"), on_date:d, status:sel.value }); });
