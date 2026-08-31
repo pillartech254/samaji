@@ -95,12 +95,13 @@
   // ====================================================
   async function renderAttendance(sb, schoolId, el){
     var today = new Date().toISOString().slice(0,10);
-    el.innerHTML='<div class="mod-head"><div><h2>Attendance</h2><p>Mark daily attendance and save it to the register.</p></div></div>'
+    el.innerHTML='<div class="mod-head"><div><h2>Attendance</h2><p>Mark daily attendance and save it to the register. Only today\'s register can be changed — once a day has passed, it\'s locked for everyone, including admins.</p></div></div>'
       +'<div class="toolbar">'
-      +'<div class="field"><label>Date</label><input type="date" id="att-date" value="'+today+'"></div>'
+      +'<div class="field"><label>Date</label><input type="date" id="att-date" value="'+today+'" max="'+today+'"></div>'
       +'<div class="field"><label>Grade</label><select id="att-grade"><option value="">All grades</option></select></div>'
       +'<div style="flex:1;"></div><span class="muted" id="att-summary" style="font-size:12.5px;"></span>'
       +'<button class="btn-primary" id="att-save">Save register</button></div>'
+      +'<div id="att-lock-notice" style="display:none;font-size:12.5px;color:#B54708;background:#FFFAEB;border:1px solid #FEDF89;border-radius:8px;padding:8px 12px;margin-bottom:12px;">This date has already passed and is locked — only today\'s register can be edited, even by an admin.</div>'
       +'<div id="att-table"></div>';
     var students=[], marks={};
     var sr = await sb.from("students").select("*").eq("school_id",schoolId).eq("status","active").order("first_name");
@@ -109,6 +110,7 @@
     var gsel=document.getElementById("att-grade");
     grades.forEach(function(g){ var o=document.createElement("option"); o.value=g; o.textContent=g; gsel.appendChild(o); });
 
+    function isTodaySelected(){ return document.getElementById("att-date").value === today; }
     async function load(){
       marks={};
       var d=document.getElementById("att-date").value;
@@ -117,23 +119,30 @@
       draw();
     }
     function draw(){
+      var locked = !isTodaySelected();
+      document.getElementById("att-lock-notice").style.display = locked ? "block" : "none";
+      document.getElementById("att-save").disabled = locked;
+      document.getElementById("att-save").style.opacity = locked ? "0.5" : "1";
+      document.getElementById("att-save").style.cursor = locked ? "not-allowed" : "pointer";
+
       var g=document.getElementById("att-grade").value;
       var rows=students.filter(function(s){ return !g||s.grade===g; });
       var present=0;
       var html='<table class="data"><thead><tr><th>Name</th><th>Grade</th><th style="text-align:right;">Mark</th></tr></thead><tbody>';
       rows.forEach(function(s){
         var st=marks[s.id]||"present"; if(st==="present")present++;
-        html+='<tr><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td><td>'+esc(s.grade||"—")+'</td>'
-          +'<td style="text-align:right;"><span class="seg" data-stu="'+s.id+'">'
-          +'<button data-v="present" class="'+(st==="present"?"on-present":"")+'">Present</button>'
-          +'<button data-v="late" class="'+(st==="late"?"on-late":"")+'">Late</button>'
-          +'<button data-v="absent" class="'+(st==="absent"?"on-absent":"")+'">Absent</button>'
+        html+='<tr'+(locked?' style="opacity:.55;"':'')+'><td style="font-weight:600;color:#1A1D26;">'+esc(s.first_name+" "+s.last_name)+'</td><td>'+esc(s.grade||"—")+'</td>'
+          +'<td style="text-align:right;"><span class="seg" data-stu="'+s.id+'"'+(locked?' style="pointer-events:none;"':'')+'>'
+          +'<button data-v="present" class="'+(st==="present"?"on-present":"")+'"'+(locked?' disabled':'')+'>Present</button>'
+          +'<button data-v="late" class="'+(st==="late"?"on-late":"")+'"'+(locked?' disabled':'')+'>Late</button>'
+          +'<button data-v="absent" class="'+(st==="absent"?"on-absent":"")+'"'+(locked?' disabled':'')+'>Absent</button>'
           +'</span></td></tr>';
       });
       html+='</tbody></table>';
       if(!rows.length) html='<div class="empty">No active students'+(g?" in "+esc(g):"")+'.</div>';
       document.getElementById("att-table").innerHTML=html;
-      document.getElementById("att-summary").textContent=rows.length?(present+" / "+rows.length+" present"):"";
+      document.getElementById("att-summary").textContent=rows.length?(present+" / "+rows.length+" present"+(locked?" (view only — this date is locked)":"")):"";
+      if (locked) return; // no click handlers needed — every button above is already disabled
       document.querySelectorAll(".seg[data-stu]").forEach(function(seg){
         var id=seg.getAttribute("data-stu");
         if(marks[id]===undefined) marks[id]="present";
@@ -145,6 +154,7 @@
     document.getElementById("att-date").onchange=load;
     document.getElementById("att-grade").onchange=draw;
     document.getElementById("att-save").onclick=async function(){
+      if (!isTodaySelected()){ toast("Only today's register can be saved."); return; }
       var d=document.getElementById("att-date").value;
       var g=document.getElementById("att-grade").value;
       var rows=students.filter(function(s){ return !g||s.grade===g; });
