@@ -2023,8 +2023,27 @@
       // notices completion first wins and the other's later notice is
       // a no-op — never double-invalidates the cache or opens the
       // receipt twice.
-      function handleResolution(status, resultDesc){
+      //
+      // `source` distinguishes a realtime-sourced "failed" (our own
+      // database, only ever written by the actual callback —
+      // trustworthy) from a polling-sourced one (the fallback's own
+      // live query to the provider — Safaricom's sandbox is
+      // documented to sometimes answer that with a false "failed" for
+      // a payment its own callback already confirmed, or will shortly
+      // confirm, as successful). Reported directly: a real payment
+      // completed successfully — recorded correctly, parent's own
+      // confirmation SMS arrived — yet the modal still showed "Payment
+      // failed". Cancellation (Safaricom's own 1032 code) is reliable
+      // either way and always resolves.
+      function handleResolution(status, resultDesc, source){
         if(resolved) return;
+
+        if(status==="failed" && source==="polling"){
+          var waitMsgEl=m.q("#ssp-msg");
+          if(waitMsgEl){ waitMsgEl.textContent="We couldn't confirm this definitively — sandbox status checks aren't always reliable. Still watching for the real confirmation."; waitMsgEl.style.color=""; }
+          return;
+        }
+
         resolved=true;
         cleanup();
         if(status==="completed"){
@@ -2050,7 +2069,7 @@
         channel=sb.channel("school-tx-"+txId)
           .on("postgres_changes",{event:"UPDATE",schema:"public",table:txTable,filter:"id=eq."+txId},function(payload){
             var row=payload.new;
-            if(row && (row.status==="completed"||row.status==="failed"||row.status==="cancelled")) handleResolution(row.status,row.result_desc);
+            if(row && (row.status==="completed"||row.status==="failed"||row.status==="cancelled")) handleResolution(row.status,row.result_desc,"realtime");
           })
           .subscribe();
       } catch(e){ /* WebSockets blocked on this network — polling fallback below still covers it */ }
@@ -2074,7 +2093,7 @@
             headers:{"Content-Type":"application/json","Authorization":"Bearer "+token,"apikey":window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
             body:JSON.stringify({ school_id:opts.schoolId, transaction_id:txId })
           }).then(function(r){ return r.json(); }).then(function(data){
-            if(data.status==="completed"||data.status==="failed"||data.status==="cancelled") handleResolution(data.status,data.result_desc);
+            if(data.status==="completed"||data.status==="failed"||data.status==="cancelled") handleResolution(data.status,data.result_desc,"polling");
           }).catch(function(){});
         },5000);
       });
