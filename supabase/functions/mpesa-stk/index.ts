@@ -180,23 +180,28 @@ async function handleSTKPush(req: Request): Promise<Response> {
 
   const sb = serviceClient();
 
-  // Ownership check: the transaction row must already exist (the
-  // Parent Portal creates it via its own insert, scoped by RLS to
-  // parent_id = auth.uid(), before ever calling this function) and
-  // must belong to the caller. This is what actually stops someone
-  // from POSTing an arbitrary phone/amount/school_id combination
-  // directly at this endpoint — a valid session alone isn't enough,
-  // it has to be a transaction that session's own account created.
+  // Ownership check: the transaction row must already exist and
+  // belong to the caller — either as the parent who created it via
+  // the Parent Portal's own insert (parent_id = auth.uid(), RLS-
+  // enforced at insert time), or as the school staff member who
+  // created it via Collect Payment's STK push option (initiated_by =
+  // auth.uid(), same RLS guarantee, added in setup-modules-44.sql).
+  // RLS already ensures only one of the two is ever set on a given
+  // row — a school-initiated push always has parent_id null, a
+  // parent-initiated one always has initiated_by null — so checking
+  // either match is sufficient without a separate role/profile
+  // lookup here. Either way, a valid session alone still isn't
+  // enough: it has to be a transaction that exact account created.
   const { data: tx, error: txErr } = await sb
     .from("mpesa_transactions")
-    .select("id, school_id, parent_id, amount, phone")
+    .select("id, school_id, parent_id, initiated_by, amount, phone")
     .eq("id", transaction_id)
     .single();
 
   if (txErr || !tx) {
     return jsonResponse({ error: "Transaction not found" }, 404);
   }
-  if (tx.parent_id !== caller.id) {
+  if (tx.parent_id !== caller.id && tx.initiated_by !== caller.id) {
     return jsonResponse({ error: "Not authorized for this transaction" }, 403);
   }
   if (tx.school_id !== school_id) {
@@ -329,14 +334,52 @@ async function createFeePayment(
 
   const { data: student } = await sb
     .from("students")
-    .select("grade")
+    .select("grade, opening_balance")
     .eq("id", studentId)
     .single();
 
   if (!student) return;
 
-  const terms = ["Term 1", "Term 2", "Term 3"];
   let remaining = amount;
+
+  // Arrears first — same reasoning as mpesa-callback's own copy of
+  // this function (see its comment for the fuller explanation): a
+  // carried-forward "Balance b/f" balance is its own bucket, checked
+  // before Term 1/2/3, matching what manual recording already
+  // enforces. No year filter — arrears carry forward until cleared.
+  const OB_TERM = "Balance b/f";
+  const obBilled = Number(student.opening_balance) || 0;
+  if (obBilled > 0 && remaining > 0) {
+    const { data: obPayments } = await sb
+      .from("fee_payments")
+      .select("amount, transport_amount")
+      .eq("student_id", studentId)
+      .eq("term", OB_TERM);
+
+    let obPaid = 0;
+    for (const p of obPayments || []) {
+      obPaid += Number(p.amount) - (Number((p as any).transport_amount) || 0);
+    }
+
+    const obBalance = obBilled - obPaid;
+    if (obBalance > 0) {
+      const applyAmount = Math.min(remaining, obBalance);
+      await sb.from("fee_payments").insert({
+        school_id: schoolId,
+        student_id: studentId,
+        amount: applyAmount,
+        term: OB_TERM,
+        year: year,
+        method: "M-Pesa",
+        receipt_no: "MPQ-" + receiptNo + "-OB",
+        reference: mpesaRef,
+        note: "M-Pesa STK Push payment (confirmed via status query — Safaricom's async callback did not arrive; balance carried forward)",
+      });
+      remaining -= applyAmount;
+    }
+  }
+
+  const terms = ["Term 1", "Term 2", "Term 3"];
 
   for (const term of terms) {
     if (remaining <= 0) break;
@@ -489,14 +532,15 @@ async function handleQuery(req: Request): Promise<Response> {
 
   // Ownership check, same reasoning as handleSTKPush — a valid
   // session alone doesn't mean this caller should see the status of
-  // ANY transaction_id they happen to guess or enumerate.
+  // ANY transaction_id they happen to guess or enumerate. Accepts
+  // either parent_id or initiated_by, same as handleSTKPush.
   const { data: tx } = await sb
     .from("mpesa_transactions")
-    .select("id, status, result_code, result_desc, mpesa_receipt_no, amount, parent_id, school_id, student_ids, phone, checkout_request_id")
+    .select("id, status, result_code, result_desc, mpesa_receipt_no, amount, parent_id, initiated_by, school_id, student_ids, phone, checkout_request_id")
     .eq("id", transaction_id)
     .single();
 
-  if (!tx || tx.parent_id !== caller.id || tx.school_id !== school_id) {
+  if (!tx || (tx.parent_id !== caller.id && tx.initiated_by !== caller.id) || tx.school_id !== school_id) {
     return jsonResponse({ error: "Not authorized for this transaction" }, 403);
   }
 
