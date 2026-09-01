@@ -150,11 +150,47 @@ interface PaymentInput {
 async function createFeePayment(sb: ReturnType<typeof createClient>, input: PaymentInput): Promise<void> {
   const { schoolId, studentId, amount, year, receiptNo, ref } = input;
 
-  const { data: student } = await sb.from("students").select("grade").eq("id", studentId).single();
+  const { data: student } = await sb.from("students").select("grade, opening_balance").eq("id", studentId).single();
   if (!student) return;
 
-  const terms = ["Term 1", "Term 2", "Term 3"];
   let remaining = amount;
+
+  // Arrears first — same reasoning as mpesa-callback's own copy of
+  // this function (see its comment for the fuller explanation): a
+  // carried-forward "Balance b/f" balance is its own bucket, checked
+  // before Term 1/2/3, matching what manual recording already
+  // enforces. No year filter — arrears carry forward until cleared.
+  const OB_TERM = "Balance b/f";
+  const obBilled = Number(student.opening_balance) || 0;
+  if (obBilled > 0 && remaining > 0) {
+    const { data: obPayments } = await sb
+      .from("fee_payments")
+      .select("amount, transport_amount")
+      .eq("student_id", studentId)
+      .eq("term", OB_TERM);
+
+    let obPaid = 0;
+    for (const p of obPayments || []) obPaid += Number(p.amount) - (Number((p as any).transport_amount) || 0);
+
+    const obBalance = obBilled - obPaid;
+    if (obBalance > 0) {
+      const applyAmount = Math.min(remaining, obBalance);
+      await sb.from("fee_payments").insert({
+        school_id: schoolId,
+        student_id: studentId,
+        amount: applyAmount,
+        term: OB_TERM,
+        year: year,
+        method: "KCB",
+        receipt_no: "KCB-" + receiptNo + "-OB",
+        reference: ref,
+        note: "KCB payment (balance carried forward)",
+      });
+      remaining -= applyAmount;
+    }
+  }
+
+  const terms = ["Term 1", "Term 2", "Term 3"];
 
   for (const term of terms) {
     if (remaining <= 0) break;

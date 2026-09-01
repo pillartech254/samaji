@@ -135,20 +135,68 @@ async function createFeePayment(
 ): Promise<void> {
   const { schoolId, studentId, amount, year, receiptNo, mpesaRef } = input;
 
-  // Get the student's grade/class
+  // Get the student's grade/class and any carried-forward arrears
   const { data: student } = await sb
     .from("students")
-    .select("grade")
+    .select("grade, opening_balance")
     .eq("id", studentId)
     .single();
 
   if (!student) return;
 
+  let remaining = amount;
+
+  // Arrears first: a carried-forward "Balance b/f" balance is its own
+  // bucket, entirely separate from Term 1/2/3's own fee structure —
+  // same rule manual recording already enforces (school-plus.js's
+  // OB_TERM: Term 1/2/3 collection is blocked in that UI until this
+  // clears). An automated push previously skipped this bucket
+  // entirely — it only ever knew about Term 1/2/3 — so a school
+  // relying on arrears-first collection had no way to actually get
+  // that from a parent's own M-Pesa/KCB payment, or from a push
+  // triggered on their behalf from Collect Payment. No year filter
+  // here, deliberately: arrears carry forward across years until
+  // actually cleared, matching how termPaid(sid, OB_TERM) already
+  // reads it with no year filter in the manual-recording UI.
+  const OB_TERM = "Balance b/f";
+  const obBilled = Number(student.opening_balance) || 0;
+  if (obBilled > 0 && remaining > 0) {
+    const { data: obPayments } = await sb
+      .from("fee_payments")
+      .select("amount, transport_amount")
+      .eq("student_id", studentId)
+      .eq("term", OB_TERM);
+
+    let obPaid = 0;
+    for (const p of obPayments || []) {
+      obPaid += Number(p.amount) - (Number((p as any).transport_amount) || 0);
+    }
+
+    const obBalance = obBilled - obPaid;
+    if (obBalance > 0) {
+      const applyAmount = Math.min(remaining, obBalance);
+      const uniqueReceipt = "MP-" + receiptNo + "-OB";
+
+      await sb.from("fee_payments").insert({
+        school_id: schoolId,
+        student_id: studentId,
+        amount: applyAmount,
+        term: OB_TERM,
+        year: year,
+        method: "M-Pesa",
+        receipt_no: uniqueReceipt,
+        reference: mpesaRef,
+        note: "M-Pesa STK Push payment (balance carried forward)",
+      });
+
+      remaining -= applyAmount;
+    }
+  }
+
   // Determine which term needs payment using the spillover approach:
   // Check each term in order — if billed > paid, apply payment there.
   // If payment exceeds the term balance, spill remainder to next term.
   const terms = ["Term 1", "Term 2", "Term 3"];
-  let remaining = amount;
 
   for (const term of terms) {
     if (remaining <= 0) break;
