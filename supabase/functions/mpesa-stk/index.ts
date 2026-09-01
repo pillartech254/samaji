@@ -101,6 +101,23 @@ function formatPhone(phone: string): string {
   return p;
 }
 
+// Safaricom's own wording for "not resolved yet, keep waiting" varies
+// — reported directly, the sandbox returns this via the NORMAL
+// ResultCode/ResultDesc shape (a real non-zero code, not just the
+// separate errorCode shape), with text like "The transaction is
+// still under processing" when queried while the customer is still
+// actively on the PIN entry screen. That's a normal timing case, not
+// a failure. Checking for "process" alongside any common still-
+// pending indicator word catches the phrasing variants actually seen
+// ("still under processing", "is being processed", "processing,
+// please wait") without needing to enumerate every exact string
+// Safaricom might use.
+function isStillProcessing(text: string): boolean {
+  const t = text.toLowerCase();
+  if (!t.includes("process")) return false;
+  return ["still", "being", "under", "progress", "wait"].some((w) => t.includes(w));
+}
+
 function timestamp(): string {
   const d = new Date();
   const pad = (n: number) => n.toString().padStart(2, "0");
@@ -643,9 +660,23 @@ async function handleQuery(req: Request): Promise<Response> {
       return jsonResponse({ status: "completed", result_desc: queryData.ResultDesc, amount: tx.amount });
     } else if (rc === 1032) {
       return jsonResponse({ status: "cancelled", result_desc: "Payment cancelled by user" });
-    } else if (queryData.errorCode) {
-      // Transaction still in progress or expired
-      return jsonResponse({ status: "pending", message: queryData.errorMessage || "Waiting for payment..." });
+    } else if (
+      queryData.errorCode ||
+      isStillProcessing(String(queryData.ResultDesc || queryData.errorMessage || ""))
+    ) {
+      // Genuinely still pending, not a failure — this can arrive via
+      // EITHER response shape. queryData.errorCode is Daraja's own
+      // "not resolved yet" shape (used when the CheckoutRequestID
+      // simply isn't ready to be queried at all yet). But Safaricom's
+      // sandbox is separately documented as capable of returning this
+      // exact situation through the NORMAL ResultCode/ResultDesc shape
+      // instead — a real, non-zero ResultCode paired with a ResultDesc
+      // like "The transaction is still under processing", reported
+      // directly: this happens when querying while the customer is
+      // still actively on the PIN prompt, a completely normal timing
+      // case, not a rejected payment. Checking ResultDesc's actual
+      // text (not just which field it arrived in) catches both.
+      return jsonResponse({ status: "pending", message: queryData.errorMessage || queryData.ResultDesc || "Waiting for payment..." });
     } else {
       return jsonResponse({ status: "failed", result_code: rc, result_desc: queryData.ResultDesc || "Payment failed" });
     }
