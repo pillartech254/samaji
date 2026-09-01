@@ -213,6 +213,35 @@ table.data tbody tr:hover td{background:var(--surface-2);}
 .stat .val{font-size:27px;font-weight:700;letter-spacing:-.025em;margin-top:3px;color:var(--ink);}
 .stat .delta{font-size:11.5px;font-weight:600;margin-top:6px;display:inline-flex;align-items:center;gap:3px;}
 .stat .delta.up{color:var(--green);} .stat .delta.down{color:var(--red);} .stat .delta.flat{color:var(--muted);}
+.stat .status-badge{display:inline-block;margin-top:10px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;}
+.stat .status-badge.good{background:var(--green-t);color:var(--green);}
+.stat .status-badge.warn{background:var(--amber-t);color:var(--amber);}
+.stat .status-badge.bad{background:var(--red-t);color:var(--red);}
+.stat .status-badge.neutral{background:var(--line-2);color:var(--ink-2);}
+
+/* ===== quick actions (dashboard) ===== */
+.quickactions{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-top:14px;}
+@media (max-width:1200px){.quickactions{grid-template-columns:repeat(3,1fr);}}
+@media (max-width:640px){.quickactions{grid-template-columns:repeat(2,1fr);}}
+.qa-btn{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 13px;cursor:pointer;font-family:inherit;text-align:left;transition:transform var(--fast),box-shadow var(--fast),border-color var(--fast);}
+.qa-btn:hover{transform:translateY(-2px);box-shadow:var(--sh-2);border-color:#BFE6DF;}
+.qa-btn .qa-ic{flex:none;width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;}
+.qa-btn .qa-lbl{font-size:12.5px;font-weight:700;color:var(--ink);letter-spacing:-.01em;}
+
+/* ===== school health banner (dashboard) ===== */
+.health-banner{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh-1);padding:15px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;}
+.health-banner .hb-left{display:flex;align-items:center;gap:12px;}
+.health-banner .hb-shield{flex:none;width:38px;height:38px;border-radius:11px;background:var(--teal-t);color:var(--teal-d);display:flex;align-items:center;justify-content:center;}
+.health-banner .hb-title{font-size:14.5px;font-weight:700;color:var(--ink);}
+.health-banner .hb-sub{font-size:11.5px;color:var(--muted);margin-top:1px;}
+.health-banner .hb-metrics{display:flex;gap:22px;flex-wrap:wrap;}
+.health-banner .hb-metric{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);}
+.health-banner .hb-metric .dot{width:8px;height:8px;border-radius:50%;flex:none;}
+.health-banner .hb-metric strong{color:var(--ink);font-size:14px;}
+
+/* ===== dashboard greeting header ===== */
+.dash-greet h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em;color:var(--ink);}
+.dash-greet p{margin:4px 0 0;font-size:13.5px;color:var(--muted);}
 
 /* chart cards */
 .cardrow{display:grid;gap:16px;margin-top:18px;}
