@@ -1236,25 +1236,110 @@ document.addEventListener("DOMContentLoaded", function(){
     html += '<button style="width:100%;background:none;border:1px solid #DDE1E6;border-radius:10px;color:#344054;font-size:13px;cursor:pointer;padding:12px;font-family:inherit;margin-top:10px;" id="mpesa-poll-cancel">Cancel</button>';
     box.innerHTML = html;
 
+    var pollTimer = null;
+    var channel = null;
+    var resolved = false; // guards against the realtime push and a
+    // fallback poll both resolving at nearly the same moment — the
+    // second one to arrive is a no-op instead of double-invalidating
+    // the cache or trying to render the receipt twice.
+
+    function cleanup() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      if (channel) { sb.removeChannel(channel); channel = null; }
+    }
+
+    // Shared by both the realtime listener and the polling fallback
+    // below — whichever one actually notices the payment resolve
+    // first runs this, and the other's own subsequent notice (if any)
+    // is ignored via the `resolved` guard. Previously this logic only
+    // lived inside the polling loop, which is exactly why a callback
+    // that arrived after the ~2-minute polling window gave up left
+    // the modal stuck on "Payment timed out" despite the payment
+    // having genuinely gone through moments later — and, separately,
+    // why the fee_payments cache was never invalidated for that
+    // payment either, since that invalidation lived in the same
+    // now-unreached code path.
+    function handleResolution(status, resultDesc) {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+
+      if (status === "completed") {
+        // The fee_payments cache (both the per-student key
+        // loadPaidForChild reads for the Dashboard's balance, and
+        // the list-style key renderPayments reads for the Payments
+        // tab's stat cards) was populated before this payment
+        // existed. Invalidate by prefix (student-id combinations
+        // vary per read, so there's no single exact key to clear)
+        // and proactively re-fetch the Dashboard's own fee data
+        // right now, in the background, while the receipt is still
+        // showing — so by the time "Done" is clicked, childFeeData
+        // is already current.
+        window.SamajiCache.invalidateCustomPrefix("fee_payments|" + SCHOOL);
+        loadFeeDataForChildren(function(){});
+        sb.from(provider.txTable).select("*").eq("id", txId).single().then(function(res){
+          if (!res.error && res.data) showReceiptScreen(provider, res.data, students);
+        });
+      } else if (status === "failed" || status === "cancelled") {
+        $("mpesa-poll-msg").textContent = "Payment " + status + (resultDesc ? ": " + resultDesc : ". Please try again.");
+        $("mpesa-poll-msg").className = "modal-msg err";
+      }
+    }
+
+    // ---- Realtime: the actual fix — react the instant Safaricom/KCB's
+    // callback updates this specific row, whenever that happens,
+    // rather than only within a fixed client-side polling window.
+    // Respects the same RLS a normal query would (p_mpesa_tx_parent /
+    // p_kcb_tx_parent already scope this to parent_id = auth.uid()),
+    // so this doesn't expose anything a direct query couldn't already
+    // see for this account. ----
+    try {
+      channel = sb.channel("tx-" + txId)
+        .on("postgres_changes", { event: "UPDATE", schema: "public", table: provider.txTable, filter: "id=eq." + txId }, function(payload){
+          var row = payload.new;
+          if (row && (row.status === "completed" || row.status === "failed" || row.status === "cancelled")) {
+            handleResolution(row.status, row.result_desc);
+          }
+        })
+        .subscribe();
+    } catch (e) {
+      // Realtime failing to even set up (e.g. WebSockets blocked on
+      // this network) isn't fatal — the polling fallback below still
+      // covers the common case, just bounded by its own timeout again.
+    }
+
+    // ---- Polling fallback: covers a realtime connection that never
+    // came up at all (blocked WebSocket, brief network hiccup) and
+    // also directly asks the provider once still-pending for long
+    // enough, exactly as before. Any callback that arrives while this
+    // is still running is still caught here as a second path to the
+    // same handleResolution() — the realtime listener above is the
+    // one that removes the FIXED TIMEOUT as a hard cutoff for the
+    // callback case specifically, since it keeps listening even after
+    // this fallback's own polling gives up. ----
     var pollCount = 0;
     var maxPolls = 24;
-    var pollTimer = null;
 
-    // Fetched once and reused for the whole ~2-minute polling window
-    // (well within a session token's normal lifetime) rather than
-    // re-fetched on every tick — polling itself doesn't need the
-    // absolute freshest possible token the way starting a brand new
-    // payment does.
     sb.auth.getSession().then(function(s){ return s.data.session; }).then(function(session){
+      if (resolved) return; // already resolved via realtime before this even set up
       var token = (session && session.access_token) || window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
       var queryUrl = window.SAMAJI_CONFIG.SUPABASE_URL + "/functions/v1/" + provider.fnName + "/query";
 
       pollTimer = setInterval(function(){
+        if (resolved) { cleanup(); return; }
         pollCount++;
         if (pollCount > maxPolls) {
           clearInterval(pollTimer);
-          $("mpesa-poll-msg").textContent = "Payment timed out. Please try again.";
-          $("mpesa-poll-msg").className = "modal-msg err";
+          pollTimer = null;
+          // Deliberately NOT setting resolved here, and NOT tearing
+          // down the realtime channel — polling giving up is not the
+          // same as the payment having failed. The realtime listener
+          // keeps running so a late callback still auto-resolves this
+          // exact modal if it's still open; this message is honest
+          // about what's actually known ("still waiting"), not a
+          // false failure.
+          $("mpesa-poll-msg").textContent = "This is taking longer than usual. We'll keep watching — you can also check the Payments tab shortly.";
+          $("mpesa-poll-msg").className = "modal-msg";
           return;
         }
         // /query checks our own database first (cheap, and reflects
@@ -1269,35 +1354,8 @@ document.addEventListener("DOMContentLoaded", function(){
           headers: {"Content-Type": "application/json", "Authorization": "Bearer " + token, "apikey": window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
           body: JSON.stringify({ school_id: SCHOOL, transaction_id: txId })
         }).then(function(r){ return r.json(); }).then(function(data){
-          if (data.status === "completed") {
-            clearInterval(pollTimer);
-            // The fee_payments cache (both the per-student key
-            // loadPaidForChild reads for the Dashboard's balance, and
-            // the list-style key renderPayments reads for the
-            // Payments tab's stat cards) was populated BEFORE this
-            // payment existed. Nothing invalidated it on completion,
-            // so both screens kept showing pre-payment numbers until
-            // a full page reload reset the in-memory cache entirely —
-            // reported directly: "0 Payments / KES 0" on the Payments
-            // tab despite a completed transaction right below it, and
-            // the Dashboard balance only updating after a manual
-            // reload. Invalidate by prefix (student-id combinations
-            // vary per read, so there's no single exact key to clear)
-            // and proactively re-fetch the Dashboard's own fee data
-            // right now, in the background, while the receipt is
-            // still showing — so by the time "Done" is clicked,
-            // childFeeData is already current and the Dashboard
-            // renders instantly with the right balance instead of
-            // needing its own network round-trip at that point.
-            window.SamajiCache.invalidateCustomPrefix("fee_payments|" + SCHOOL);
-            loadFeeDataForChildren(function(){});
-            sb.from(provider.txTable).select("*").eq("id", txId).single().then(function(res){
-              if (!res.error && res.data) showReceiptScreen(provider, res.data, students);
-            });
-          } else if (data.status === "failed" || data.status === "cancelled") {
-            clearInterval(pollTimer);
-            $("mpesa-poll-msg").textContent = "Payment " + data.status + (data.result_desc ? ": " + data.result_desc : ". Please try again.");
-            $("mpesa-poll-msg").className = "modal-msg err";
+          if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
+            handleResolution(data.status, data.result_desc);
           }
           // status "pending" -> just keep polling, no UI change needed
         }).catch(function(){
@@ -1308,7 +1366,7 @@ document.addEventListener("DOMContentLoaded", function(){
     });
 
     $("mpesa-poll-cancel").onclick = function(){
-      if (pollTimer) clearInterval(pollTimer);
+      cleanup();
       $("mpesa-modal").style.display = "none";
     };
   }
