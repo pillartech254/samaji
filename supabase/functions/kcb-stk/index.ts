@@ -286,6 +286,21 @@ async function handleInitiate(req: Request): Promise<Response> {
 }
 
 // --------------- 2. QUERY (our own DB only — no KCB status-query call yet) ---------------
+//
+// mpesa-stk's own /query now does more than this: when a payment is
+// still "pending" in our DB, it asks Safaricom directly and — if
+// confirmed — actually records the payment (fee_payments, SMS, etc.),
+// as a genuine fallback for exactly the situation where an async
+// callback doesn't arrive (documented as unreliable specifically in
+// Safaricom's sandbox). This function does not have that fallback:
+// KCB/Buni's API wasn't confirmed to expose an equivalent "check this
+// transaction's status directly" endpoint the way Daraja's
+// /stkpushquery does, so nothing was built here rather than guessing
+// at an unverified endpoint and shipping something that looks like a
+// fallback but silently doesn't work. If the IPN callback (kcb-
+// callback) doesn't arrive for a given KCB payment, this function
+// currently has no way to recover it — same limitation as before this
+// comment was added, just now written down instead of implicit.
 
 async function handleQuery(req: Request): Promise<Response> {
   const caller = await requireCaller(req);
