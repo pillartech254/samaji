@@ -1259,8 +1259,34 @@ document.addEventListener("DOMContentLoaded", function(){
     // why the fee_payments cache was never invalidated for that
     // payment either, since that invalidation lived in the same
     // now-unreached code path.
-    function handleResolution(status, resultDesc) {
+    //
+    // `source` distinguishes WHERE a "failed" verdict came from, which
+    // matters a great deal here — reported directly: a real payment
+    // completed successfully (the parent's own M-Pesa confirmation SMS
+    // arrived, and the payment was correctly recorded), yet the modal
+    // still showed "Payment failed". A "failed" from realtime reflects
+    // our OWN database, which only the actual callback ever writes to
+    // — genuinely trustworthy. A "failed" from the polling fallback's
+    // own live query to the provider is a different thing entirely:
+    // Safaricom's sandbox is documented to sometimes answer that live
+    // query with a false "failed" for a payment its own callback
+    // already confirmed (or will shortly confirm) as successful.
+    // Cancellation (Safaricom's own 1032 code) is reliable either way
+    // and always resolves.
+    function handleResolution(status, resultDesc, source) {
       if (resolved) return;
+
+      if (status === "failed" && source === "polling") {
+        // Not trusted as definitive — stay open, keep listening.
+        // Real completion (or a genuine failure delivered via the
+        // actual callback) still correctly resolves this same modal
+        // afterward; this only stops the flow from prematurely
+        // declaring failure on what may just be sandbox flakiness.
+        $("mpesa-poll-msg").textContent = "We couldn't confirm this definitively — sandbox status checks aren't always reliable. Still watching for the real confirmation; you can also check the Payments tab.";
+        $("mpesa-poll-msg").className = "modal-msg";
+        return;
+      }
+
       resolved = true;
       cleanup();
 
@@ -1298,7 +1324,7 @@ document.addEventListener("DOMContentLoaded", function(){
         .on("postgres_changes", { event: "UPDATE", schema: "public", table: provider.txTable, filter: "id=eq." + txId }, function(payload){
           var row = payload.new;
           if (row && (row.status === "completed" || row.status === "failed" || row.status === "cancelled")) {
-            handleResolution(row.status, row.result_desc);
+            handleResolution(row.status, row.result_desc, "realtime");
           }
         })
         .subscribe();
@@ -1355,7 +1381,7 @@ document.addEventListener("DOMContentLoaded", function(){
           body: JSON.stringify({ school_id: SCHOOL, transaction_id: txId })
         }).then(function(r){ return r.json(); }).then(function(data){
           if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
-            handleResolution(data.status, data.result_desc);
+            handleResolution(data.status, data.result_desc, "polling");
           }
           // status "pending" -> just keep polling, no UI change needed
         }).catch(function(){
