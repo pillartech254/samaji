@@ -39,13 +39,36 @@
   var LEVEL_ORDER = ["PP1","PP2","Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6","Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"];
   function levelSort(a,b){ var ia=LEVEL_ORDER.indexOf(a),ib=LEVEL_ORDER.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); }
 
-  function statCard(lbl,val,bg,ink,ic,sub,drillFlag){
+  function statCard(lbl,val,bg,ink,ic,sub,drillFlag,badge){
     return '<div class="stat"'+(drillFlag?' data-drill="'+drillFlag+'" style="cursor:pointer;"':'')+'>'
       +'<div class="ic" style="background:'+bg+';color:'+ink+'">'+ic+'</div>'
       +'<div class="lbl">'+esc(lbl)+'</div><div class="val">'+val+'</div>'
       +(sub?'<div class="muted" style="font-size:11.5px;margin-top:4px;">'+sub+'</div>':'')
+      +(badge?'<span class="status-badge '+badge.tone+'">'+esc(badge.text)+'</span>':'')
       +(drillFlag?'<div class="drill-hint"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>':'')
       +'</div>';
+  }
+  // Status badges are derived entirely from the real figure already
+  // being shown right next to them — thresholds, not fabricated
+  // trends. No "vs last term" style comparison appears anywhere here,
+  // since no prior-period data is actually being fetched for it.
+  function attendanceBadge(pct){
+    if (pct>=95) return {text:"Excellent", tone:"good"};
+    if (pct>=80) return {text:"Good", tone:"good"};
+    if (pct>=60) return {text:"Fair", tone:"warn"};
+    return {text:"Needs attention", tone:"bad"};
+  }
+  function collectionBadge(pct){
+    if (pct==null) return null;
+    if (pct>=90) return {text:"On track", tone:"good"};
+    if (pct>=60) return {text:"In progress", tone:"warn"};
+    return {text:"Needs attention", tone:"bad"};
+  }
+  function defaultersBadge(n){
+    return n>0 ? {text:"Needs attention", tone:"bad"} : {text:"All caught up", tone:"good"};
+  }
+  function staffBadge(n){
+    return n>0 ? {text:"Active", tone:"good"} : {text:"No staff yet", tone:"neutral"};
   }
   function skelCard(){ return '<div class="stat"><div class="skel" style="height:14px;width:50%;margin-bottom:10px;"></div><div class="skel" style="height:26px;width:70%;"></div></div>'; }
   function panelSkel(lines){
@@ -68,21 +91,51 @@
     alert:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 9v4M12 16h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
     staff:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
     library:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 5.5C4 4.7 4.7 4 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M20 5.5c0-.8-.7-1.5-1.5-1.5H13v16h5.5c.8 0 1.5-.7 1.5-1.5v-13z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
-    clock:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    clock:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    addUser:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M18 8v6M15 11h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    wallet:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H18a1 1 0 0 1 1 1v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="3" y="7.5" width="18" height="12" rx="2.5" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="13.5" r="1.4" fill="currentColor"/></svg>',
+    clipboard:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="17" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M9 4V3.5A1.5 1.5 0 0 1 10.5 2h3A1.5 1.5 0 0 1 15 3.5V4" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12l2.2 2.2L15.5 10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    pencil:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 16.5V20h3.5L18.5 9 15 5.5 4 16.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13 7.5L16.5 11" stroke="currentColor" stroke-width="1.8"/></svg>',
+    report:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 13v4M12 10v7M15 15v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+    message:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H8l-4 4V5.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>',
+    shield:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2.5l7.5 3v6c0 5-3.2 8.4-7.5 10-4.3-1.6-7.5-5-7.5-10v-6l7.5-3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 12l2.2 2.2L15.5 9.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   };
 
   async function render(sb, schoolId, el, ctx){
     var FLAGS = ctx.flags||{};
     var schoolName = ctx.schoolName||schoolId;
+    var roleLabel = ctx.roleLabel||"there";
     var openModule = ctx.openModule||function(){};
     var showReports = ctx.showReports||function(){};
 
+    var hour = new Date().getHours();
+    var greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+    // Quick actions: convenient shortcuts to modules/actions that
+    // already exist and are already reachable from the sidebar/module
+    // screens themselves — nothing here does anything a person
+    // couldn't already do; it just saves the extra click for the
+    // handful of things done most often. Each only appears if that
+    // module is actually licensed for this school.
+    var QUICK_ACTIONS = [
+      { lbl:"Add Student", ic:ICONS.addUser, bg:"#EEF1F5", ink:"#475467", flag:"module.students", action:function(){ openModule("module.students"); } },
+      { lbl:"Record Payment", ic:ICONS.wallet, bg:"#ECFDF3", ink:"#067647", flag:"module.finance", action:function(){ openModule("module.finance"); } },
+      { lbl:"Take Attendance", ic:ICONS.clipboard, bg:"#EEF0FF", ink:"#4F46E5", flag:"module.attendance", action:function(){ openModule("module.attendance"); } },
+      { lbl:"Enter Marks", ic:ICONS.pencil, bg:"#F1ECFE", ink:"#6D28D9", flag:"module.academics", action:function(){ openModule("module.academics"); } },
+      { lbl:"Generate Report", ic:ICONS.report, bg:"#FFF6ED", ink:"#C2410C", flag:null, action:function(){ showReports(); } },
+      { lbl:"Send Message", ic:ICONS.message, bg:"#EEF0FF", ink:"#4F46E5", flag:"module.messaging", action:function(){ openModule("module.messaging"); } }
+    ].filter(function(a){ return !a.flag || FLAGS[a.flag]; });
+
     el.innerHTML =
-      '<div class="mod-head"><div><h2>Dashboard</h2><p id="dash-sub">Live overview of '+esc(schoolName)+'.</p></div>'
+      '<div class="dash-greet"><h1>'+greeting+', '+esc(roleLabel)+' <span style="font-size:19px;">👋</span></h1><p>Here\'s what\'s happening at '+esc(schoolName)+' today.</p></div>'
+      + '<div class="mod-head" style="margin-top:16px;"><div><h2 style="font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:0;">Quick actions</h2></div>'
       + '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">'
       + '<div id="dash-term-wrap"></div>'
       + (FLAGS["module.students"]?'<div class="field"><label>Class</label><select id="dash-class"><option value="">All classes</option></select></div>':'')
       + '</div></div>'
+      + (QUICK_ACTIONS.length ? '<div class="quickactions" id="dash-quickactions">'+QUICK_ACTIONS.map(function(a,i){
+          return '<button class="qa-btn" data-qa="'+i+'"><span class="qa-ic" style="background:'+a.bg+';color:'+a.ink+';">'+a.ic+'</span><span class="qa-lbl">'+esc(a.lbl)+'</span></button>';
+        }).join('')+'</div>' : '')
       + '<div class="statgrid" id="dash-kpis">'+skelCard()+skelCard()+skelCard()+skelCard()+skelCard()+'</div>'
       + '<div id="dash-pulse" style="margin-top:18px;">'+panelSkel(1)+'</div>'
       + '<div class="cardrow c2" style="margin-top:18px;"><div id="dash-finance">'+panelSkel(4)+'</div><div id="dash-attention">'+panelSkel(4)+'</div></div>'
@@ -90,6 +143,12 @@
       + '<div class="cardrow c2" style="margin-top:18px;"><div id="dash-payments">'+panelSkel(4)+'</div><div id="dash-upcoming">'+panelSkel(4)+'</div></div>'
       + '<div id="dash-activity" style="margin-top:18px;">'+panelSkel(4)+'</div>'
       + '<div class="cardrow c2" id="dash-charts" style="margin-top:18px;display:none;"></div>';
+
+    if (QUICK_ACTIONS.length) {
+      el.querySelectorAll("[data-qa]").forEach(function(btn){
+        btn.onclick = function(){ QUICK_ACTIONS[Number(btn.getAttribute("data-qa"))].action(); };
+      });
+    }
 
     // ---- shared state, filled in progressively by independent loaders ----
     var PULSE = {}; // attendancePct, feePct, academicPct, defaulters, overdueBooks, lowAttendance, pendingMarks, stuckTx, unpaidLibCharges
@@ -106,9 +165,9 @@
       var box = document.getElementById("dash-pulse");
       if (!box) return;
       var parts = [];
-      if (PULSE.attendancePct!=null) parts.push({label:"Attendance",value:PULSE.attendancePct});
-      if (PULSE.feePct!=null) parts.push({label:"Fees collected",value:PULSE.feePct});
-      if (PULSE.academicPct!=null) parts.push({label:"Academic average",value:PULSE.academicPct});
+      if (PULSE.attendancePct!=null) parts.push({label:"Attendance",value:PULSE.attendancePct,color:"#0E9384"});
+      if (PULSE.feePct!=null) parts.push({label:"Fees collected",value:PULSE.feePct,color:"#C2410C"});
+      if (PULSE.academicPct!=null) parts.push({label:"Academic average",value:PULSE.academicPct,color:"#4F46E5"});
       var issues = 0;
       if (PULSE.defaulters) issues += 1;
       if (PULSE.overdueBooks) issues += 1;
@@ -118,21 +177,16 @@
       if (PULSE.unpaidLibCharges) issues += 1;
       if (PULSE.noStructurePaid) issues += 1;
 
-      var worstPct = parts.length ? Math.min.apply(null, parts.map(function(p){return p.value;})) : null;
-      var dot = "🟢", label = "School operating normally";
-      if (worstPct!=null && worstPct < 60) { dot="🔴"; label="Attention needed — figures below target"; }
-      else if ((worstPct!=null && worstPct < 80) || issues >= 3) { dot="🟡"; label="Mostly on track — a few things need a look"; }
-
       if (!parts.length && !issues) {
-        box.innerHTML = '<div class="panel"><span class="muted" style="font-size:13px;">Enable Attendance, Fees or Academics to see a live school pulse here.</span></div>';
+        box.innerHTML = '<div class="panel"><span class="muted" style="font-size:13px;">Enable Attendance, Fees or Academics to see a live school health overview here.</span></div>';
         return;
       }
-      box.innerHTML = '<div class="panel" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">'
-        + '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:19px;">'+dot+'</span><strong style="font-size:14px;">'+label+'</strong></div>'
-        + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);">'
-        + parts.map(function(p){ return '<span><strong style="color:var(--ink);">'+p.value+'%</strong> '+esc(p.label)+'</span>'; }).join('')
+      box.innerHTML = '<div class="health-banner">'
+        + '<div class="hb-left"><div class="hb-shield">'+ICONS.shield+'</div><div><div class="hb-title">School health</div><div class="hb-sub">This term overview</div></div></div>'
+        + '<div class="hb-metrics">'
+        + parts.map(function(p){ return '<div class="hb-metric"><span class="dot" style="background:'+p.color+';"></span><strong>'+p.value+'%</strong> '+esc(p.label)+'</div>'; }).join('')
         + '</div>'
-        + (issues ? '<span class="pill amber" style="white-space:nowrap;">⚠ '+issues+' item'+(issues>1?'s':'')+' need'+(issues>1?'':'s')+' attention</span>' : '<span class="pill green">✓ No critical issues</span>')
+        + (issues ? '<span class="pill amber" style="white-space:nowrap;cursor:default;">⚠ '+issues+' area'+(issues>1?'s':'')+' need'+(issues>1?'':'s')+' attention</span>' : '<span class="pill green" style="white-space:nowrap;">✓ No critical issues</span>')
         + '</div>';
     }
 
@@ -281,7 +335,7 @@
       var marked = scoped.length;
       var attPct = marked>0 ? pct1(present+late, marked) : null; // "present" for the day = present or late-but-in
 
-      renderKpi("attendance", marked>0 ? { val: attPct+"%", sub: present+" present · "+absent+" absent · "+late+" late" } : { val: "—", sub: "Not taken yet today" });
+      renderKpi("attendance", marked>0 ? { val: attPct+"%", sub: present+" present · "+absent+" absent · "+late+" late", badge: attendanceBadge(attPct) } : { val: "—", sub: "Not taken yet today" });
 
       PULSE.attendancePct = attPct;
       PULSE.lowAttendance = marked>0 && absent>0 && pct1(absent,marked) >= 15 ? absent : 0;
@@ -355,8 +409,8 @@
       var outstanding = Math.max(0, billedTotal-collected);
       var collectionPct = pct1(collected, billedTotal);
 
-      renderKpi("collected", { val: money(collected), sub: billedTotal>0 ? ("of "+money(billedTotal)+" billed · "+collectionPct+"%") : "no fee structure yet" });
-      renderKpi("outstanding", { val: money(outstanding), sub: defaulters + " student"+(defaulters!==1?"s":"")+" with balances" });
+      renderKpi("collected", { val: money(collected), sub: billedTotal>0 ? ("of "+money(billedTotal)+" billed · "+collectionPct+"%") : "no fee structure yet", badge: collectionBadge(collectionPct) });
+      renderKpi("outstanding", { val: money(outstanding), sub: defaulters + " student"+(defaulters!==1?"s":"")+" with balances", badge: defaultersBadge(defaulters) });
 
       // Feeds School Pulse's "fees collected" figure — capped at 100 so an
       // unstructured-payment distortion (see above) can't drag the whole
@@ -373,10 +427,31 @@
       var todayTotal = todaysPayments.reduce(function(a,p){ return a+Number(p.amount); },0);
       var byMethod = {}; todaysPayments.forEach(function(p){ byMethod[p.method||"Other"]=(byMethod[p.method||"Other"]||0)+Number(p.amount); });
 
+      // Last 6 months of collection, from the SAME scopedPayments
+      // already fetched for the totals above — no separate query.
+      // Grouped by calendar month against each payment's own paid_at.
+      var now = new Date();
+      var monthBuckets = [], monthKeys = [];
+      for (var mi=5; mi>=0; mi--) {
+        var d = new Date(now.getFullYear(), now.getMonth()-mi, 1);
+        var key = d.getFullYear()+"-"+(d.getMonth()+1);
+        monthKeys.push(key);
+        monthBuckets.push({ label: d.toLocaleDateString(undefined,{month:"short"}), value: 0 });
+      }
+      scopedPayments.forEach(function(p){
+        if (!p.paid_at) return;
+        var pd = new Date(p.paid_at);
+        var key = pd.getFullYear()+"-"+(pd.getMonth()+1);
+        var idx = monthKeys.indexOf(key);
+        if (idx>=0) monthBuckets[idx].value += tuitionOf(p);
+      });
+      var hasTrend = monthBuckets.some(function(m){ return m.value>0; });
+
       var fBox = document.getElementById("dash-finance");
       if (fBox) {
         var overCollected = collected > billedTotal;
         var barPct = clamp(collectionPct||0,0,100);
+        var C = window.SamajiCharts;
         fBox.innerHTML = '<div class="panel" data-drill="module.finance" style="cursor:pointer;">'
           + '<div style="display:flex;justify-content:space-between;align-items:baseline;"><strong style="font-size:15px;">Fees collection</strong><span class="muted" style="font-size:11.5px;">View finance →</span></div>'
           + (billedTotal>0
@@ -386,6 +461,7 @@
                 ? '<div class="muted" style="font-size:11.5px;margin-top:5px;">Fully collected against '+money(billedTotal)+' billed'+(noStructureCount>0?' — '+money(noStructurePaid)+' of that is from '+noStructureCount+' student'+(noStructureCount>1?'s':'')+' with no fee structure assigned (see below)':'')+'</div>'
                 : '<div class="muted" style="font-size:11.5px;margin-top:5px;">'+collectionPct+'% of '+money(billedTotal)+' expected &middot; '+money(outstanding)+' outstanding</div>')
             : '<p class="muted" style="font-size:13px;margin-top:10px;">No fee structure configured yet.</p>')
+          + (hasTrend && C ? '<div style="margin-top:14px;">'+C.line(monthBuckets,{height:150})+'</div>' : '')
           + '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);">'
           + '<div class="muted" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;">Today\'s collection</div>'
           + '<div style="font-size:18px;font-weight:700;margin-top:3px;">'+money(todayTotal)+'</div>'
@@ -421,7 +497,7 @@
       if (!FLAGS["module.payroll"]) { renderKpi("staff", null); return; }
       try {
         var r = await sb.from("staff").select("id",{count:"exact",head:true}).eq("school_id",schoolId).eq("active",true);
-        renderKpi("staff", { val: r.count||0, sub: "Active staff on payroll" });
+        renderKpi("staff", { val: r.count||0, sub: "Active staff on payroll", badge: staffBadge(r.count||0) });
       } catch(e){ renderKpi("staff","err"); }
     }
 
@@ -600,7 +676,7 @@
       } else if (payload==null) {
         return; // module not licensed — never rendered
       } else {
-        html = statCard(def.lbl, payload.val, def.bg, def.ink, def.ic, payload.sub, def.drill);
+        html = statCard(def.lbl, payload.val, def.bg, def.ink, def.ic, payload.sub, def.drill, payload.badge);
         html = html.replace('<div class="stat"', '<div class="stat" data-kpi="'+key+'"');
       }
       var wrapper = document.createElement("div"); wrapper.innerHTML = html;

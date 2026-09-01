@@ -9,7 +9,7 @@
 <link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
 <link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
 <link rel="preload" href="../assets/config.js?v=3" as="script">
-<link rel="stylesheet" href="../assets/styles.css?v=3">
+<link rel="stylesheet" href="../assets/styles.css?v=4">
 <!-- Fonts load async: a plain <link rel=stylesheet> to fonts.googleapis.com is
      render-blocking, so first paint waited on a third-party DNS + TLS + CSS
      fetch before a single pixel appeared. styles.css declares a system-font
@@ -31,7 +31,7 @@
 <script defer src="../assets/vendor/supabase.min.js?v=3"></script>
 <script defer src="../assets/config.js?v=3"></script>
 <script defer src="../assets/icons.js?v=3"></script>
-<script defer src="../assets/app.js?v=3"></script>
+<script defer src="../assets/app.js?v=4"></script>
 <script defer src="../assets/session.js?v=3"></script>
 <script defer src="../assets/boot-early.js?v=3"></script>
 <script defer src="../assets/payslip.js?v=3"></script>
@@ -49,7 +49,7 @@
 <script defer src="../assets/school-plus.js?v=8"></script>
 <!-- Dashboard (command-center rewrite) needs window.SamajiCharts,
      defined inside school-plus.js — must load after it. -->
-<script defer src="../assets/school-dashboard.js?v=1"></script>
+<script defer src="../assets/school-dashboard.js?v=2"></script>
 <style>
   #app{display:none;min-height:100vh;}
   .layout{display:flex;min-height:100vh;}
@@ -160,6 +160,7 @@
         <div class="nav-h" id="nav-locked-h" style="display:none;">Not in your plan</div>
         <div id="nav-locked"></div>
         <div style="flex:1;"></div>
+        <div class="sidebar-profile" id="sidebar-profile" style="display:none;padding:10px;margin:4px 8px 2px;border-top:1px solid var(--line-2);"></div>
         <button class="navitem" id="nav-settings"><span class="tile" style="background:#F1F2F6;color:#475467;" data-icon="settings"></span>Settings</button>
         <button class="ghost" id="signout" style="margin:8px;">Sign out</button>
       </aside>
@@ -175,7 +176,7 @@ document.addEventListener("DOMContentLoaded", function(){
   if (window.SamajiIcons) window.SamajiIcons.fill();
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
-  var SCHOOL=null, FLAGS={};
+  var SCHOOL=null, FLAGS={}, ROLE=null, ROLE_LABEL=null;
   // year set by app.js samajiYear()
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
 
@@ -221,6 +222,7 @@ document.addEventListener("DOMContentLoaded", function(){
     var prof = pr.data;
     if (!prof || !prof.school_id) { showMsg("This account isn't linked to a school. Set profiles.school_id.", false); busy(false); showLogin(); return; }
     SCHOOL = prof.school_id;
+    ROLE = prof.role;
 
     // Paint the shell NOW. Everything below is independent of it, so
     // there's no reason to make the user stare at the splash while
@@ -258,6 +260,33 @@ document.addEventListener("DOMContentLoaded", function(){
     var sub = results[1].data && results[1].data[0];
     $("school-plan").textContent = (sub && sub.packages && sub.packages.name) ? (sub.packages.name + " plan") : "—";
 
+    // Humanized display of the real role on this account (school_admin
+    // -> "Administrator", etc.) — not a fabricated label; prof.role is
+    // the exact same value already used to gate access everywhere else.
+    var ROLE_LABELS = { school_admin: "Administrator", super_admin: "Super Admin", teacher: "Teacher", bursar: "Bursar" };
+    var roleLabel = ROLE_LABELS[prof.role] || (prof.role ? prof.role.charAt(0).toUpperCase() + prof.role.slice(1) : "User");
+    ROLE_LABEL = roleLabel;
+    var profBox = $("sidebar-profile");
+    if (profBox) {
+      profBox.style.display = "flex";
+      profBox.style.alignItems = "center";
+      profBox.style.gap = "10px";
+      profBox.innerHTML = "";
+      var avatar = document.createElement("div");
+      avatar.style.cssText = "flex:none;width:32px;height:32px;border-radius:50%;background:var(--teal-t);color:var(--teal-d);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;";
+      avatar.textContent = roleLabel.charAt(0);
+      var textWrap = document.createElement("div");
+      textWrap.style.cssText = "min-width:0;";
+      var nameEl = document.createElement("div");
+      nameEl.style.cssText = "font-size:12.5px;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      nameEl.textContent = roleLabel;
+      var emailEl = document.createElement("div");
+      emailEl.style.cssText = "font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      emailEl.textContent = user.email || "";
+      textWrap.appendChild(nameEl); textWrap.appendChild(emailEl);
+      profBox.appendChild(avatar); profBox.appendChild(textWrap);
+    }
+
     FLAGS = results[2].data || {};
     if (window.SamajiCache) window.SamajiCache.preload(sb, SCHOOL); // warm cache for instant page switches
     buildNav();
@@ -280,12 +309,30 @@ document.addEventListener("DOMContentLoaded", function(){
     var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
     var locked  = Object.keys(FLAGS).filter(function(k){ return !FLAGS[k]; });
     var live = $("nav-live"); live.innerHTML = "";
+    // Grouped by category for readability — same modules, same
+    // data-flag, same onclick, same openModule() call as before; this
+    // only changes how they're visually organized in the list. A
+    // module without a recognized category (shouldn't happen, but
+    // defensive) still renders, just outside any group heading.
+    var CATEGORY_ORDER = ["Academics", "Finance", "School", "Insights"];
+    var byCategory = {};
     granted.forEach(function(k){
-      var m = window.metaFor(k), b = document.createElement("button");
-      b.className = "navitem"; b.setAttribute("data-flag", k);
-      b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.icon+'</span>'+m.name;
-      b.onclick = function(){ openModule(k); };
-      live.appendChild(b);
+      var cat = (window.metaFor(k).category) || "Other";
+      (byCategory[cat] = byCategory[cat] || []).push(k);
+    });
+    var orderedCats = CATEGORY_ORDER.filter(function(c){ return byCategory[c]; })
+      .concat(Object.keys(byCategory).filter(function(c){ return CATEGORY_ORDER.indexOf(c) === -1; }));
+    orderedCats.forEach(function(cat){
+      var h = document.createElement("div");
+      h.className = "nav-h"; h.textContent = cat;
+      live.appendChild(h);
+      byCategory[cat].forEach(function(k){
+        var m = window.metaFor(k), b = document.createElement("button");
+        b.className = "navitem"; b.setAttribute("data-flag", k);
+        b.innerHTML = '<span class="tile" style="background:'+m.tint+';color:'+m.ink+'">'+m.icon+'</span>'+m.name;
+        b.onclick = function(){ openModule(k); };
+        live.appendChild(b);
+      });
     });
     var lockBox = $("nav-locked"); lockBox.innerHTML = "";
     $("nav-locked-h").style.display = locked.length ? "block" : "none";
@@ -318,6 +365,7 @@ function showDashboard(){
     window.SchoolDashboard.render(sb, SCHOOL, $("view"), {
       flags: FLAGS,
       schoolName: $("school-name").textContent,
+      roleLabel: ROLE_LABEL,
       openModule: openModule,
       showReports: showReports
     });
