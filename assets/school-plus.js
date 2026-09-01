@@ -1571,9 +1571,11 @@
           +'<label class="switch-row" style="display:flex;align-items:center;gap:10px;cursor:pointer;">'
           +'<input type="checkbox" id="p-bus"> 🚌 <span id="p-bus-label">Include bus transport</span></label></div>'
           +'<div class="field"><label>Amount (KES)</label><input id="p-amt" type="number" placeholder="0"></div>'
-          +'<div class="field"><label>Method</label><select id="p-method"><option>Cash</option><option>M-Pesa</option><option>Bank</option><option>Cheque</option><option>Card</option></select></div>'
+          +'<div class="field"><label>Method</label><select id="p-method"><option>Cash</option><option>M-Pesa</option><option value="M-Pesa Push">M-Pesa (Push STK)</option><option>Bank</option><option>Cheque</option><option>Card</option><option value="KCB Push">KCB (Push STK)</option></select></div>'
           +'<div class="field"><label>Term</label><select id="p-term"><option>Term 1</option><option>Term 2</option><option>Term 3</option><option id="p-term-ob" value="Balance b/f" hidden>Balance b/f</option></select></div>'
-          +'<div class="field"><label>Reference (M-Pesa/Cheque)</label><input id="p-ref" placeholder="e.g. SLJ7XK2P"></div>'
+          +'<div class="field" id="p-ref-wrap"><label>Reference (M-Pesa/Cheque)</label><input id="p-ref" placeholder="e.g. SLJ7XK2P"></div>'
+          +'<div class="field" id="p-phone-wrap" style="display:none;"><label>Phone number</label><input id="p-phone" placeholder="e.g. 0712345678"></div>'
+          +'<div class="field full" id="p-push-note" style="display:none;font-size:11.5px;color:#98A2B3;">The confirmed payment is applied automatically to whichever term is next due, once the parent approves it on their phone — this may take a minute or two.</div>'
           +'<div class="field full"><label>Note (optional)</label><input id="p-note"></div>'
           +'<div class="field full"><div id="p-spill" style="display:none;background:#FEF9C3;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;font-size:12px;color:#92400E;"></div></div>'
           +'</div><div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Record &amp; print receipt</button></div>');
@@ -1687,11 +1689,42 @@
           m.q("#p-amt").value=""; loadTransport();
         };
         m.q("#p-bus").onchange=function(){ var was=m.q("#p-amt").value; m.q("#p-amt").value=""; refreshBal(); if(!m.q("#p-amt").value) m.q("#p-amt").value=was; };
+        // "Push STK" methods trigger a real M-Pesa/KCB prompt to a
+        // parent's phone right now, rather than recording something
+        // that already happened — no reference number exists yet (it
+        // comes back FROM the push), but a phone number is needed
+        // instead, matching the same field the Parent Portal's own
+        // payment modal asks for.
+        function isPushMethod(v){ return v==="M-Pesa Push" || v==="KCB Push"; }
+        m.q("#p-method").onchange=function(){
+          var push=isPushMethod(m.q("#p-method").value);
+          m.q("#p-ref-wrap").style.display=push?"none":"";
+          m.q("#p-phone-wrap").style.display=push?"":"none";
+          submitBtn.textContent=push?"Send STK Push":"Record & print receipt";
+          var noteEl=m.q("#p-push-note");
+          if(noteEl) noteEl.style.display=push?"":"none";
+          if(push && !m.q("#p-phone").value){
+            var sid=preId||m.q("#p-stu").value;
+            var s=students.find(function(x){return x.id===sid;});
+            if(s && s.guardian_phone) m.q("#p-phone").value=s.guardian_phone;
+          }
+        };
         loadTransport();
         m.q("#c").onclick=m.close;
         var submitBtn=m.q("#s"), submitting=false;
         submitBtn.onclick=async function(){
           if(submitting) return;
+          if(isPushMethod(m.q("#p-method").value)){
+            return sendSchoolInitiatedPush(m, {
+              provider: m.q("#p-method").value==="KCB Push" ? "kcb" : "mpesa",
+              student: students.find(function(x){return x.id===(preId||m.q("#p-stu").value);}),
+              amount: Number(m.q("#p-amt").value)||0,
+              phone: m.q("#p-phone").value.trim(),
+              term: m.q("#p-term").value,
+              schoolId: schoolId,
+              onSettled: function(){ m.close(); init(); },
+            });
+          }
           var sid=preId||m.q("#p-stu").value, amt=Number(m.q("#p-amt").value)||0;
           var sStu=students.find(function(x){return x.id===sid;});
           if(!canCollect(sStu)){ toast("No fee structure for "+(sStu.grade||"this class")+". Create one in Settings first."); return; }
@@ -1904,6 +1937,149 @@
         };
       }
       ledger();
+    }
+
+    // ---- School-initiated STK push (Collect Payment → M-Pesa/KCB
+    // Push STK) — lets a school_admin/bursar push a real payment
+    // prompt to a parent's phone directly from the front desk,
+    // instead of only recording something that already happened.
+    // Requested directly so a school can mix manual and automated
+    // collection freely, with manual recording always available as a
+    // fallback if the automated push fails for any reason — kept
+    // completely separate from the manual-record submit path above
+    // rather than threading new branches through its term-spillover/
+    // receipt-numbering logic.
+    //
+    // Known limitation, shared with a parent's own M-Pesa payment
+    // (not something new introduced here): the term this actually
+    // gets applied to is decided automatically once confirmed — by
+    // createFeePayment() in mpesa-callback/kcb-callback, which only
+    // knows Term 1/2/3, not "Balance b/f" as its own bucket — not by
+    // whatever the Term dropdown happens to show at push time. A
+    // school relying on Balance b/f prioritization should keep using
+    // manual recording for that specific case until that logic is
+    // extended to handle it.
+    function sendSchoolInitiatedPush(m, opts){
+      var fnName = opts.provider==="kcb" ? "kcb-stk" : "mpesa-stk";
+      var txTable = opts.provider==="kcb" ? "kcb_transactions" : "mpesa_transactions";
+      var label = opts.provider==="kcb" ? "KCB" : "M-Pesa";
+
+      if(!opts.student){ toast("Select a student first."); return; }
+      if(opts.amount<=0){ toast("Enter an amount."); return; }
+      var phone=(opts.phone||"").replace(/[^0-9+]/g,"");
+      if(phone.length<9){ toast("Enter a valid phone number."); return; }
+
+      var submitBtn=m.q("#s");
+      submitBtn.disabled=true; var origLabel=submitBtn.textContent; submitBtn.textContent="Sending…";
+
+      sb.auth.getUser().then(function(ur){
+        var me=ur.data.user;
+        if(!me){ toast("Session error — please reload and try again."); submitBtn.disabled=false; submitBtn.textContent=origLabel; return; }
+        var row={ school_id:opts.schoolId, phone:phone, amount:opts.amount, student_ids:[opts.student.id], status:"pending", initiated_by:me.id };
+        sb.from(txTable).insert(row).select().single().then(function(res){
+          if(res.error){ toast("Error: "+res.error.message); submitBtn.disabled=false; submitBtn.textContent=origLabel; return; }
+          var txId=res.data.id;
+          sb.auth.getSession().then(function(s){ return s.data.session; }).then(function(session){
+            var token=(session && session.access_token)||window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+            var url=window.SAMAJI_CONFIG.SUPABASE_URL+"/functions/v1/"+fnName;
+            return fetch(url,{
+              method:"POST",
+              headers:{"Content-Type":"application/json","Authorization":"Bearer "+token,"apikey":window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
+              body:JSON.stringify({ transaction_id:txId, school_id:opts.schoolId, phone:phone, amount:opts.amount, account_ref:"Samaji" })
+            }).then(function(r){ return r.json(); }).then(function(data){
+              if(data.error && !data.success){
+                toast("Error: "+data.error);
+                submitBtn.disabled=false; submitBtn.textContent=origLabel;
+                return;
+              }
+              showSchoolPushWaiting(m, opts.provider, txTable, fnName, txId, opts, label);
+            }).catch(function(){
+              toast("Failed to send payment request. Please try again.");
+              submitBtn.disabled=false; submitBtn.textContent=origLabel;
+            });
+          });
+        });
+      });
+    }
+
+    function showSchoolPushWaiting(m, provider, txTable, fnName, txId, opts, label){
+      m.el.querySelector(".modal").innerHTML=
+        '<h3>Waiting for confirmation</h3>'
+        +'<div style="text-align:center;padding:20px 0;">'
+        +'<div class="spinner" style="width:32px;height:32px;margin:0 auto 16px;border-width:3px;"></div>'
+        +'<p style="font-size:14px;">'+esc(label)+' request sent to '+esc(opts.phone)+'.</p>'
+        +'<p class="muted" style="font-size:12.5px;">Ask the parent to enter their PIN when the prompt arrives.</p>'
+        +'<div id="ssp-msg" style="margin-top:10px;font-size:13px;"></div>'
+        +'</div>'
+        +'<div class="modal-actions"><button class="btn-sm" id="ssp-cancel">Close</button></div>';
+
+      var resolved=false, pollTimer=null, channel=null;
+      function cleanup(){
+        if(pollTimer){ clearInterval(pollTimer); pollTimer=null; }
+        if(channel){ sb.removeChannel(channel); channel=null; }
+      }
+      // Same reasoning as the Parent Portal's own handleResolution:
+      // Realtime and the polling fallback both call this, so whichever
+      // notices completion first wins and the other's later notice is
+      // a no-op — never double-invalidates the cache or opens the
+      // receipt twice.
+      function handleResolution(status, resultDesc){
+        if(resolved) return;
+        resolved=true;
+        cleanup();
+        if(status==="completed"){
+          SamajiCache.invalidate("fee_payments");
+          sb.from("fee_payments").select("*").eq("school_id",opts.schoolId).eq("student_id",opts.student.id).order("created_at",{ascending:false}).limit(1).then(function(pr){
+            m.close();
+            opts.onSettled();
+            if(pr.data && pr.data[0]) showReceipt(pr.data[0], opts.student);
+            else toast(label+" payment completed.");
+          });
+        } else {
+          var msgEl=m.q("#ssp-msg");
+          if(msgEl){ msgEl.textContent="Payment "+status+(resultDesc?": "+resultDesc:". Please try again."); msgEl.style.color="#C2410C"; }
+        }
+      }
+
+      // Realtime: reacts the instant the transaction resolves,
+      // whenever that actually happens — not bounded by the polling
+      // fallback's own fixed window below. See parent/index.html's
+      // showPayPolling for the fuller rationale; same fix, same
+      // reasoning, applied here since this modal needed its own copy.
+      try {
+        channel=sb.channel("school-tx-"+txId)
+          .on("postgres_changes",{event:"UPDATE",schema:"public",table:txTable,filter:"id=eq."+txId},function(payload){
+            var row=payload.new;
+            if(row && (row.status==="completed"||row.status==="failed"||row.status==="cancelled")) handleResolution(row.status,row.result_desc);
+          })
+          .subscribe();
+      } catch(e){ /* WebSockets blocked on this network — polling fallback below still covers it */ }
+
+      var pollCount=0, maxPolls=24;
+      sb.auth.getSession().then(function(s){ return s.data.session; }).then(function(session){
+        if(resolved) return;
+        var token=(session && session.access_token)||window.SAMAJI_CONFIG.SUPABASE_ANON_KEY;
+        var queryUrl=window.SAMAJI_CONFIG.SUPABASE_URL+"/functions/v1/"+fnName+"/query";
+        pollTimer=setInterval(function(){
+          if(resolved){ cleanup(); return; }
+          pollCount++;
+          if(pollCount>maxPolls){
+            clearInterval(pollTimer); pollTimer=null;
+            var msgEl=m.q("#ssp-msg");
+            if(msgEl) msgEl.textContent="This is taking longer than usual. We'll keep watching — you can also check the Receipts tab shortly.";
+            return;
+          }
+          fetch(queryUrl,{
+            method:"POST",
+            headers:{"Content-Type":"application/json","Authorization":"Bearer "+token,"apikey":window.SAMAJI_CONFIG.SUPABASE_ANON_KEY},
+            body:JSON.stringify({ school_id:opts.schoolId, transaction_id:txId })
+          }).then(function(r){ return r.json(); }).then(function(data){
+            if(data.status==="completed"||data.status==="failed"||data.status==="cancelled") handleResolution(data.status,data.result_desc);
+          }).catch(function(){});
+        },5000);
+      });
+
+      m.q("#ssp-cancel").onclick=function(){ cleanup(); m.close(); };
     }
 
     function showReceipt(p, stu){

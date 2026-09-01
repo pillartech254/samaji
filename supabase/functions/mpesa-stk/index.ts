@@ -180,23 +180,28 @@ async function handleSTKPush(req: Request): Promise<Response> {
 
   const sb = serviceClient();
 
-  // Ownership check: the transaction row must already exist (the
-  // Parent Portal creates it via its own insert, scoped by RLS to
-  // parent_id = auth.uid(), before ever calling this function) and
-  // must belong to the caller. This is what actually stops someone
-  // from POSTing an arbitrary phone/amount/school_id combination
-  // directly at this endpoint — a valid session alone isn't enough,
-  // it has to be a transaction that session's own account created.
+  // Ownership check: the transaction row must already exist and
+  // belong to the caller — either as the parent who created it via
+  // the Parent Portal's own insert (parent_id = auth.uid(), RLS-
+  // enforced at insert time), or as the school staff member who
+  // created it via Collect Payment's STK push option (initiated_by =
+  // auth.uid(), same RLS guarantee, added in setup-modules-44.sql).
+  // RLS already ensures only one of the two is ever set on a given
+  // row — a school-initiated push always has parent_id null, a
+  // parent-initiated one always has initiated_by null — so checking
+  // either match is sufficient without a separate role/profile
+  // lookup here. Either way, a valid session alone still isn't
+  // enough: it has to be a transaction that exact account created.
   const { data: tx, error: txErr } = await sb
     .from("mpesa_transactions")
-    .select("id, school_id, parent_id, amount, phone")
+    .select("id, school_id, parent_id, initiated_by, amount, phone")
     .eq("id", transaction_id)
     .single();
 
   if (txErr || !tx) {
     return jsonResponse({ error: "Transaction not found" }, 404);
   }
-  if (tx.parent_id !== caller.id) {
+  if (tx.parent_id !== caller.id && tx.initiated_by !== caller.id) {
     return jsonResponse({ error: "Not authorized for this transaction" }, 403);
   }
   if (tx.school_id !== school_id) {
@@ -489,14 +494,15 @@ async function handleQuery(req: Request): Promise<Response> {
 
   // Ownership check, same reasoning as handleSTKPush — a valid
   // session alone doesn't mean this caller should see the status of
-  // ANY transaction_id they happen to guess or enumerate.
+  // ANY transaction_id they happen to guess or enumerate. Accepts
+  // either parent_id or initiated_by, same as handleSTKPush.
   const { data: tx } = await sb
     .from("mpesa_transactions")
-    .select("id, status, result_code, result_desc, mpesa_receipt_no, amount, parent_id, school_id, student_ids, phone, checkout_request_id")
+    .select("id, status, result_code, result_desc, mpesa_receipt_no, amount, parent_id, initiated_by, school_id, student_ids, phone, checkout_request_id")
     .eq("id", transaction_id)
     .single();
 
-  if (!tx || tx.parent_id !== caller.id || tx.school_id !== school_id) {
+  if (!tx || (tx.parent_id !== caller.id && tx.initiated_by !== caller.id) || tx.school_id !== school_id) {
     return jsonResponse({ error: "Not authorized for this transaction" }, 403);
   }
 

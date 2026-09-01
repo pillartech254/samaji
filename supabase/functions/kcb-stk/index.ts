@@ -177,20 +177,21 @@ async function handleInitiate(req: Request): Promise<Response> {
   const sb = serviceClient();
 
   // Ownership check — same reasoning as mpesa-stk: the transaction
-  // row must already exist (created by the Parent Portal's own
-  // insert, RLS-scoped to parent_id = auth.uid()) and belong to the
-  // caller. This is what stops someone from POSTing an arbitrary
-  // phone/amount/school_id combination directly at this endpoint.
+  // row must already exist and belong to the caller, either as the
+  // parent who created it (parent_id = auth.uid()) or as the school
+  // staff member who created it via Collect Payment's STK push
+  // option (initiated_by = auth.uid(), setup-modules-44.sql). RLS
+  // already ensures only one of the two is ever set on a given row.
   const { data: tx, error: txErr } = await sb
     .from("kcb_transactions")
-    .select("id, school_id, parent_id")
+    .select("id, school_id, parent_id, initiated_by")
     .eq("id", transaction_id)
     .single();
 
   if (txErr || !tx) {
     return jsonResponse({ error: "Transaction not found" }, 404);
   }
-  if (tx.parent_id !== caller.id) {
+  if (tx.parent_id !== caller.id && tx.initiated_by !== caller.id) {
     return jsonResponse({ error: "Not authorized for this transaction" }, 403);
   }
   if (tx.school_id !== school_id) {
@@ -319,11 +320,11 @@ async function handleQuery(req: Request): Promise<Response> {
   const sb = serviceClient();
   const { data: tx } = await sb
     .from("kcb_transactions")
-    .select("status, result_code, result_desc, receipt_no, amount, parent_id")
+    .select("status, result_code, result_desc, receipt_no, amount, parent_id, initiated_by")
     .eq("id", body.transaction_id)
     .single();
 
-  if (!tx || tx.parent_id !== caller.id) {
+  if (!tx || (tx.parent_id !== caller.id && tx.initiated_by !== caller.id)) {
     return jsonResponse({ error: "Not authorized for this transaction" }, 403);
   }
 
