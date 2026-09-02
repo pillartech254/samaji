@@ -14,7 +14,7 @@
 <link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
 <link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
 <link rel="preload" href="../assets/config.js?v=3" as="script">
-<link rel="stylesheet" href="../assets/styles.css?v=4">
+<link rel="stylesheet" href="../assets/styles.css?v=5">
 <!-- Fonts load async — see the note in school/index.html. Parents are the
      most likely to be on a phone and a metered connection, so this portal
      benefits most from not blocking paint on a third-party stylesheet. -->
@@ -26,7 +26,7 @@
 
 <script defer src="../assets/vendor/supabase.min.js?v=3"></script>
 <script defer src="../assets/config.js?v=3"></script>
-<script defer src="../assets/app.js?v=4"></script>
+<script defer src="../assets/app.js?v=5"></script>
 <script defer src="../assets/session.js?v=3"></script>
 <script defer src="../assets/boot-early.js?v=3"></script>
 <!-- Report Cards feature: academics-core.js's buildSnapshotReportOpts()
@@ -555,14 +555,28 @@ document.addEventListener("DOMContentLoaded", function(){
           return;
         }
 
-        if (PARENT.must_change_password) {
-          $("boot").style.display = "none";
-          $("auth").style.display = "none";
-          $("pw-modal").style.display = "flex";
-          return;
+        function proceedPastMaintenanceGate(){
+          if (PARENT.must_change_password) {
+            $("boot").style.display = "none";
+            $("auth").style.display = "none";
+            $("pw-modal").style.display = "flex";
+            return;
+          }
+          finishEnterApp(school);
         }
 
-        finishEnterApp(school);
+        // If the maintenance check itself fails (a network hiccup, not
+        // an actual maintenance state), fail open rather than leaving
+        // the parent stuck on the boot screen for a reason unrelated
+        // to maintenance at all.
+        sb.from("platform_settings").select("maintenance_mode, maintenance_message").eq("id", 1).single().then(function(mm){
+          if (mm.data && mm.data.maintenance_mode) {
+            busy(false);
+            window.showMaintenancePage(sb, mm.data.maintenance_message);
+            return;
+          }
+          proceedPastMaintenanceGate();
+        }).catch(proceedPastMaintenanceGate);
       }).catch(function(){
         showMsg("Could not verify school status. Please try again.", false);
         busy(false);
