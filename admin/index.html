@@ -14,7 +14,7 @@
 <link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
 <link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
 <link rel="preload" href="../assets/config.js?v=3" as="script">
-<link rel="stylesheet" href="../assets/styles.css?v=4">
+<link rel="stylesheet" href="../assets/styles.css?v=5">
 <!-- Fonts load async — see the note in school/index.html. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,8 +24,8 @@
 
 <script defer src="../assets/vendor/supabase.min.js?v=3"></script>
 <script defer src="../assets/config.js?v=3"></script>
-<script defer src="../assets/icons.js?v=3"></script>
-<script defer src="../assets/app.js?v=4"></script>
+<script defer src="../assets/icons.js?v=4"></script>
+<script defer src="../assets/app.js?v=5"></script>
 <script defer src="../assets/session.js?v=3"></script>
 <script defer src="../assets/boot-early.js?v=3"></script>
 <style>
@@ -153,6 +153,7 @@
         <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
         <button class="navitem" id="nav-kcb"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>KCB Config</button>
         <button class="navitem" id="nav-terms"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="timetable"></span>Academic Terms</button>
+        <button class="navitem" id="nav-maintenance"><span class="tile" style="background:#FEF3F2;color:#B42318;" data-icon="maintenance"></span>Maintenance Mode</button>
         <button class="navitem" id="nav-database"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="database"></span>Database</button>
         <button class="navitem" id="nav-audit"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="reports"></span>Activity Log</button>
         <div style="flex:1;"></div>
@@ -240,6 +241,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("nav-mpesa").onclick = function(){ showMpesa(); };
   $("nav-kcb").onclick = function(){ showKcb(); };
   $("nav-terms").onclick = function(){ showAcademicTerms(); };
+  $("nav-maintenance").onclick = function(){ showMaintenance(); };
   $("nav-database").onclick = function(){ showDatabase(); };
   $("nav-audit").onclick = function(){ showAuditLog(); };
   $("nav-settings").onclick = function(){ showSettings(); };
@@ -338,6 +340,20 @@ document.addEventListener("DOMContentLoaded", function(){
     SCHOOLS = refResults[0].data || [];
     MODULES = (refResults[1].data || []).sort(function(a, b){ var o = {core:0,standard:1,advanced:2}; return (o[a.tier] - o[b.tier]) || a.name.localeCompare(b.name); });
     PACKAGES = refResults[2].data || [];
+
+    // Only super_admin bypasses this — the account that can toggle
+    // maintenance mode off is the one that always needs to be able to
+    // get back in to do so. Every other admin-console role
+    // (billing_admin, support, etc — this portal isn't super_admin-
+    // exclusive, per CUR_ROLE's own comment above) is blocked exactly
+    // like the school/teacher/parent portals.
+    if (role !== "super_admin") {
+      var mm = await sb.from("platform_settings").select("maintenance_mode, maintenance_message").eq("id", 1).single();
+      if (mm.data && mm.data.maintenance_mode) {
+        window.showMaintenancePage(sb, mm.data.maintenance_message);
+        return;
+      }
+    }
 
     showDashboard();
   }
@@ -1339,6 +1355,67 @@ document.addEventListener("DOMContentLoaded", function(){
         };
       });
     }
+  }
+
+  // ====================================================
+  //  MAINTENANCE MODE
+  //  A single platform-wide switch. When on, every portal except
+  //  this one — and every role on this one except super_admin itself
+  //  — sees a maintenance page instead of getting in. See setup-
+  //  modules-45.sql for the RLS side of this (anyone can read the
+  //  flag, only super_admin can write it) and assets/app.js's
+  //  showMaintenancePage for what the blocked portals actually show.
+  // ====================================================
+  async function showMaintenance(){
+    setActive("maintenance");
+    var el = $("view");
+    el.innerHTML = '<div style="margin-bottom:20px;"><h2 style="margin:0;font-size:21px;">Maintenance Mode</h2>' +
+      '<p class="muted" style="margin-top:4px;font-size:13.5px;">When on, every portal is blocked for every account except super_admin — school admins, teachers, parents, and any other admin-console role (billing_admin, support) all see a maintenance page instead of getting in. Use this for planned downtime, not as a general access control.</p></div>' +
+      '<div id="maint-body"><p class="muted">Loading…</p></div>';
+
+    var body = $("maint-body");
+
+    async function load(){
+      var r = await sb.from("platform_settings").select("*").eq("id", 1).single();
+      if (r.error) { body.innerHTML = '<p class="muted" style="color:#B42318;">Could not load: ' + esc(r.error.message) + '</p>'; return; }
+      var s = r.data;
+      var on = !!s.maintenance_mode;
+
+      body.innerHTML =
+        (on ? '<div class="panel" style="background:#FEF3F2;border-color:#FDA29B;margin-bottom:18px;"><strong style="color:#B42318;">⚠ Maintenance mode is currently ON.</strong> <span style="font-size:13px;color:#912018;">Everyone except super_admin is locked out right now.</span></div>' : '') +
+        '<div class="panel" style="max-width:560px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+        '<div><strong style="font-size:14.5px;">Platform maintenance</strong><div class="muted" style="font-size:12.5px;margin-top:2px;">Currently <strong style="color:' + (on ? "#B42318" : "#067647") + ';">' + (on ? "ON — blocking access" : "OFF — normal access") + '</strong></div></div>' +
+        '<label class="switch"><input type="checkbox" id="maint-toggle" ' + (on ? "checked" : "") + '><span class="slider"></span></label>' +
+        '</div>' +
+        '<label style="display:block;font-size:12.5px;font-weight:600;margin:18px 0 5px;">Message shown to blocked users</label>' +
+        '<textarea id="maint-msg" rows="3" style="width:100%;resize:vertical;" placeholder="Samaji is currently undergoing scheduled maintenance. We\u2019ll be back online shortly.">' + esc(s.maintenance_message || "") + '</textarea>' +
+        '<div style="margin-top:14px;"><button class="btn-primary btn-sm" id="maint-save">Save</button></div>' +
+        '</div>';
+
+      var toggle = $("maint-toggle");
+      $("maint-save").onclick = async function(){
+        var turningOn = toggle.checked;
+        if (turningOn && !on) {
+          var ok = await confirmDialog("This will immediately block every school admin, teacher, and parent from logging in across every school on the platform, until you turn it back off. Continue?");
+          if (!ok) { toggle.checked = false; return; }
+        }
+        var msg = $("maint-msg").value.trim();
+        var btn = $("maint-save");
+        btn.disabled = true; btn.textContent = "Saving…";
+        var upd = await sb.from("platform_settings").update({
+          maintenance_mode: turningOn,
+          maintenance_message: msg || null,
+          updated_at: new Date().toISOString(),
+          updated_by: (await sb.auth.getUser()).data.user.id
+        }).eq("id", 1);
+        btn.disabled = false; btn.textContent = "Save";
+        if (upd.error) { toast("Error: " + upd.error.message); return; }
+        toast(turningOn ? "Maintenance mode is now ON." : "Maintenance mode is now OFF.");
+        load();
+      };
+    }
+    load();
   }
 
   // ====================================================

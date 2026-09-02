@@ -14,7 +14,7 @@
 <link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
 <link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
 <link rel="preload" href="../assets/config.js?v=3" as="script">
-<link rel="stylesheet" href="../assets/styles.css?v=4">
+<link rel="stylesheet" href="../assets/styles.css?v=5">
 <!-- Fonts load async: a plain <link rel=stylesheet> to fonts.googleapis.com is
      render-blocking, so first paint waited on a third-party DNS + TLS + CSS
      fetch before a single pixel appeared. styles.css declares a system-font
@@ -35,8 +35,8 @@
      third-party origin on every cold load. -->
 <script defer src="../assets/vendor/supabase.min.js?v=3"></script>
 <script defer src="../assets/config.js?v=3"></script>
-<script defer src="../assets/icons.js?v=3"></script>
-<script defer src="../assets/app.js?v=4"></script>
+<script defer src="../assets/icons.js?v=4"></script>
+<script defer src="../assets/app.js?v=5"></script>
 <script defer src="../assets/session.js?v=3"></script>
 <script defer src="../assets/boot-early.js?v=3"></script>
 <script defer src="../assets/payslip.js?v=3"></script>
@@ -227,6 +227,18 @@ document.addEventListener("DOMContentLoaded", function(){
     if (!prof || !prof.school_id) { showMsg("This account isn't linked to a school. Set profiles.school_id.", false); busy(false); showLogin(); return; }
     SCHOOL = prof.school_id;
     ROLE = prof.role;
+
+    // Checked here, before the app shell paints — super_admin doesn't
+    // log into this portal at all (that's admin/index.html, which
+    // gates this differently, letting that one specific role through),
+    // so there's no bypass condition needed on this one: any signed-in
+    // account here gets the maintenance page.
+    var mm = await sb.from("platform_settings").select("maintenance_mode, maintenance_message").eq("id", 1).single();
+    if (mm.data && mm.data.maintenance_mode) {
+      busy(false);
+      window.showMaintenancePage(sb, mm.data.maintenance_message);
+      return;
+    }
 
     // Paint the shell NOW. Everything below is independent of it, so
     // there's no reason to make the user stare at the splash while

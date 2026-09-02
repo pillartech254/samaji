@@ -168,4 +168,57 @@
   }
   if (document.body) initThemeToggle();
   else document.addEventListener("DOMContentLoaded", initThemeToggle);
+
+  // ---- Maintenance mode (shared across all four portals) ----
+  //
+  // A fixed, full-viewport overlay rather than replacing document.
+  // body outright — whatever boot logic is still mid-flight in the
+  // calling portal keeps running underneath undisturbed; this just
+  // covers the screen. Self-contained inline styles rather than
+  // relying on styles.css, since this needs to render correctly even
+  // if that stylesheet is slow or fails to load — the one screen
+  // where "looks broken because a CSS file didn't load" would be
+  // particularly bad.
+  //
+  // Polls platform_settings every 20s and reloads automatically the
+  // moment maintenance_mode flips back off, so nobody needs to
+  // remember to come back and manually refresh.
+  window.showMaintenancePage = function (sb, message) {
+    if (document.getElementById("samaji-maintenance-overlay")) return;
+
+    var overlay = document.createElement("div");
+    overlay.id = "samaji-maintenance-overlay";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:linear-gradient(160deg,#0E9384 0%,#0B6E63 55%,#0A4F49 100%);display:flex;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,Roboto,sans-serif;";
+
+    var safeMsg = String(message || "Samaji is currently undergoing scheduled maintenance. We'll be back online shortly — thanks for your patience.");
+    var esc = function (s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
+
+    overlay.innerHTML =
+      '<style>@keyframes samajiMmPulse{0%,80%,100%{opacity:.35;transform:scale(1);}40%{opacity:1;transform:scale(1.4);}}</style>'
+      + '<div style="max-width:440px;text-align:center;color:#fff;">'
+      + '<div style="width:64px;height:64px;border-radius:18px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;margin:0 auto 26px;">'
+      + '<svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:center;gap:7px;margin-bottom:24px;">'
+      + '<span style="width:9px;height:9px;border-radius:50%;background:#fff;display:inline-block;animation:samajiMmPulse 1.4s ease-in-out infinite;"></span>'
+      + '<span style="width:9px;height:9px;border-radius:50%;background:#fff;display:inline-block;animation:samajiMmPulse 1.4s ease-in-out .2s infinite;"></span>'
+      + '<span style="width:9px;height:9px;border-radius:50%;background:#fff;display:inline-block;animation:samajiMmPulse 1.4s ease-in-out .4s infinite;"></span>'
+      + '</div>'
+      + '<h1 style="font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 12px;">We\u2019ll be right back</h1>'
+      + '<p style="font-size:15px;line-height:1.65;color:rgba(255,255,255,.85);margin:0 0 30px;">' + esc(safeMsg) + '</p>'
+      + '<div style="font-size:12.5px;color:rgba(255,255,255,.6);border-top:1px solid rgba(255,255,255,.16);padding-top:18px;">'
+      + '<strong style="color:#fff;">Samaji</strong> &middot; Checking again automatically&hellip;'
+      + '</div>'
+      + '</div>';
+
+    document.body.appendChild(overlay);
+
+    if (sb) {
+      setInterval(function () {
+        sb.from("platform_settings").select("maintenance_mode").eq("id", 1).single().then(function (res) {
+          if (res.data && res.data.maintenance_mode === false) location.reload();
+        }).catch(function () {});
+      }, 20000);
+    }
+  };
 })();
