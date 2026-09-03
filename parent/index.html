@@ -1798,7 +1798,7 @@ document.addEventListener("DOMContentLoaded", function(){
       var cards = cardsByStudent[sid];
       if (!cards || !cards.length) continue;
       html += '<h3 style="font-size:15px;font-weight:700;margin:0 0 12px;color:#15171E;">' + escHtml(studentNameMap[sid]) + '</h3>';
-      html += '<div class="mobile-cards" style="margin-bottom:24px;">';
+      html += '<div style="margin-bottom:24px;">';
       for (var j = 0; j < cards.length; j++) {
         var c = cards[j];
         var label = escHtml((termNames[c.term_id] || "Term") + " · " + (yearNumbers[c.academic_year_id] || ""));
