@@ -1091,7 +1091,14 @@ document.addEventListener("DOMContentLoaded", function(){
           if (!email || !password) { toast("Email and password are required."); return; }
           try {
             await createUserAccount(email, password, role, curSchool, phone, fullName || null);
-          } catch(e) { toast("Error: " + e.message); return; }
+          } catch(e) {
+            if (/duplicate key|already registered|already exists/i.test(e.message)) {
+              toast("That email is already registered to another account. Staff accounts need a unique email per person — use a different one, or contact support if this person genuinely needs access at more than one school.");
+            } else {
+              toast("Error: " + e.message);
+            }
+            return;
+          }
         }
         toast("User created."); m.close(); loadUsers(curSchool);
       };
