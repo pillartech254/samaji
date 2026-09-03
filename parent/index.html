@@ -1832,29 +1832,60 @@ document.addEventListener("DOMContentLoaded", function(){
     for (var i = 0; i < CHILDREN.length; i++) { if (CHILDREN[i].id === row.student_id) { student = CHILDREN[i]; break; } }
     if (!student) return;
 
-    // School's own logo isn't fetched by this portal (only its name/
-    // initial badge) — studentReportHTML already falls back to a text
-    // initial when logo_url is null, the same as it does for a school
-    // that simply has no logo on the other two portals.
-    var schoolObj = { name: $("school-name").textContent, logo_url: null };
-    var termObj = { name: _rcCache.termNames[row.term_id] || "Term" };
-    var yearObj = { year: _rcCache.yearNumbers[row.academic_year_id] || "" };
-
-    var opts = window.SamajiAcademics.buildSnapshotReportOpts(schoolObj, student, row, null, termObj, yearObj, null);
-    var reportHtml = window.SamajiReportCard.studentReportHTML(opts);
-
     var view = $("view");
-    view.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-      '<button class="ghost" id="rc-back" style="font-size:12.5px;">&larr; Back to Report Cards</button>' +
-      '<button class="btn-signout" style="background:#0E9384;color:#fff;border:none;" id="rc-print">Print</button>' +
-      '</div>' +
-      '<div style="background:#fff;border:1px solid #E4E7EC;border-radius:10px;padding:16px;overflow-x:auto;">' + reportHtml + '</div>';
+    view.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
 
-    $("rc-back").onclick = function(){ showReportCardsList(_rcCache.cardsByStudent, _rcCache.studentNameMap, _rcCache.termNames, _rcCache.yearNumbers); };
-    $("rc-print").onclick = function(){
-      window.SamajiReportCard.printHTML(reportHtml, "Report Card — " + studentName(student));
-    };
+    // The school's real logo wasn't being fetched at all before — a
+    // hardcoded logo_url: null meant every report card on this portal
+    // showed the generic placeholder regardless of whether the school
+    // actually had one configured. Fetched fresh here rather than
+    // cached, since this screen is only opened occasionally and the
+    // logo can change.
+    sb.from("schools").select("name, logo_url").eq("id", SCHOOL).single().then(function(sr){
+      var schoolObj = { name: (sr.data && sr.data.name) || $("school-name").textContent, logo_url: (sr.data && sr.data.logo_url) || null };
+      var termObj = { name: _rcCache.termNames[row.term_id] || "Term" };
+      var yearObj = { year: _rcCache.yearNumbers[row.academic_year_id] || "" };
+
+      var opts = window.SamajiAcademics.buildSnapshotReportOpts(schoolObj, student, row, null, termObj, yearObj, null);
+      var reportHtml = window.SamajiReportCard.studentReportHTML(opts);
+
+      // Rendered inside an isolated iframe carrying the report's own
+      // stylesheet (window.SamajiReportCard.css) — the exact same
+      // combination the Print button already opens in a separate
+      // window. Deliberately NOT injected as a <style> tag directly
+      // into this page: that stylesheet includes an unscoped
+      // `body{font-family:...;background:#fff;padding:18px;...}`
+      // rule meant for a standalone print document, which would have
+      // overridden the whole Parent Portal's own body styling, not
+      // just the report card, the moment it landed on the same page.
+      // An iframe keeps that CSS exactly as self-contained here as it
+      // already is in the print window.
+      var frame = document.createElement("iframe");
+      frame.id = "rc-frame";
+      frame.style.cssText = "width:100%;border:0;display:block;";
+      frame.srcdoc = '<!DOCTYPE html><html><head><style>' + window.SamajiReportCard.css + '</style></head><body>' + reportHtml + '</body></html>';
+      frame.onload = function(){
+        try {
+          var h = frame.contentDocument.documentElement.scrollHeight;
+          frame.style.height = (h + 24) + "px";
+        } catch (e) { frame.style.height = "1100px"; }
+      };
+
+      view.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+        '<button class="ghost" id="rc-back" style="font-size:12.5px;">&larr; Back to Report Cards</button>' +
+        '<button class="btn-signout" style="background:#0E9384;color:#fff;border:none;" id="rc-print">Print</button>' +
+        '</div>' +
+        '<div id="rc-frame-wrap" style="background:#fff;border:1px solid #E4E7EC;border-radius:10px;overflow:hidden;"></div>';
+      $("rc-frame-wrap").appendChild(frame);
+
+      $("rc-back").onclick = function(){ showReportCardsList(_rcCache.cardsByStudent, _rcCache.studentNameMap, _rcCache.termNames, _rcCache.yearNumbers); };
+      $("rc-print").onclick = function(){
+        window.SamajiReportCard.printHTML(reportHtml, "Report Card — " + studentName(student));
+      };
+    }).catch(function(){
+      view.innerHTML = '<div class="empty">Could not load this report card.</div>';
+    });
   }
 
   function renderAnnouncements(pg) {
