@@ -217,8 +217,23 @@
         +'<label class="btn-sm" style="cursor:pointer;"><input type="file" id="sp-logo-file" accept="image/*" style="display:none;"> ⬆ Upload logo</label>'
         +(logoUrl?'<button class="btn-sm danger" id="sp-logo-rm">Remove logo</button>':'')
         +'</div></div></div>'
+        +'<div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line);">'
+        +'<label style="display:block;font-size:13px;font-weight:600;margin-bottom:4px;">Fee receipt size</label>'
+        +'<p class="muted" style="font-size:11.5px;margin:0 0 10px;">Applies everywhere a receipt is printed or viewed — this school portal and the Parent Portal alike.</p>'
+        +'<div style="display:flex;gap:12px;flex-wrap:wrap;">'
+        +receiptSizeOption("a5", "A5", "Full layout with a separate receipt summary box.", info.receipt_size)
+        +receiptSizeOption("a6", "A6", "Compact single-column slip.", info.receipt_size)
+        +receiptSizeOption("pos80", "POS 80mm", "Narrow thermal receipt-printer roll.", info.receipt_size)
+        +'</div></div>'
         +'<div class="modal-actions" style="margin-top:18px;"><button class="btn-primary" id="sp-save">Save profile</button></div>'
         +'</div>';
+      function receiptSizeOption(value, label, desc, current){
+        var selected=(current||"a5")===value;
+        return '<label class="rsz-opt" data-rsz="'+value+'" style="flex:1;min-width:150px;border:2px solid '+(selected?"#0E9384":"#DDE1E6")+';border-radius:10px;padding:12px;cursor:pointer;display:block;">'
+          +'<input type="radio" name="sp-rsz" value="'+value+'" '+(selected?"checked":"")+' style="margin-right:6px;">'
+          +'<strong style="font-size:13px;">'+label+'</strong>'
+          +'<div class="muted" style="font-size:11px;margin-top:4px;">'+esc(desc)+'</div></label>';
+      }
       document.getElementById("sp-logo-file").onchange=async function(e){
         var file=e.target.files[0]; if(!file) return;
         if(file.size>500*1024){ toast("Logo must be under 500 KB."); return; }
@@ -240,10 +255,17 @@
         try{ localStorage.removeItem("school_logo_"+schoolId); }catch(e2){}
         toast("Logo removed"); profileTab();
       };
+      document.querySelectorAll(".rsz-opt").forEach(function(el){
+        el.querySelector("input").onchange=function(){
+          document.querySelectorAll(".rsz-opt").forEach(function(o){ o.style.borderColor="#DDE1E6"; });
+          el.style.borderColor="#0E9384";
+        };
+      });
       document.getElementById("sp-save").onclick=async function(){
         var name=document.getElementById("sp-name").value.trim();
         if(!name){ toast("School name is required."); return; }
-        var rec={name:name, phone:document.getElementById("sp-phone").value.trim()||null, address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null};
+        var rszEl=document.querySelector('input[name="sp-rsz"]:checked');
+        var rec={name:name, phone:document.getElementById("sp-phone").value.trim()||null, address:document.getElementById("sp-addr").value.trim()||null, email:document.getElementById("sp-email").value.trim()||null, motto:document.getElementById("sp-motto").value.trim()||null, receipt_size:(rszEl?rszEl.value:"a5")};
         var r=await sb.from("schools").update(rec).eq("id",schoolId);
         if(r.error){ toast("Couldn't save profile: "+r.error.message); return; }
         toast("Profile saved");
@@ -2107,37 +2129,17 @@
         var structs=res.data||[]; billed=structs.reduce(function(a,s){return a+(s.fee_items||[]).reduce(function(x,i){return x+Number(i.amount);},0);},0)+(Number(stu&&stu.opening_balance)||0);
         sb.from("fee_payments").select("amount").eq("school_id",schoolId).eq("student_id",p.student_id).then(function(pr){
           var paid=(pr.data||[]).reduce(function(a,x){return a+Number(x.amount);},0);
-          var bal=Math.max(0,billed-paid), status= bal<=0&&billed>0?"PAID IN FULL":(paid>0?"PART PAYMENT":"RECEIVED");
-          var sName=stu?(stu.first_name+" "+stu.last_name):"—";
+          var bal=Math.max(0,billed-paid);
+          var opts=window.SamajiReceipt.buildReceiptOpts(school, stu, p, billed, paid, bal);
           var ov=document.createElement("div"); ov.className="overlay";
           ov.innerHTML='<div style="display:flex;flex-direction:column;align-items:center;gap:14px;">'
-            +'<div id="print-area"><div class="rcpt">'
-            +(getLogoUrl(school)?'<div class="rc-wm"><img src="'+esc(getLogoUrl(school))+'"></div>':'')
-            +'<div class="rc-top"><div class="rc-logo">'+(getLogoUrl(school)?'<img src="'+esc(getLogoUrl(school))+'" style="height:32px;object-fit:contain;">':('<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 18L4 7l4.5 5L12 4l3.5 8L20 7l-1 11H5z"/><rect x="5" y="19.2" width="14" height="2.1" rx="1.05"/></svg>'))+'</div>'
-            +'<div class="rc-school">'+esc(school.name||"School")+'</div><div class="rc-sub">Official Fee Receipt</div>'
-            +'<div class="rc-stamp">'+status+'</div></div>'
-            +'<div class="rc-body"><div class="rc-meta">'
-            +'<div><div class="k">Receipt No</div><div class="v">'+esc(p.receipt_no)+'</div></div>'
-            +'<div><div class="k">Date</div><div class="v">'+new Date(p.paid_at||Date.now()).toLocaleDateString()+'</div></div>'
-            +'<div><div class="k">Student</div><div class="v">'+esc(sName)+'</div></div>'
-            +'<div><div class="k">Adm No</div><div class="v">'+esc(stu&&stu.admission_no||"—")+'</div></div>'
-            +'<div><div class="k">Class</div><div class="v">'+esc(stu&&stu.grade||"—")+'</div></div>'
-            +'<div><div class="k">Term</div><div class="v">'+esc(p.term)+' '+p.year+'</div></div>'
-            +'<div><div class="k">Method</div><div class="v">'+esc(p.method)+(p.reference?' · '+esc(p.reference):'')+'</div></div>'
-            +'<div><div class="k">Received by</div><div class="v">'+esc(p.received_by||"—")+'</div></div>'
-            +'</div>'
-            +'<div class="rc-amt"><div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#067647;">Amount Paid</div><div class="big">'+money(p.amount)+'</div></div>'
-            +'<svg width="40" height="40" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#067647"/><path d="M8 12.5l2.5 2.5L16 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>'
-            +(p.includes_transport?'<div class="rc-line">🚌 Includes bus transport <strong>'+money(p.transport_amount)+'</strong></div>':'')
-            +(billed>0?'<div class="rc-bal"><span class="muted">Term billed: '+money(billed)+'</span><span style="font-weight:700;color:'+(bal>0?"#C2410C":"#067647")+';">Balance: '+money(bal)+'</span></div>':'')
-            +(p.note?'<div class="rc-line" style="border:none;color:#667085;">Note: '+esc(p.note)+'</div>':'')
-            +'</div><div class="rc-foot">Thank you. This is a computer-generated receipt — '+esc(p.receipt_no)+'<br>Powered by Samaji · Pillartech Solutions</div>'
-            +'</div></div>'
+            +'<style>'+window.SamajiReceipt.css+'</style>'
+            +'<div id="print-area">'+window.SamajiReceipt.receiptHTML(opts)+'</div>'
             +'<div style="display:flex;gap:10px;"><button class="btn-sm" id="rc-close">Close</button><button class="btn-primary" id="rc-print">🖨 Print receipt</button></div></div>';
           ov.addEventListener("click",function(e){ if(e.target===ov) ov.remove(); });
           document.body.appendChild(ov);
           ov.querySelector("#rc-close").onclick=function(){ ov.remove(); };
-          ov.querySelector("#rc-print").onclick=function(){ window.print(); };
+          ov.querySelector("#rc-print").onclick=function(){ window.SamajiReceipt.printReceipt(opts); };
         });
       });
     }

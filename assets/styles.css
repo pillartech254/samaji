@@ -310,31 +310,17 @@ table.data tbody tr:hover td{background:var(--surface-2);}
 /* skeleton shimmer */
 .skel{background:linear-gradient(90deg,#EEF1F4 25%,#F6F8FA 37%,#EEF1F4 63%);background-size:200% 100%;animation:shimmer 1.3s infinite;border-radius:8px;}
 
-/* ===== Receipt ===== */
-.rcpt{width:430px;max-width:100%;background:#fff;border-radius:16px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--sh-3);position:relative;}
-/* Faint school-logo watermark behind receipt/statement content — makes
-   photocopied or screenshotted forgeries easier to spot at a glance.
-   z-index:-1 puts it behind ALL of .rcpt's normal-flow children
-   regardless of their own stacking, since negative-z-index descendants
-   paint before non-positioned in-flow content in CSS painting order. */
-.rcpt .rc-wm,.statement .st-wm{position:absolute;inset:0;z-index:-1;display:flex;align-items:center;justify-content:center;pointer-events:none;}
-.rcpt .rc-wm img{width:60%;max-width:220px;opacity:.06;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+/* ===== Fee receipt =====
+   The .rcpt-based receipt card that used to live here was replaced by
+   assets/receipt-print.js (window.SamajiReceipt) — a shared module
+   used by both the School Portal and Parent Portal, in three
+   configurable sizes (A5/A6/POS 80mm) rather than one fixed layout.
+   Its own CSS is self-contained and injected alongside the receipt
+   HTML itself, so nothing receipt-specific needs to live here anymore.
+   .statement (below) is unrelated and unaffected — it's the fee
+   statement / running-ledger template, not a receipt. */
+.statement .st-wm{position:absolute;inset:0;z-index:-1;display:flex;align-items:center;justify-content:center;pointer-events:none;}
 .statement .st-wm img{width:46%;max-width:300px;opacity:.05;object-fit:contain;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-.rcpt .rc-top{background:linear-gradient(135deg,#12B3A1,#0B6E63);color:#fff;padding:22px 24px;position:relative;overflow:hidden;}
-.rcpt .rc-top::after{content:"";position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.08);}
-.rcpt .rc-top .rc-logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;position:relative;z-index:1;}
-.rcpt .rc-top .rc-school{font-size:19px;font-weight:700;margin-top:11px;letter-spacing:-.01em;position:relative;z-index:1;}
-.rcpt .rc-top .rc-sub{font-size:11.5px;opacity:.85;margin-top:2px;position:relative;z-index:1;}
-.rcpt .rc-stamp{position:absolute;top:20px;right:22px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:6px 12px;border-radius:20px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.35);z-index:1;}
-.rcpt .rc-body{padding:19px 24px;}
-.rcpt .rc-meta{display:grid;grid-template-columns:1fr 1fr;gap:11px 16px;font-size:12px;}
-.rcpt .rc-meta .k{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;}
-.rcpt .rc-meta .v{color:var(--ink);font-weight:600;margin-top:1px;}
-.rcpt .rc-line{display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed #ECEEF1;}
-.rcpt .rc-amt{background:var(--green-t);border:1px solid #BBF7D0;border-radius:13px;padding:14px 17px;margin-top:15px;display:flex;align-items:center;justify-content:space-between;}
-.rcpt .rc-amt .big{font-size:24px;font-weight:700;color:var(--green);letter-spacing:-.02em;}
-.rcpt .rc-foot{padding:15px 24px 20px;border-top:1px solid var(--line-2);font-size:11px;color:var(--muted);text-align:center;}
-.rcpt .rc-bal{display:flex;justify-content:space-between;font-size:12.5px;margin-top:11px;}
 
 /* ===== Printable statement (Reports, fee statements) ===== */
 .statement{width:760px;max-width:100%;background:#fff;border-radius:14px;border:1px solid var(--line);box-shadow:var(--sh-3);padding:30px 34px;font-size:13px;color:var(--ink);position:relative;overflow:hidden;}
@@ -392,7 +378,6 @@ table.data tbody tr:hover td{background:var(--surface-2);}
   .overlay{padding:8px;}
   .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;gap:0;flex-wrap:nowrap;}
   .tabs button{white-space:nowrap;padding:10px 12px;font-size:12px;}
-  .rcpt{width:100%;}
   .statement{width:100%;padding:16px;}
   .kpis{grid-template-columns:1fr 1fr;}
   .cardrow.c2,.cardrow.c3{grid-template-columns:1fr;}
@@ -420,7 +405,6 @@ table.data tbody tr:hover td{background:var(--surface-2);}
   body *{visibility:hidden;}
   #print-area, #print-area *{visibility:visible;}
   #print-area{position:absolute;inset:0;margin:0;padding:24px;display:block;}
-  #print-area .rcpt{box-shadow:none;border:1px solid #ddd;margin:0 auto;animation:none;}
   #print-area .statement{box-shadow:none;border:none;margin:0 auto;padding:0;}
 }
 @media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;}}

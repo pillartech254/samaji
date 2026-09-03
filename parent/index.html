@@ -14,7 +14,7 @@
 <link rel="dns-prefetch" href="https://lvmpqsofpwhtdfuvtdzi.supabase.co">
 <link rel="preload" href="../assets/vendor/supabase.min.js?v=3" as="script">
 <link rel="preload" href="../assets/config.js?v=3" as="script">
-<link rel="stylesheet" href="../assets/styles.css?v=5">
+<link rel="stylesheet" href="../assets/styles.css?v=6">
 <!-- Fonts load async — see the note in school/index.html. Parents are the
      most likely to be on a phone and a metered connection, so this portal
      benefits most from not blocking paint on a third-party stylesheet. -->
@@ -39,6 +39,8 @@
 <script defer src="../assets/idb-cache.js?v=3"></script>
 <script defer src="../assets/academics-core.js?v=1"></script>
 <script defer src="../assets/report-card.js?v=1"></script>
+<script defer src="../assets/vendor/qrcode.js?v=1"></script>
+<script defer src="../assets/receipt-print.js?v=1"></script>
 <style>
   *{box-sizing:border-box;}
   body{margin:0;font-family:'IBM Plex Sans',sans-serif;background:#F4F6F8;color:#1A1D26;}
@@ -377,6 +379,7 @@ document.addEventListener("DOMContentLoaded", function(){
   var $ = function(id){ return document.getElementById(id); };
   var sb = window.getSB();
   var SCHOOL = null;
+  var SCHOOL_INFO = null; // the full school row (name, logo_url, receipt_size) — set in proceedWithParent, read by showReceiptScreen
   var PARENT = null;
   var USER = null;
   var PARENT_SCHOOLS = []; // every parent_accounts row for this login — length 1 for the common case, >1 only for a genuinely multi-school parent
@@ -621,8 +624,9 @@ document.addEventListener("DOMContentLoaded", function(){
     // same gate (letting a suspended school's parent through to set
     // a new password first, then blocking them, would be a strange
     // half-blocked state).
-    sb.from("schools").select("id, name, status").eq("id", SCHOOL).single().then(function(sc){
+    sb.from("schools").select("id, name, status, logo_url, receipt_size").eq("id", SCHOOL).single().then(function(sc){
       var school = sc.data;
+      SCHOOL_INFO = school;
       if (!school || (school.status && school.status !== "active")) {
         doSignOut("This school's account is currently " + ((school && school.status) || "unavailable") + ". Contact your school administrator or Samaji support.");
         return;
@@ -1504,30 +1508,29 @@ document.addEventListener("DOMContentLoaded", function(){
     var names = [];
     for (var i = 0; i < students.length; i++) { names.push(studentName(students[i])); }
     var receiptNo = tx[provider.receiptField] || tx.id.slice(0, 8).toUpperCase();
-    var when = new Date();
+    var schoolName = ($("school-name") && $("school-name").textContent) || "School";
+
+    // buildReceiptOpts expects one student and a fee_payments-shaped
+    // row. tx is neither — it's the raw mpesa_transactions/
+    // kcb_transactions row, and a single "Pay All" push can cover
+    // several children at once. Combined into the shapes the shared
+    // module actually expects rather than duplicating its rendering
+    // logic here a second time.
+    var syntheticStudent = { first_name: names.join(", "), last_name: "", admission_no: null, grade: null };
+    var syntheticPayment = {
+      id: tx.id, receipt_no: receiptNo, amount: tx.amount, paid_at: new Date().toISOString(),
+      term: "", year: "", method: provider.label, reference: tx.phone || null,
+    };
+    var school = { name: schoolName, logo_url: (SCHOOL_INFO && SCHOOL_INFO.logo_url) || null, receipt_size: (SCHOOL_INFO && SCHOOL_INFO.receipt_size) || "a5" };
+    var opts = window.SamajiReceipt.buildReceiptOpts(school, syntheticStudent, syntheticPayment, 0, tx.amount, 0);
 
     var html = '<div style="text-align:center;padding:10px 0 4px;">';
     html += '<div style="width:44px;height:44px;border-radius:50%;background:#E7F6F3;color:#0E9384;display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:22px;">&#10003;</div>';
     html += '<h2 style="font-size:16px;margin:0;">Payment successful!</h2>';
     html += '</div>';
 
-    html += '<div id="print-area"><div class="rcpt" style="width:100%;box-shadow:none;border:1px solid #EAECEF;">';
-    var schoolName = ($("school-name") && $("school-name").textContent) || "School";
-    html += '<div class="rc-top"><div class="rc-logo">' + escHtml(schoolName) + '</div>';
-    html += '<div class="rc-school">Payment Receipt</div><div class="rc-sub">via ' + escHtml(provider.label) + '</div>';
-    html += '<div class="rc-stamp">PAID</div></div>';
-    html += '<div class="rc-body"><div class="rc-meta">';
-    html += '<div><div class="k">Receipt No</div><div class="v">' + escHtml(receiptNo) + '</div></div>';
-    html += '<div><div class="k">Date</div><div class="v">' + when.toLocaleDateString() + '</div></div>';
-    html += '<div><div class="k">Student' + (students.length > 1 ? "s" : "") + '</div><div class="v">' + escHtml(names.join(", ")) + '</div></div>';
-    html += '<div><div class="k">Phone</div><div class="v">' + escHtml(tx.phone || "-") + '</div></div>';
-    html += '<div><div class="k">Method</div><div class="v">' + escHtml(provider.label) + '</div></div>';
-    html += '<div><div class="k">Paid by</div><div class="v">' + escHtml(PARENT.full_name || "-") + '</div></div>';
-    html += '</div>';
-    html += '<div class="rc-amt"><div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#067647;">Amount Paid</div><div class="big">' + fmtMoney(tx.amount) + '</div></div>';
-    html += '<svg width="36" height="36" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#067647"/><path d="M8 12.5l2.5 2.5L16 9" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>';
-    html += '</div><div class="rc-foot">Thank you. This is a computer-generated receipt &mdash; ' + escHtml(receiptNo) + '<br>Powered by Samaji &middot; Pillartech Solutions</div>';
-    html += '</div></div>';
+    html += '<style>' + window.SamajiReceipt.css + '</style>';
+    html += '<div id="print-area" style="transform:scale(.82);transform-origin:top center;">' + window.SamajiReceipt.receiptHTML(opts) + '</div>';
 
     html += '<div style="display:flex;gap:10px;margin-top:14px;">';
     html += '<button style="flex:1;background:none;border:1px solid #DDE1E6;border-radius:10px;color:#344054;font-size:13px;cursor:pointer;padding:12px;font-family:inherit;" id="mpesa-done">Done</button>';
@@ -1535,7 +1538,7 @@ document.addEventListener("DOMContentLoaded", function(){
     html += '</div>';
 
     box.innerHTML = html;
-    $("mpesa-print").onclick = function(){ window.print(); };
+    $("mpesa-print").onclick = function(){ window.SamajiReceipt.printReceipt(opts); };
     $("mpesa-done").onclick = function(){
       $("mpesa-modal").style.display = "none";
       loadChildren();
