@@ -153,6 +153,7 @@
         <button class="navitem" id="nav-schools"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="schools"></span>Schools</button>
         <button class="navitem" id="nav-licensing"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="licensing"></span>Licensing</button>
         <button class="navitem" id="nav-users"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="users"></span>Users</button>
+        <button class="navitem" id="nav-roles"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="users"></span>Roles</button>
         <div class="nav-h">Operations</div>
         <button class="navitem" id="nav-mpesa"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>M-Pesa Config</button>
         <button class="navitem" id="nav-kcb"><span class="tile" style="background:#EEF0FF;color:#4F46E5;" data-icon="mpesa"></span>KCB Config</button>
@@ -230,7 +231,7 @@ document.addEventListener("DOMContentLoaded", function(){
   }
 
   // ---- Nav ----
-  var NAV_KEYS = ["dashboard","schools","licensing","users","mpesa","kcb","terms","database","audit","settings"];
+  var NAV_KEYS = ["dashboard","schools","licensing","users","roles","mpesa","kcb","terms","database","audit","settings"];
   function setActive(key){
     NAV_KEYS.forEach(function(k){
       var el = $("nav-" + k);
@@ -242,6 +243,7 @@ document.addEventListener("DOMContentLoaded", function(){
   $("nav-schools").onclick = function(){ showSchools(); };
   $("nav-licensing").onclick = function(){ showLicensing(); };
   $("nav-users").onclick = function(){ showUsers(); };
+  $("nav-roles").onclick = function(){ showRoles(); };
   $("nav-mpesa").onclick = function(){ showMpesa(); };
   $("nav-kcb").onclick = function(){ showKcb(); };
   $("nav-terms").onclick = function(){ showAcademicTerms(); };
@@ -825,12 +827,14 @@ document.addEventListener("DOMContentLoaded", function(){
       super_admin: "color:#6D28D9;background:#F2ECFE;",
       school_admin: "color:#4F46E5;background:#EEF0FF;",
       teacher: "color:#067647;background:#E7F8EF;",
+      staff: "color:#B54708;background:#FFF6E9;",
       parent: "color:#C2410C;background:#FFF4ED;"
     };
     var roleLabel = {
       super_admin: "Super Admin",
       school_admin: "School Admin",
       teacher: "Teacher",
+      staff: "Staff",
       parent: "Parent"
     };
 
@@ -900,7 +904,7 @@ document.addEventListener("DOMContentLoaded", function(){
 
       if (q) {
         filteredAuth = cachedAuthUsers.filter(function(u){
-          var hay = ((u.full_name || "") + " " + (u.phone || "") + " " + (u.email || "") + " " + (roleLabel[u.role] || u.role || "")).toLowerCase();
+          var hay = ((u.full_name || "") + " " + (u.phone || "") + " " + (u.email || "") + " " + (u.custom_role_name || "") + " " + (roleLabel[u.role] || u.role || "")).toLowerCase();
           return hay.indexOf(q) >= 0;
         });
         filteredGuardians = cachedGuardians.filter(function(g){
@@ -919,7 +923,7 @@ document.addEventListener("DOMContentLoaded", function(){
           var uid = u.user_id || u.id || "";
           var role = u.role || "—";
           var rStyle = roleColors[role] || "color:#475467;background:#F1F2F6;";
-          var rLbl = roleLabel[role] || role;
+          var rLbl = (role === "staff" && u.custom_role_name) ? u.custom_role_name : (roleLabel[role] || role);
           var display = esc(u.full_name || "—");
           var contact = u.phone ? esc(u.phone) : esc(u.email || "—");
           if (u.phone && u.email) contact = esc(u.phone) + '<br><span class="mono" style="font-size:11px;color:#98A2B3;">' + esc(u.email) + '</span>';
@@ -1055,7 +1059,8 @@ document.addEventListener("DOMContentLoaded", function(){
       if (!curSchool) { toast("Select a school first."); return; }
       var m = modal(
         '<h3>Add User</h3>' +
-        '<label>Role</label><select id="au-role"><option value="school_admin">School Admin</option><option value="parent">Parent</option></select>' +
+        '<label>Role</label><select id="au-role"><option value="school_admin">School Admin</option><option value="staff">Staff (custom role)</option><option value="parent">Parent</option></select>' +
+        '<div id="au-staff-role-wrap" style="display:none;"><label>Position</label><select id="au-staff-role"></select></div>' +
         '<div id="au-admin-fields">' +
         '<label>Email</label><input id="au-email" type="email" placeholder="user@school.ac.ke">' +
         '<label>Full Name</label><input id="au-name" placeholder="Full name">' +
@@ -1067,10 +1072,17 @@ document.addEventListener("DOMContentLoaded", function(){
         '</div>' +
         '<div class="btn-row"><button class="ghost" id="au-cancel">Cancel</button><button class="btn-primary btn-sm" id="au-save">Add User</button></div>'
       );
+      sb.from("custom_roles").select("id, name").eq("school_id", curSchool).order("name").then(function(res){
+        var opts = (res.data || []).map(function(r){ return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join("");
+        m.q("#au-staff-role").innerHTML = opts || '<option value="">No custom roles yet — create one under Roles first</option>';
+      });
       m.q("#au-role").onchange = function(){
-        var isParent = m.q("#au-role").value === "parent";
+        var role = m.q("#au-role").value;
+        var isParent = role === "parent";
+        var isStaff = role === "staff";
         m.q("#au-admin-fields").style.display = isParent ? "none" : "block";
         m.q("#au-parent-fields").style.display = isParent ? "block" : "none";
+        m.q("#au-staff-role-wrap").style.display = isStaff ? "block" : "none";
       };
       m.q("#au-cancel").onclick = function(){ m.close(); };
       m.q("#au-save").onclick = async function(){
@@ -1093,8 +1105,14 @@ document.addEventListener("DOMContentLoaded", function(){
           password = m.q("#au-pw").value;
           phone = null;
           if (!email || !password) { toast("Email and password are required."); return; }
+          var customRoleId = role === "staff" ? m.q("#au-staff-role").value : null;
+          if (role === "staff" && !customRoleId) { toast("Choose a position, or create one under Roles first."); return; }
           try {
-            await createUserAccount(email, password, role, curSchool, phone, fullName || null);
+            var newUserId = await createUserAccount(email, password, role, curSchool, phone, fullName || null);
+            if (role === "staff" && customRoleId) {
+              var linkRes = await sb.from("profiles").update({ custom_role_id: customRoleId }).eq("id", newUserId);
+              if (linkRes.error) { toast("User created, but couldn't assign their role: " + linkRes.error.message); m.close(); loadUsers(curSchool); return; }
+            }
           } catch(e) {
             if (/duplicate key|already registered|already exists/i.test(e.message)) {
               toast("That email is already registered to another account. Staff accounts need a unique email per person — use a different one, or contact support if this person genuinely needs access at more than one school.");
@@ -1106,6 +1124,147 @@ document.addEventListener("DOMContentLoaded", function(){
         }
         toast("User created."); m.close(); loadUsers(curSchool);
       };
+    };
+  }
+
+  // ====================================================
+  //  4b. CUSTOM ROLES (super_admin only — staff positions like
+  //  Librarian or Bursar, each with an explicit, per-module set of
+  //  permissions rather than the fixed school_admin/teacher/parent
+  //  roles). See setup-modules-49.sql for the full reasoning behind
+  //  why this exists as a separate, additive role/permission system
+  //  rather than a rewrite of the existing ones.
+  // ====================================================
+  async function showRoles(){
+    setActive("roles");
+    var el = $("view");
+    el.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">' +
+      '<div><h2 style="margin:0;font-size:21px;">Custom Roles</h2><p class="muted" style="margin-top:4px;font-size:13.5px;">Create staff positions (Librarian, Bursar, etc.) and choose exactly which modules each one can use.</p></div>' +
+      '<div class="row" style="gap:10px;"><span class="muted">School</span><select id="role-school"></select>' +
+      '<button class="btn-primary btn-sm" id="role-add" disabled>+ New role</button></div></div>' +
+      '<div id="role-list"></div>';
+
+    var curSchool = null;
+    schoolSelector("role-school", function(val){
+      curSchool = val;
+      document.getElementById("role-add").disabled = !val;
+      if (val) loadRoles(val);
+      else document.getElementById("role-list").innerHTML = '<p class="muted">Select a school.</p>';
+    });
+
+    document.getElementById("role-add").onclick = function(){
+      if (!curSchool) { toast("Select a school first."); return; }
+      openRoleEditor(curSchool, null, function(){ loadRoles(curSchool); });
+    };
+  }
+
+  async function loadRoles(schoolId){
+    var box = document.getElementById("role-list");
+    box.innerHTML = '<p class="muted">Loading...</p>';
+
+    var rolesRes = await sb.from("custom_roles").select("id, name").eq("school_id", schoolId).order("name");
+    var roles = rolesRes.data || [];
+    if (roles.length === 0) { box.innerHTML = '<p class="muted">No custom roles yet for this school. Click "+ New role" to create one — e.g. Librarian or Bursar.</p>'; return; }
+
+    var modsRes = await sb.from("role_modules").select("role_id, module_key").in("role_id", roles.map(function(r){ return r.id; }));
+    var modsByRole = {};
+    (modsRes.data || []).forEach(function(m){ (modsByRole[m.role_id] = modsByRole[m.role_id] || []).push(m.module_key); });
+
+    var html = '<div style="display:flex;flex-direction:column;gap:10px;">';
+    roles.forEach(function(r){
+      var mods = modsByRole[r.id] || [];
+      var modNames = mods.map(function(k){ return window.metaFor(k).name; }).join(", ") || "No modules granted yet";
+      html += '<div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;">';
+      html += '<div><div style="font-weight:700;font-size:14px;">' + esc(r.name) + '</div>';
+      html += '<div class="muted" style="font-size:12.5px;margin-top:2px;">' + esc(modNames) + '</div></div>';
+      html += '<div class="row" style="gap:8px;"><button class="btn-sm" data-edit="' + r.id + '">Edit</button><button class="btn-sm danger" data-del="' + r.id + '">Delete</button></div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    box.innerHTML = html;
+
+    box.querySelectorAll("[data-edit]").forEach(function(b){
+      b.onclick = function(){
+        var role = roles.find(function(r){ return r.id === b.getAttribute("data-edit"); });
+        openRoleEditor(schoolId, { id: role.id, name: role.name, modules: modsByRole[role.id] || [] }, function(){ loadRoles(schoolId); });
+      };
+    });
+    box.querySelectorAll("[data-del]").forEach(function(b){
+      b.onclick = async function(){
+        var roleId = b.getAttribute("data-del");
+        var role = roles.find(function(r){ return r.id === roleId; });
+        if (!await confirmDialog('Delete the role "' + role.name + '"? Any staff member currently assigned to it will lose access to its modules immediately. This cannot be undone.')) return;
+        var r = await sb.from("custom_roles").delete().eq("id", roleId);
+        if (r.error) { toast("Couldn't delete role: " + r.error.message); return; }
+        toast("Role deleted."); loadRoles(schoolId);
+      };
+    });
+  }
+
+  function openRoleEditor(schoolId, existing, onSaved){
+    var isEdit = !!existing;
+    var selectedModules = {};
+    (existing && existing.modules || []).forEach(function(k){ selectedModules[k] = true; });
+
+    var byCategory = {};
+    Object.keys(window.MODULE_META).forEach(function(k){
+      var cat = window.MODULE_META[k].category || "Other";
+      (byCategory[cat] = byCategory[cat] || []).push(k);
+    });
+
+    var gridHtml = "";
+    Object.keys(byCategory).forEach(function(cat){
+      gridHtml += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#98A2B3;margin:14px 0 6px;">' + esc(cat) + '</div>';
+      gridHtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+      byCategory[cat].forEach(function(k){
+        var m = window.metaFor(k);
+        var checked = selectedModules[k] ? "checked" : "";
+        gridHtml += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 8px;border:1px solid #EAECEF;border-radius:8px;cursor:pointer;">' +
+          '<input type="checkbox" data-mod="' + k + '" ' + checked + '> ' + esc(m.name) + '</label>';
+      });
+      gridHtml += '</div>';
+    });
+
+    var m = modal(
+      '<h3 style="margin:0 0 4px;">' + (isEdit ? "Edit role" : "New role") + '</h3>' +
+      '<p class="muted" style="font-size:13px;margin:0 0 16px;">Choose exactly which modules this position can use. A staff member assigned this role sees only what\'s checked here.</p>' +
+      '<div class="field"><label>Role name</label><input id="role-name" placeholder="e.g. Librarian, Bursar, Accountant" value="' + (isEdit ? esc(existing.name) : "") + '" style="width:100%;"></div>' +
+      '<div style="max-height:320px;overflow-y:auto;padding-right:4px;">' + gridHtml + '</div>' +
+      '<div class="btn-row" style="margin-top:18px;"><button class="ghost" id="role-cancel">Cancel</button><button class="btn-primary btn-sm" id="role-save">Save role</button></div>'
+    );
+
+    m.q("#role-cancel").onclick = function(){ m.close(); };
+    m.q("#role-save").onclick = async function(){
+      var name = m.q("#role-name").value.trim();
+      if (!name) { toast("Role name is required."); return; }
+      var checkedModules = [];
+      m.el.querySelectorAll("[data-mod]").forEach(function(cb){ if (cb.checked) checkedModules.push(cb.getAttribute("data-mod")); });
+
+      var roleId = existing && existing.id;
+      if (!roleId) {
+        var createRes = await sb.from("custom_roles").insert({ school_id: schoolId, name: name }).select().single();
+        if (createRes.error) { toast("Couldn't create role: " + createRes.error.message); return; }
+        roleId = createRes.data.id;
+      } else {
+        var updateRes = await sb.from("custom_roles").update({ name: name }).eq("id", roleId);
+        if (updateRes.error) { toast("Couldn't rename role: " + updateRes.error.message); return; }
+        // Replaced wholesale rather than diffed — simplest correct
+        // approach for a small, checkbox-driven list like this; the
+        // whole table is scoped to this one role_id, so nothing else
+        // is at risk from clearing it first.
+        await sb.from("role_modules").delete().eq("role_id", roleId);
+      }
+
+      if (checkedModules.length > 0) {
+        var rows = checkedModules.map(function(k){ return { role_id: roleId, module_key: k }; });
+        var modRes = await sb.from("role_modules").insert(rows);
+        if (modRes.error) { toast("Role saved, but couldn't save its modules: " + modRes.error.message); return; }
+      }
+
+      toast(isEdit ? "Role updated." : "Role created.");
+      m.close();
+      if (onSaved) onSaved();
     };
   }
 
