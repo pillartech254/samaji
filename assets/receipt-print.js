@@ -88,6 +88,65 @@
     return '<div style="width:' + sizePx + 'px;height:' + sizePx + 'px;border-radius:50%;background:#F4F6F8;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:' + Math.round(sizePx * 0.4) + 'px;color:#344054;">' + esc((opts.schoolName || "S").charAt(0).toUpperCase()) + '</div>';
   }
 
+  // A realistic "PAID" stamp — school name curved along the top arc
+  // (SVG's <textPath>, since CSS alone can't bend text along a
+  // circle), "PAID" large and slightly rotated in the center the way
+  // a hand-pressed rubber stamp never lands perfectly straight, and
+  // the payment date along the bottom. Long school names are
+  // shortened (not just left to overflow past the arc, which SVG
+  // would otherwise do silently and look broken) so the curve stays
+  // legible regardless of how long the real name is.
+  function paidStamp(opts, sizePx) {
+    var pathId = "rr-stamp-arc-" + String(opts.paymentId || Math.random()).replace(/[^a-zA-Z0-9]/g, "");
+    var name = (opts.schoolName || "").toUpperCase();
+    var dateStr = new Date(opts.date).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
+    var r = sizePx / 2;
+    var vb = sizePx;
+
+    // The arc the school name curves along — defined by an actual
+    // radius and angle (not guessed pixel offsets), so its real
+    // length can be computed directly rather than assumed. 155°
+    // leaves a visible gap at the bottom of the circle for "PAID" and
+    // the date to sit inside, while still giving the name a wide,
+    // stamp-like curve.
+    var arcR = r * 0.78;
+    var arcDeg = 155;
+    var arcRad = (arcDeg * Math.PI) / 180;
+    var startAngle = (270 - arcDeg / 2) * (Math.PI / 180);
+    var endAngle = (270 + arcDeg / 2) * (Math.PI / 180);
+    var x1 = r + arcR * Math.cos(startAngle), y1 = r + arcR * Math.sin(startAngle);
+    var x2 = r + arcR * Math.cos(endAngle), y2 = r + arcR * Math.sin(endAngle);
+
+    // Font size scaled to fit the real arc length, not a fixed
+    // guess — a short name renders large and confident; a long one
+    // shrinks to fit rather than silently overflowing past the arc's
+    // end and getting clipped by the SVG viewBox (confirmed directly
+    // by rendering and visually inspecting this — a fixed threshold
+    // of "34 characters" was never actually validated against the
+    // real available arc length, and a 23-character name was already
+    // overflowing at the font size that threshold assumed was safe).
+    var arcLength = arcR * arcRad;
+    var charWidthRatio = 0.82; // empirically checked against real renders, not assumed
+    var maxFontSize = sizePx * 0.078;
+    var minReadableFontSize = sizePx * 0.055; // below this, curved stamp text stops being legible at all — truncate instead of shrinking further
+    var maxCharsAtMinSize = Math.floor(arcLength / (minReadableFontSize * charWidthRatio));
+    if (name.length > maxCharsAtMinSize) {
+      name = name.slice(0, Math.max(3, maxCharsAtMinSize - 1)) + "\u2026";
+    }
+    var fontSize = name.length > 0 ? Math.min(maxFontSize, arcLength / (name.length * charWidthRatio)) : maxFontSize;
+    fontSize = Math.max(fontSize, minReadableFontSize);
+
+    return '<div style="width:' + sizePx + 'px;height:' + sizePx + 'px;transform:rotate(-8deg);opacity:.88;">'
+      + '<svg viewBox="0 0 ' + vb + ' ' + vb + '" width="' + sizePx + '" height="' + sizePx + '" xmlns:xlink="http://www.w3.org/1999/xlink">'
+      + '<defs><path id="' + pathId + '" d="M ' + x1.toFixed(2) + ',' + y1.toFixed(2) + ' A ' + arcR.toFixed(2) + ',' + arcR.toFixed(2) + ' 0 0 1 ' + x2.toFixed(2) + ',' + y2.toFixed(2) + '" fill="none"/></defs>'
+      + '<circle cx="' + r + '" cy="' + r + '" r="' + (r * 0.94) + '" fill="none" stroke="#067647" stroke-width="2"/>'
+      + '<circle cx="' + r + '" cy="' + r + '" r="' + (r * 0.82) + '" fill="none" stroke="#067647" stroke-width="1"/>'
+      + '<text font-size="' + fontSize.toFixed(1) + '" font-family="Georgia,serif" font-weight="700" fill="#067647" letter-spacing="0.5"><textPath href="#' + pathId + '" xlink:href="#' + pathId + '" startOffset="50%" text-anchor="middle">' + esc(name) + '</textPath></text>'
+      + '<text x="' + r + '" y="' + (r * 1.14) + '" font-size="' + Math.round(sizePx * 0.19) + '" font-family="Georgia,serif" font-weight="800" fill="#067647" text-anchor="middle" letter-spacing="2">PAID</text>'
+      + '<text x="' + r + '" y="' + (r * 1.44) + '" font-size="' + Math.round(sizePx * 0.075) + '" font-family="Georgia,serif" font-weight="600" fill="#067647" text-anchor="middle" letter-spacing="1">' + esc(dateStr) + '</text>'
+      + '</svg></div>';
+  }
+
   var detailRows = function (opts) {
     var rows = [
       ["Received From", opts.studentName],
@@ -129,7 +188,7 @@
       + '<table class="rr-table"><tr><td>' + esc("The sum of " + money(opts.amount) + " being payment in respect of school fees" + (opts.includesTransport ? " (includes bus transport " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
       + (opts.note ? '<div class="rr-note">Note: ' + esc(opts.note) + '</div>' : '')
       + '<div class="rr-foot">'
-      + '<div class="rr-foot-left"><div class="rr-instr">Please retain this receipt for your records. This is a computer-generated receipt and is valid without a signature.</div></div>'
+      + '<div class="rr-foot-left" style="display:flex;align-items:center;gap:14px;">' + paidStamp(opts, 92) + '<div class="rr-instr">Please retain this receipt for your records. This is a computer-generated receipt and is valid without a signature.</div></div>'
       + '<div class="rr-foot-right">' + qrSvg(verifyUrl(opts.paymentId), 3) + '<div class="rr-verify-lbl">Scan to verify</div></div>'
       + '</div>'
       + '<div class="rr-poweredby">Generated by Samaji School System · ' + esc(new Date().toLocaleDateString()) + '</div>'
@@ -150,8 +209,11 @@
       + '<div class="rr-table-h">Payment Details</div>'
       + '<table class="rr-table"><tr><td>' + esc("Payment in respect of school fees" + (opts.includesTransport ? " (incl. bus " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
       + '<div class="rr-sr rr-sr-total"><span>Balance</span><span>' + money(opts.balance) + '</span></div>'
-      + '<div class="rr-foot-center"><div>' + qrSvg(verifyUrl(opts.paymentId), 2.6) + '</div><div class="rr-verify-lbl">Scan to verify authenticity</div>'
-      + '<div class="rr-instr" style="margin-top:8px;">Computer-generated — valid without signature.</div></div>'
+      + '<div class="rr-foot-center" style="display:flex;align-items:center;justify-content:center;gap:16px;">'
+      + '<div>' + paidStamp(opts, 66) + '</div>'
+      + '<div>' + qrSvg(verifyUrl(opts.paymentId), 2.6) + '<div class="rr-verify-lbl">Scan to verify</div></div>'
+      + '</div>'
+      + '<div class="rr-instr" style="margin-top:8px;text-align:center;">Computer-generated — valid without signature.</div>'
       + '</div>';
   }
 
