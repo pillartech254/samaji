@@ -186,7 +186,7 @@ document.addEventListener("DOMContentLoaded", function(){
   if (window.SamajiIcons) window.SamajiIcons.fill();
   if (!window.SAMAJI_CONFIGURED) $("config-warn").style.display = "block";
   var sb = window.getSB();
-  var SCHOOL=null, FLAGS={}, ROLE=null, ROLE_LABEL=null;
+  var SCHOOL=null, FLAGS={}, ROLE=null, ROLE_LABEL=null, STAFF_MODULES=null;
   // year set by app.js samajiYear()
   function showMsg(t, ok){ var m = $("msg"); m.textContent = t; m.className = "msg " + (ok ? "ok" : "err"); }
 
@@ -228,7 +228,7 @@ document.addEventListener("DOMContentLoaded", function(){
     // already holding — pure latency, on every single load.
     if (!user) { showLogin(); return; }
 
-    var pr = await sb.from("profiles").select("role, school_id").eq("id", user.id).single();
+    var pr = await sb.from("profiles").select("role, school_id, custom_role_id").eq("id", user.id).single();
     var prof = pr.data;
     if (!prof || !prof.school_id) { showMsg("This account isn't linked to a school. Set profiles.school_id.", false); busy(false); showLogin(); return; }
     SCHOOL = prof.school_id;
@@ -262,6 +262,18 @@ document.addEventListener("DOMContentLoaded", function(){
       sb.rpc("resolve_flags", { p_school: SCHOOL })
     ]);
 
+    // Only staff-role accounts (Librarian, Bursar, etc.) have a
+    // custom_role_id at all — school_admin/teacher/super_admin never
+    // do, so this round-trip is skipped entirely for the common case.
+    var customRoleName = null;
+    if (prof.role === "staff" && prof.custom_role_id) {
+      var roleRes = await sb.from("custom_roles").select("name").eq("id", prof.custom_role_id).single();
+      customRoleName = roleRes.data && roleRes.data.name;
+      var modRes = await sb.from("role_modules").select("module_key").eq("role_id", prof.custom_role_id);
+      STAFF_MODULES = {};
+      (modRes.data || []).forEach(function(r){ STAFF_MODULES[r.module_key] = true; });
+    }
+
     var school = results[0].data;
 
     // Setting a school to "archived"/"suspended" in the admin console
@@ -285,8 +297,8 @@ document.addEventListener("DOMContentLoaded", function(){
     // Humanized display of the real role on this account (school_admin
     // -> "Administrator", etc.) — not a fabricated label; prof.role is
     // the exact same value already used to gate access everywhere else.
-    var ROLE_LABELS = { school_admin: "Administrator", super_admin: "Super Admin", teacher: "Teacher", bursar: "Bursar" };
-    var roleLabel = ROLE_LABELS[prof.role] || (prof.role ? prof.role.charAt(0).toUpperCase() + prof.role.slice(1) : "User");
+    var ROLE_LABELS = { school_admin: "Administrator", super_admin: "Super Admin", teacher: "Teacher" };
+    var roleLabel = (prof.role === "staff" && customRoleName) ? customRoleName : (ROLE_LABELS[prof.role] || (prof.role ? prof.role.charAt(0).toUpperCase() + prof.role.slice(1) : "User"));
     ROLE_LABEL = roleLabel;
     var profBox = $("sidebar-profile");
     if (profBox) {
@@ -324,12 +336,20 @@ document.addEventListener("DOMContentLoaded", function(){
     if (el) el.classList.add("active");
   }
 
-  function showSettings(){ setActive("settings"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.settings(sb, SCHOOL, el); }
-  function showReports(){ setActive("reports"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.reports(sb, SCHOOL, el); }
+  function showSettings(){ if (STAFF_MODULES) { window.SM_toast("Settings isn't available for your role."); return; } setActive("settings"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.settings(sb, SCHOOL, el); }
+  function showReports(){ if (STAFF_MODULES) { window.SM_toast("Reports isn't available for your role."); return; } setActive("reports"); var el=$("view"); el.innerHTML=""; window.SamajiPlus.reports(sb, SCHOOL, el); }
 
   function buildNav(){
-    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k]; });
-    var locked  = Object.keys(FLAGS).filter(function(k){ return !FLAGS[k]; });
+    // Settings and Reports are school-admin-level concerns, not part
+    // of the granular module system — a staff member's access is
+    // defined entirely by which modules their role was granted, and
+    // neither of these is a module a super_admin can toggle for them.
+    if (STAFF_MODULES) {
+      $("nav-settings").style.display = "none";
+      $("nav-reports").style.display = "none";
+    }
+    var granted = Object.keys(FLAGS).filter(function(k){ return FLAGS[k] && (!STAFF_MODULES || STAFF_MODULES[k]); });
+    var locked  = Object.keys(FLAGS).filter(function(k){ return !FLAGS[k] || (STAFF_MODULES && !STAFF_MODULES[k]); });
     var live = $("nav-live"); live.innerHTML = "";
     // Grouped by category for readability — same modules, same
     // data-flag, same onclick, same openModule() call as before; this
@@ -362,13 +382,17 @@ document.addEventListener("DOMContentLoaded", function(){
       var m = window.metaFor(k), b = document.createElement("button");
       b.className = "navitem locked";
       b.innerHTML = '<span class="tile" style="background:#F1F2F6;color:#98A2B3">'+m.icon+'</span>'+m.name+' <span style="margin-left:auto;font-size:11px;">🔒</span>';
-      b.onclick = function(){ window.SM_toast(m.name + " isn't in your plan ("+k+" = false)."); };
+      b.onclick = function(){
+        var msg = !FLAGS[k] ? (m.name + " isn't in your plan (" + k + " = false).") : (m.name + " isn't part of your assigned role. Ask your administrator for access.");
+        window.SM_toast(msg);
+      };
       lockBox.appendChild(b);
     });
   }
 
   function openModule(flag){
     if (!FLAGS[flag]) { window.SM_toast("That module isn't licensed."); return; }
+    if (STAFF_MODULES && !STAFF_MODULES[flag]) { window.SM_toast("That module isn't part of your assigned role."); return; }
     setActive(flag);
     var fn = window.SchoolModules[flag];
     var el = $("view"); el.innerHTML = "";
@@ -384,8 +408,13 @@ function showDashboard(){
     // see the file's own header for what it reuses and why). This is
     // now just the wiring: hand it the pieces it needs and get out of
     // the way.
+    var dashFlags = FLAGS;
+    if (STAFF_MODULES) {
+      dashFlags = {};
+      for (var k in FLAGS) { dashFlags[k] = FLAGS[k] && !!STAFF_MODULES[k]; }
+    }
     window.SchoolDashboard.render(sb, SCHOOL, $("view"), {
-      flags: FLAGS,
+      flags: dashFlags,
       schoolName: $("school-name").textContent,
       roleLabel: ROLE_LABEL,
       openModule: openModule,
