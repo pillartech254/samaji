@@ -1590,8 +1590,8 @@ document.addEventListener("DOMContentLoaded", function(){
         if (done === total && myGen === _tabGen) showPaymentsView(allPayments, allMpesa, studentNameMap);
       }).catch(function(){ done++; if (done === total && myGen === _tabGen) showPaymentsView(allPayments, allMpesa, studentNameMap); });
 
-      window.SamajiCache.getCustom("mpesa_transactions|" + USER.id, function(){
-        return sb.from("mpesa_transactions").select("*").eq("parent_id", USER.id).order("created_at", { ascending: false }).then(function(r){ return r.data || []; });
+      window.SamajiCache.getCustom("mpesa_transactions|" + SCHOOL + "|" + USER.id, function(){
+        return sb.from("mpesa_transactions").select("*").eq("school_id", SCHOOL).eq("parent_id", USER.id).order("created_at", { ascending: false }).then(function(r){ return r.data || []; });
       }).then(function(rows){
         allMpesa = rows;
         done++;
