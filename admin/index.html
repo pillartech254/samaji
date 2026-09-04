@@ -1110,7 +1110,7 @@ document.addEventListener("DOMContentLoaded", function(){
           try {
             var newUserId = await createUserAccount(email, password, role, curSchool, phone, fullName || null);
             if (role === "staff" && customRoleId) {
-              var linkRes = await sb.from("profiles").update({ custom_role_id: customRoleId }).eq("id", newUserId);
+              var linkRes = await sb.rpc("admin_set_custom_role", { p_user_id: newUserId, p_custom_role_id: customRoleId });
               if (linkRes.error) { toast("User created, but couldn't assign their role: " + linkRes.error.message); m.close(); loadUsers(curSchool); return; }
             }
           } catch(e) {
