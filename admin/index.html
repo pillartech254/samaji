@@ -934,6 +934,7 @@ document.addEventListener("DOMContentLoaded", function(){
             '<td><span class="tag" style="' + rStyle + '">' + esc(rLbl) + '</span></td>' +
             '<td style="white-space:nowrap;">' +
             '<button class="ghost" data-edit="' + uid + '" data-name="' + esc(u.full_name || "") + '" data-role="' + esc(role) + '" style="font-size:12px;">Edit</button> ' +
+            (role === "staff" ? '<button class="ghost" data-role-edit="' + uid + '" data-school="' + esc(u.school_id || "") + '" style="font-size:12px;">Position</button> ' : "") +
             '<button class="ghost" data-reset="' + uid + '" style="font-size:12px;">Reset pw</button> ' +
             '<button class="ghost" data-del="' + uid + '" style="font-size:12px;color:#B42318;">Delete</button>' +
             '</td></tr>';
@@ -993,6 +994,9 @@ document.addEventListener("DOMContentLoaded", function(){
       list.querySelectorAll("[data-edit]").forEach(function(b){
         b.onclick = function(){ editUserName(b.getAttribute("data-edit"), b.getAttribute("data-name"), b.getAttribute("data-role")); };
       });
+      list.querySelectorAll("[data-role-edit]").forEach(function(b){
+        b.onclick = function(){ editStaffPosition(b.getAttribute("data-role-edit"), b.getAttribute("data-school")); };
+      });
       list.querySelectorAll("[data-reset]").forEach(function(b){
         b.onclick = function(){ resetPassword(b.getAttribute("data-reset")); };
       });
@@ -1034,6 +1038,34 @@ document.addEventListener("DOMContentLoaded", function(){
         var r = await sb.rpc("admin_update_user_name", { p_user_id: userId, p_full_name: name });
         if (r.error) { toast("Error: " + r.error.message); return; }
         toast("Name updated.");
+        m.close();
+        loadUsers(curSchool);
+      };
+    }
+
+    // (Re)assigns a staff member's position — the same
+    // admin_set_custom_role() RPC used at account creation, exposed
+    // here too so an account whose assignment never actually saved
+    // (or whose position simply needs to change later) can be fixed
+    // without deleting and recreating it.
+    function editStaffPosition(userId, schoolId){
+      var m = modal(
+        '<h3>Change Position</h3>' +
+        '<p class="muted" style="font-size:13px;margin:0 0 14px;">Choose which position — and therefore which modules — this account has.</p>' +
+        '<label>Position</label><select id="sp-role"><option value="">Loading...</option></select>' +
+        '<div class="btn-row"><button class="ghost" id="sp-cancel">Cancel</button><button class="btn-primary btn-sm" id="sp-save">Save</button></div>'
+      );
+      sb.from("custom_roles").select("id, name").eq("school_id", schoolId).order("name").then(function(res){
+        var opts = (res.data || []).map(function(r){ return '<option value="' + r.id + '">' + esc(r.name) + '</option>'; }).join("");
+        m.q("#sp-role").innerHTML = opts || '<option value="">No custom roles yet for this school — create one under Roles first</option>';
+      });
+      m.q("#sp-cancel").onclick = function(){ m.close(); };
+      m.q("#sp-save").onclick = async function(){
+        var roleId = m.q("#sp-role").value;
+        if (!roleId) { toast("Choose a position, or create one under Roles first."); return; }
+        var r = await sb.rpc("admin_set_custom_role", { p_user_id: userId, p_custom_role_id: roleId });
+        if (r.error) { toast("Error: " + r.error.message); return; }
+        toast("Position updated.");
         m.close();
         loadUsers(curSchool);
       };
