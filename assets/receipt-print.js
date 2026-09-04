@@ -217,13 +217,13 @@
     + '.rr-a5 .rr-summary-h{background:#101626;color:#fff;font-size:10px;font-weight:700;letter-spacing:.05em;text-align:center;padding:5px;margin:-10px -12px 8px;}'
     + '.rr-a5 .rr-foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px;padding-top:12px;border-top:1px dashed #98A2B3;}'
     // A6
-    + '.rr-a6{max-width:340px;margin:0 auto;padding:16px;border:2px solid #101626;font-size:11px;}'
+    + '.rr-a6{max-width:340px;margin:0 auto;padding:14px;border:2px solid #101626;font-size:11px;}'
     + '.rr-a6 .rr-head-center{text-align:center;margin-bottom:10px;}'
     + '.rr-a6 .rr-head-center>*{margin:0 auto 4px;}'
     + '.rr-a6 .rr-meta-1col{margin-bottom:4px;}'
     + '.rr-a6 .rr-foot-center{text-align:center;margin-top:14px;padding-top:10px;border-top:1px dashed #98A2B3;}'
     // POS 80mm — genuinely narrow, dashed separators, monospace-leaning
-    + '.rr-pos80{width:72mm;margin:0 auto;padding:6px 4px;font-family:"IBM Plex Mono",Consolas,monospace;font-size:10.5px;}'
+    + '.rr-pos80{max-width:72mm;margin:0 auto;padding:4px 2px;font-family:"IBM Plex Mono",Consolas,monospace;font-size:10.5px;}'
     + '.rr-pos-center{text-align:center;margin-bottom:6px;}'
     + '.rr-pos-center>*{margin:0 auto 3px;}'
     + '.rr-pos-school{font-weight:700;font-size:12px;}'
@@ -232,16 +232,46 @@
     + '.rr-pos-row{display:flex;justify-content:space-between;gap:6px;padding:1.5px 0;}'
     + '.rr-pos-bold{font-weight:700;font-size:11.5px;}'
     + '.rr-pos-thanks{text-align:center;margin-top:8px;font-style:italic;}'
-    // print page sizing per format
+    // print: override the screen-friendly fixed widths above. This is
+    // the actual fix for receipts not fitting physical A5/A6/POS80
+    // paper — a fixed pixel cap is either slightly wider than the
+    // true printable area after @page's own margin (560px is
+    // marginally more than A5's ~514px printable width at 96dpi,
+    // enough to clip on some drivers), or, worse, if the print driver
+    // doesn't honor @page size at all (a known issue with some
+    // Windows/inkjet driver combinations — reported directly against
+    // an Epson L382) and renders a larger default page instead, a
+    // fixed-width centered box becomes a small island in the middle
+    // of that larger canvas rather than filling the physical sheet
+    // actually loaded in the tray. Going full-width and dropping the
+    // pixel cap means the receipt always fills whatever the printable
+    // area actually resolves to, whatever that turns out to be.
     + '@media print{'
-    + '  .rr-a5{border:none;} .rr-a6{border:none;} @page{margin:8mm;}'
+    + '  html,body{margin:0;padding:0;}'
+    + '  .rr-a5,.rr-a6,.rr-pos80{width:100%;max-width:none;margin:0;box-sizing:border-box;}'
+    + '  .rr-a5{border:none;} .rr-a6{border:none;}'
     + '}';
 
   function printReceipt(opts) {
     var w = window.open("", "_blank", "width=820,height=900");
     if (!w) return false;
-    var pageSize = opts.size === "a6" ? "size:A6 portrait;" : opts.size === "pos80" ? "size:80mm auto;" : "size:A5 portrait;";
-    w.document.write('<!DOCTYPE html><html><head><title>Receipt — ' + esc(opts.receiptNo) + '</title><style>@page{' + pageSize + 'margin:6mm;}' + CSS + '</style></head><body>' + receiptHTML(opts) + '</body></html>');
+    var pageSize, pageMargin, sizeLabel;
+    if (opts.size === "a6") { pageSize = "size:A6 portrait;"; pageMargin = "4mm"; sizeLabel = "A6"; }
+    else if (opts.size === "pos80") { pageSize = "size:80mm auto;"; pageMargin = "3mm"; sizeLabel = "80mm thermal/POS"; }
+    else { pageSize = "size:A5 portrait;"; pageMargin = "6mm"; sizeLabel = "A5"; }
+
+    // On-screen only — @media print hides this, so it never appears
+    // on the actual printed receipt. Some printer drivers (reported
+    // directly against an Epson L382) don't reliably pick up the
+    // @page size below on their own; if the print dialog's own paper
+    // size doesn't match what's physically loaded, no amount of CSS
+    // here can fix that mismatch, so this says so plainly instead of
+    // silently producing a receipt that doesn't fit.
+    var banner = '<div class="rr-print-banner" style="max-width:480px;margin:0 auto 16px;background:#FFFAEB;border:1px solid #FEDF89;border-radius:10px;padding:12px 14px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;font-size:12.5px;color:#93370D;line-height:1.5;">'
+      + '<strong>Before you print:</strong> in the print dialog that opens, check the paper size is set to <strong>' + sizeLabel + '</strong> — matching what\u2019s actually loaded in your printer. Some printers/drivers don\u2019t pick this up automatically, which is the most common reason a receipt doesn\u2019t fit the physical page.'
+      + '</div>';
+
+    w.document.write('<!DOCTYPE html><html><head><title>Receipt — ' + esc(opts.receiptNo) + '</title><style>@page{' + pageSize + 'margin:' + pageMargin + ';}' + CSS + '@media print{.rr-print-banner{display:none;}}</style></head><body>' + banner + receiptHTML(opts) + '</body></html>');
     w.document.close();
     w.onload = function () { w.focus(); w.print(); };
     setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 300);
