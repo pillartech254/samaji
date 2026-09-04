@@ -151,9 +151,10 @@
   function paidStamp(opts, widthPx) {
     var name = (opts.schoolName || "").toUpperCase();
     var dateStr = new Date(opts.date).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
-    return '<div style="display:inline-block;transform:rotate(-6deg);opacity:.85;border:3px double #067647;padding:5px 10px;width:' + widthPx + 'px;box-sizing:border-box;text-align:center;font-family:Georgia,serif;color:#067647;">'
+    var ink = "#B3261E"; // a traditional stamp-ink red, replacing the earlier green — matches how a real rubber stamp actually looks
+    return '<div style="display:inline-block;transform:rotate(-6deg);opacity:.85;border:3px double ' + ink + ';padding:5px 10px;width:' + widthPx + 'px;box-sizing:border-box;text-align:center;font-family:Georgia,serif;color:' + ink + ';">'
       + '<div style="font-size:' + Math.round(widthPx * 0.072) + 'px;font-weight:700;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(name) + '</div>'
-      + '<div style="font-size:' + Math.round(widthPx * 0.19) + 'px;font-weight:800;letter-spacing:.12em;border-top:1px solid #067647;border-bottom:1px solid #067647;margin:2px 0;padding:1px 0;">PAID</div>'
+      + '<div style="font-size:' + Math.round(widthPx * 0.19) + 'px;font-weight:800;letter-spacing:.12em;border-top:1px solid ' + ink + ';border-bottom:1px solid ' + ink + ';margin:2px 0;padding:1px 0;">PAID</div>'
       + '<div style="font-size:' + Math.round(widthPx * 0.085) + 'px;font-weight:600;letter-spacing:.04em;">' + esc(dateStr) + '</div>'
       + '</div>';
   }
@@ -196,9 +197,9 @@
       + '<div class="rr-sr rr-sr-total"><span>Balance</span><span>' + money(opts.balance) + '</span></div>'
       + '</div></div>'
       + '<div class="rr-table-h">Payment Details</div>'
-      + '<div style="position:relative;">'
+      + '<div style="position:relative;margin-bottom:36px;">'
       + '<table class="rr-table"><tr><td>' + esc("The sum of " + amountInWords(opts.amount) + " being payment in respect of school fees" + (opts.includesTransport ? " (includes bus transport " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
-      + '<div style="position:absolute;top:-26px;right:-8px;z-index:2;">' + paidStamp(opts, 88) + '</div>'
+      + '<div style="position:absolute;bottom:-52px;right:22px;z-index:2;">' + paidStamp(opts, 132) + '</div>'
       + '</div>'
       + (opts.note ? '<div class="rr-note">Note: ' + esc(opts.note) + '</div>' : '')
       + '<div class="rr-foot">'
@@ -221,9 +222,9 @@
       + rows.map(function (r) { return '<div class="rr-row"><div class="rr-k">' + esc(r[0]) + '</div><div class="rr-v">' + esc(r[1]) + '</div></div>'; }).join("")
       + '<div class="rr-row"><div class="rr-k">Date</div><div class="rr-v">' + esc(new Date(opts.date).toLocaleString()) + '</div></div></div>'
       + '<div class="rr-table-h">Payment Details</div>'
-      + '<div style="position:relative;">'
+      + '<div style="position:relative;margin-bottom:28px;">'
       + '<table class="rr-table"><tr><td>' + esc(amountInWords(opts.amount) + " being payment in respect of school fees" + (opts.includesTransport ? " (incl. bus " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
-      + '<div style="position:absolute;top:-20px;right:-6px;z-index:2;">' + paidStamp(opts, 62) + '</div>'
+      + '<div style="position:absolute;bottom:-40px;right:16px;z-index:2;">' + paidStamp(opts, 96) + '</div>'
       + '</div>'
       + '<div class="rr-sr rr-sr-total"><span>Balance</span><span>' + money(opts.balance) + '</span></div>'
       + '<div class="rr-foot-center">'
