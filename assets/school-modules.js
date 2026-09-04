@@ -218,7 +218,7 @@
       +'<div style="flex:1;"></div><span class="muted" id="lib-sum" style="font-size:12.5px;"></span></div>'
       +'<div id="lib-body"></div>';
     var tab="catalog", students=[];
-    var sr=await sb.from("students").select("id,first_name,last_name").eq("school_id",schoolId);
+    var sr=await sb.from("students").select("id,first_name,last_name,admission_no").eq("school_id",schoolId);
     students=sr.data||[]; var nameOf={}; students.forEach(function(s){ nameOf[s.id]=s.first_name+" "+s.last_name; });
 
     document.getElementById("lib-add").onclick=function(){ addBook(); };
@@ -298,14 +298,48 @@
     function issue(bk){
       if(!students.length){ toast("Add a student first."); return; }
       var due=new Date(Date.now()+14*864e5).toISOString().slice(0,10);
-      var opts=students.map(function(s){ return '<option value="'+s.id+'">'+esc(s.first_name+" "+s.last_name)+'</option>'; }).join("");
-      var m=modal('<h3>Issue “'+esc(bk.title)+'”</h3>'
-        +'<div class="grid2"><div class="field full"><label>Student</label><select id="l-stu">'+opts+'</select></div>'
+      var selectedId=null;
+      var m=modal('<h3>Issue "'+esc(bk.title)+'"</h3>'
+        +'<div class="grid2"><div class="field full"><label>Student</label>'
+        +'<input id="l-stu-search" type="text" placeholder="Search by name or admission no..." autocomplete="off" style="width:100%;box-sizing:border-box;">'
+        +'<div id="l-stu-results" style="max-height:180px;overflow-y:auto;border:1px solid #DDE1E6;border-radius:8px;margin-top:6px;"></div>'
+        +'</div>'
         +'<div class="field full"><label>Due date</label><input id="l-due" type="date" value="'+due+'"></div></div>'
-        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s">Issue</button></div>');
+        +'<div class="modal-actions"><button class="btn-sm" id="c">Cancel</button><button class="btn-primary" id="s" disabled>Issue</button></div>');
+
+      function renderResults(query){
+        var q=(query||"").trim().toLowerCase();
+        var matches = !q ? students : students.filter(function(s){
+          var name=(s.first_name+" "+s.last_name).toLowerCase();
+          var adm=(s.admission_no||"").toLowerCase();
+          return name.indexOf(q)!==-1 || adm.indexOf(q)!==-1;
+        });
+        matches=matches.slice(0,50); // enough to scroll through without rendering a huge list on every keystroke
+        var box=m.q("#l-stu-results");
+        if(!matches.length){ box.innerHTML='<div class="muted" style="padding:10px;font-size:12.5px;">No matching students.</div>'; return; }
+        box.innerHTML=matches.map(function(s){
+          return '<div class="lib-stu-opt" data-id="'+s.id+'" style="padding:8px 10px;font-size:13px;cursor:pointer;border-bottom:1px solid #F1F2F6;'+(s.id===selectedId?'background:#E7F6F3;':'')+'">'
+            +esc(s.first_name+" "+s.last_name)
+            +(s.admission_no?' <span class="mono muted" style="font-size:11px;">('+esc(s.admission_no)+')</span>':'')
+            +'</div>';
+        }).join("");
+        box.querySelectorAll(".lib-stu-opt").forEach(function(row){
+          row.onclick=function(){
+            selectedId=row.getAttribute("data-id");
+            m.q("#l-stu-search").value = students.find(function(s){ return s.id===selectedId; })
+              ? (nameOf[selectedId] || "") : "";
+            m.q("#s").disabled=false;
+            renderResults(""); // clear the filter back to the full list, with the pick now highlighted, so it's easy to double-check the right one was chosen
+          };
+        });
+      }
+      renderResults("");
+      m.q("#l-stu-search").oninput=function(){ selectedId=null; m.q("#s").disabled=true; renderResults(this.value); };
+
       m.q("#c").onclick=m.close;
       m.q("#s").onclick=async function(){
-        var ins=await sb.from("library_loans").insert({ school_id:schoolId, book_id:bk.id, student_id:m.q("#l-stu").value, due_date:m.q("#l-due").value||null });
+        if(!selectedId){ toast("Choose a student first."); return; }
+        var ins=await sb.from("library_loans").insert({ school_id:schoolId, book_id:bk.id, student_id:selectedId, due_date:m.q("#l-due").value||null });
         if(ins.error){ toast("Error: "+ins.error.message); return; }
         await sb.from("library_books").update({ copies_available: bk.copies_available-1 }).eq("id",bk.id);
         m.close(); toast("Book issued"); render();
