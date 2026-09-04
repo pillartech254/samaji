@@ -25,6 +25,50 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function money(n) { return "KES " + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+  var ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
+  var TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  function threeDigitsToWords(n) {
+    var hundreds = "", rest = "";
+    if (n >= 100) { hundreds = ONES[Math.floor(n / 100)] + " Hundred"; n %= 100; }
+    if (n >= 20) { rest = TENS[Math.floor(n / 10)] + (n % 10 ? "-" + ONES[n % 10].toLowerCase() : ""); }
+    else if (n > 0) { rest = ONES[n]; }
+    if (hundreds && rest) return hundreds + " and " + rest;
+    return hundreds || rest;
+  }
+
+  // Converts a shilling amount into words for the receipt's payment
+  // line, e.g. 9500.50 -> "Nine Thousand Five Hundred Shillings and
+  // Fifty Cents Only" — the same convention as the printed reference
+  // this whole redesign is based on ("The sum of ... Naira, ... Kobo
+  // Only"). Handles up to billions, comfortably covering any
+  // realistic school fee amount without needing a library.
+  function amountInWords(amount) {
+    amount = Math.max(0, Number(amount) || 0);
+    var shillings = Math.floor(amount);
+    var cents = Math.round((amount - shillings) * 100);
+
+    if (shillings === 0 && cents === 0) return "Zero Shillings Only";
+
+    var scales = [["", 1], [" Thousand", 1000], [" Million", 1000000], [" Billion", 1000000000]];
+    var words = [];
+    var remaining = shillings;
+    for (var i = scales.length - 1; i >= 0; i--) {
+      var unit = scales[i][1];
+      if (remaining >= unit) {
+        var chunk = Math.floor(remaining / unit);
+        remaining -= chunk * unit;
+        if (chunk > 0) words.push(threeDigitsToWords(chunk) + scales[i][0]);
+      }
+    }
+    var result = words.join(" ") || "Zero";
+    result += shillings === 1 ? " Shilling" : " Shillings";
+    if (cents > 0) {
+      result += " and " + threeDigitsToWords(cents) + (cents === 1 ? " Cent" : " Cents");
+    }
+    return result + " Only";
+  }
+
   // Gathers everything a receipt needs into one consistent shape,
   // regardless of which portal or which payment source (manual entry,
   // M-Pesa STK push, KCB) is calling this. `payment` needs at minimum:
@@ -96,55 +140,22 @@
   // shortened (not just left to overflow past the arc, which SVG
   // would otherwise do silently and look broken) so the curve stays
   // legible regardless of how long the real name is.
-  function paidStamp(opts, sizePx) {
-    var pathId = "rr-stamp-arc-" + String(opts.paymentId || Math.random()).replace(/[^a-zA-Z0-9]/g, "");
+  // A rectangular ink-stamp, redesigned after the circular version's
+  // curved school-name text turned out illegible on a real render —
+  // even after fixing the cross-engine textPath compatibility issue
+  // and the arc-overflow bug, curved text at small sizes just doesn't
+  // read well. A rectangle needs none of that: straight lines of text
+  // in a bordered box render identically and reliably everywhere,
+  // with a plain CSS ellipsis handling a long school name instead of
+  // custom arc-length math.
+  function paidStamp(opts, widthPx) {
     var name = (opts.schoolName || "").toUpperCase();
     var dateStr = new Date(opts.date).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
-    var r = sizePx / 2;
-    var vb = sizePx;
-
-    // The arc the school name curves along — defined by an actual
-    // radius and angle (not guessed pixel offsets), so its real
-    // length can be computed directly rather than assumed. 155°
-    // leaves a visible gap at the bottom of the circle for "PAID" and
-    // the date to sit inside, while still giving the name a wide,
-    // stamp-like curve.
-    var arcR = r * 0.78;
-    var arcDeg = 155;
-    var arcRad = (arcDeg * Math.PI) / 180;
-    var startAngle = (270 - arcDeg / 2) * (Math.PI / 180);
-    var endAngle = (270 + arcDeg / 2) * (Math.PI / 180);
-    var x1 = r + arcR * Math.cos(startAngle), y1 = r + arcR * Math.sin(startAngle);
-    var x2 = r + arcR * Math.cos(endAngle), y2 = r + arcR * Math.sin(endAngle);
-
-    // Font size scaled to fit the real arc length, not a fixed
-    // guess — a short name renders large and confident; a long one
-    // shrinks to fit rather than silently overflowing past the arc's
-    // end and getting clipped by the SVG viewBox (confirmed directly
-    // by rendering and visually inspecting this — a fixed threshold
-    // of "34 characters" was never actually validated against the
-    // real available arc length, and a 23-character name was already
-    // overflowing at the font size that threshold assumed was safe).
-    var arcLength = arcR * arcRad;
-    var charWidthRatio = 0.82; // empirically checked against real renders, not assumed
-    var maxFontSize = sizePx * 0.078;
-    var minReadableFontSize = sizePx * 0.055; // below this, curved stamp text stops being legible at all — truncate instead of shrinking further
-    var maxCharsAtMinSize = Math.floor(arcLength / (minReadableFontSize * charWidthRatio));
-    if (name.length > maxCharsAtMinSize) {
-      name = name.slice(0, Math.max(3, maxCharsAtMinSize - 1)) + "\u2026";
-    }
-    var fontSize = name.length > 0 ? Math.min(maxFontSize, arcLength / (name.length * charWidthRatio)) : maxFontSize;
-    fontSize = Math.max(fontSize, minReadableFontSize);
-
-    return '<div style="width:' + sizePx + 'px;height:' + sizePx + 'px;transform:rotate(-8deg);opacity:.88;">'
-      + '<svg viewBox="0 0 ' + vb + ' ' + vb + '" width="' + sizePx + '" height="' + sizePx + '" xmlns:xlink="http://www.w3.org/1999/xlink">'
-      + '<defs><path id="' + pathId + '" d="M ' + x1.toFixed(2) + ',' + y1.toFixed(2) + ' A ' + arcR.toFixed(2) + ',' + arcR.toFixed(2) + ' 0 0 1 ' + x2.toFixed(2) + ',' + y2.toFixed(2) + '" fill="none"/></defs>'
-      + '<circle cx="' + r + '" cy="' + r + '" r="' + (r * 0.94) + '" fill="none" stroke="#067647" stroke-width="2"/>'
-      + '<circle cx="' + r + '" cy="' + r + '" r="' + (r * 0.82) + '" fill="none" stroke="#067647" stroke-width="1"/>'
-      + '<text font-size="' + fontSize.toFixed(1) + '" font-family="Georgia,serif" font-weight="700" fill="#067647" letter-spacing="0.5"><textPath href="#' + pathId + '" xlink:href="#' + pathId + '" startOffset="50%" text-anchor="middle">' + esc(name) + '</textPath></text>'
-      + '<text x="' + r + '" y="' + (r * 1.14) + '" font-size="' + Math.round(sizePx * 0.19) + '" font-family="Georgia,serif" font-weight="800" fill="#067647" text-anchor="middle" letter-spacing="2">PAID</text>'
-      + '<text x="' + r + '" y="' + (r * 1.44) + '" font-size="' + Math.round(sizePx * 0.075) + '" font-family="Georgia,serif" font-weight="600" fill="#067647" text-anchor="middle" letter-spacing="1">' + esc(dateStr) + '</text>'
-      + '</svg></div>';
+    return '<div style="display:inline-block;transform:rotate(-6deg);opacity:.85;border:3px double #067647;padding:5px 10px;width:' + widthPx + 'px;box-sizing:border-box;text-align:center;font-family:Georgia,serif;color:#067647;">'
+      + '<div style="font-size:' + Math.round(widthPx * 0.072) + 'px;font-weight:700;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(name) + '</div>'
+      + '<div style="font-size:' + Math.round(widthPx * 0.19) + 'px;font-weight:800;letter-spacing:.12em;border-top:1px solid #067647;border-bottom:1px solid #067647;margin:2px 0;padding:1px 0;">PAID</div>'
+      + '<div style="font-size:' + Math.round(widthPx * 0.085) + 'px;font-weight:600;letter-spacing:.04em;">' + esc(dateStr) + '</div>'
+      + '</div>';
   }
 
   var detailRows = function (opts) {
@@ -185,10 +196,13 @@
       + '<div class="rr-sr rr-sr-total"><span>Balance</span><span>' + money(opts.balance) + '</span></div>'
       + '</div></div>'
       + '<div class="rr-table-h">Payment Details</div>'
-      + '<table class="rr-table"><tr><td>' + esc("The sum of " + money(opts.amount) + " being payment in respect of school fees" + (opts.includesTransport ? " (includes bus transport " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
+      + '<div style="position:relative;">'
+      + '<table class="rr-table"><tr><td>' + esc("The sum of " + amountInWords(opts.amount) + " being payment in respect of school fees" + (opts.includesTransport ? " (includes bus transport " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
+      + '<div style="position:absolute;top:-26px;right:-8px;z-index:2;">' + paidStamp(opts, 88) + '</div>'
+      + '</div>'
       + (opts.note ? '<div class="rr-note">Note: ' + esc(opts.note) + '</div>' : '')
       + '<div class="rr-foot">'
-      + '<div class="rr-foot-left" style="display:flex;align-items:center;gap:14px;">' + paidStamp(opts, 92) + '<div class="rr-instr">Please retain this receipt for your records. This is a computer-generated receipt and is valid without a signature.</div></div>'
+      + '<div class="rr-foot-left"><div class="rr-instr">Please retain this receipt for your records. This is a computer-generated receipt and is valid without a signature.</div></div>'
       + '<div class="rr-foot-right">' + qrSvg(verifyUrl(opts.paymentId), 3) + '<div class="rr-verify-lbl">Scan to verify</div></div>'
       + '</div>'
       + '<div class="rr-poweredby">Generated by Samaji School System · ' + esc(new Date().toLocaleDateString()) + '</div>'
@@ -207,10 +221,12 @@
       + rows.map(function (r) { return '<div class="rr-row"><div class="rr-k">' + esc(r[0]) + '</div><div class="rr-v">' + esc(r[1]) + '</div></div>'; }).join("")
       + '<div class="rr-row"><div class="rr-k">Date</div><div class="rr-v">' + esc(new Date(opts.date).toLocaleString()) + '</div></div></div>'
       + '<div class="rr-table-h">Payment Details</div>'
-      + '<table class="rr-table"><tr><td>' + esc("Payment in respect of school fees" + (opts.includesTransport ? " (incl. bus " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
+      + '<div style="position:relative;">'
+      + '<table class="rr-table"><tr><td>' + esc(amountInWords(opts.amount) + " being payment in respect of school fees" + (opts.includesTransport ? " (incl. bus " + money(opts.transportAmount) + ")" : "")) + '</td><td class="rr-amt">' + money(opts.amount) + '</td></tr></table>'
+      + '<div style="position:absolute;top:-20px;right:-6px;z-index:2;">' + paidStamp(opts, 62) + '</div>'
+      + '</div>'
       + '<div class="rr-sr rr-sr-total"><span>Balance</span><span>' + money(opts.balance) + '</span></div>'
-      + '<div class="rr-foot-center" style="display:flex;align-items:center;justify-content:center;gap:16px;">'
-      + '<div>' + paidStamp(opts, 66) + '</div>'
+      + '<div class="rr-foot-center">'
       + '<div>' + qrSvg(verifyUrl(opts.paymentId), 2.6) + '<div class="rr-verify-lbl">Scan to verify</div></div>'
       + '</div>'
       + '<div class="rr-instr" style="margin-top:8px;text-align:center;">Computer-generated — valid without signature.</div>'
@@ -234,6 +250,7 @@
       + '<div class="rr-pos-row"><span>Date</span><span>' + esc(new Date(opts.date).toLocaleString()) + '</span></div>'
       + line
       + '<div class="rr-pos-row rr-pos-bold"><span>AMOUNT PAID</span><span>' + money(opts.amount) + '</span></div>'
+      + '<div style="font-size:9px;font-style:italic;margin:2px 0 4px;">' + esc(amountInWords(opts.amount)) + '</div>'
       + (opts.includesTransport ? '<div class="rr-pos-row"><span>incl. bus</span><span>' + money(opts.transportAmount) + '</span></div>' : '')
       + '<div class="rr-pos-row"><span>Balance</span><span>' + money(opts.balance) + '</span></div>'
       + line
@@ -345,6 +362,7 @@
     receiptHTML: receiptHTML,
     printReceipt: printReceipt,
     verifyUrl: verifyUrl,
+    amountInWords: amountInWords,
     css: CSS,
   };
 })();
